@@ -1,0 +1,49 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" color="#14b8a6">
+  <!-- What the integration does, not the device it sits on. The arc is the continuous range of
+       settings a climate entity spans; the dots are the profiles, the few points in that range
+       somebody bothered to give a name to; the one at the apex is the profile that currently
+       matches, and it is the only element at full opacity.
+
+       The arc is knocked out under every dot rather than running behind it: monochrome has no
+       second opaque tone, so a 0.72 dot over a 0.55 stroke adds up to a darker lens at every
+       crossing. The gaps also carry the point - named states are discrete, the range they sit
+       in is not.
+
+       Stroke weights are sized for the integrations list, where Home Assistant renders this at
+       about 40px: a 36 unit stroke lands on 1.4 real pixels there and the icon reads as a faint
+       sketch next to the solid ones, so the whole mark is carried at 64. Below that size the
+       gaps close up and the dots merge into the arc, which is the intended fallback - the apex
+       still separates by opacity and glow. One icon serves both themes; the teal holds up on
+       dark, where the glow gains rather than loses. -->
+  <defs>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <mask id="gaps">
+      <rect x="0" y="0" width="1024" height="1024" fill="white"/>
+      <circle cx="226.2" cy="677" r="80" fill="black"/>
+      <circle cx="226.2" cy="347" r="80" fill="black"/>
+      <circle cx="797.8" cy="347" r="80" fill="black"/>
+      <circle cx="797.8" cy="677" r="80" fill="black"/>
+      <circle cx="512" cy="182" r="100" fill="black"/>
+    </mask>
+  </defs>
+
+  <!-- solid geometry spans x 162..862, y 98..741; centre 419.5 and scale to fill -->
+  <g transform="translate(512,512) scale(1.25) translate(-512,-419.5)">
+
+    <!-- the range: 240 degrees, open at the bottom, so it reads as a span and not as a cycle -->
+    <path d="M 226.2 677 A 330 330 0 1 1 797.8 677" fill="none"
+          stroke="currentColor" stroke-opacity="0.55" stroke-width="64" mask="url(#gaps)"/>
+
+    <!-- the profiles, evenly spaced across the span, the outer two closing off its ends -->
+    <circle cx="226.2" cy="677" r="64" fill="currentColor" fill-opacity="0.72"/>
+    <circle cx="226.2" cy="347" r="64" fill="currentColor" fill-opacity="0.72"/>
+    <circle cx="797.8" cy="347" r="64" fill="currentColor" fill-opacity="0.72"/>
+    <circle cx="797.8" cy="677" r="64" fill="currentColor" fill-opacity="0.72"/>
+
+    <!-- the one that matches -->
+    <circle cx="512" cy="182" r="110" fill="currentColor" opacity="0.30" filter="url(#softBlur)"/>
+    <circle cx="512" cy="182" r="84" fill="currentColor"/>
+  </g>
+</svg>

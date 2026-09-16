@@ -289,6 +289,22 @@ python tools/make_screenshots.py     # see docs/screenshots.md
 The matching logic (`models.py`, `matching.py`) has no Home Assistant imports
 at all, which keeps it testable on its own and keeps the rules in one place.
 
+The brand images in `custom_components/climate_profiles/brand/` are rendered
+from [assets/climate_profiles_icon.svg](assets/climate_profiles_icon.svg) with
+`rsvg-convert` (`brew install librsvg`):
+
+```bash
+rsvg-convert -w 256 -h 256 assets/climate_profiles_icon.svg \
+  -o custom_components/climate_profiles/brand/icon.png
+rsvg-convert -w 512 -h 512 assets/climate_profiles_icon.svg \
+  -o custom_components/climate_profiles/brand/icon@2x.png
+```
+
+One icon serves both themes on purpose, so there are no `dark_*` variants, and
+there is no separate logo either: Home Assistant falls back to the icon
+wherever a logo would go. The bundled images are picked up from Home Assistant
+2026.3 onwards; older versions show a placeholder on the integrations page.
+
 ## Accessibility
 
 Every control is a real button with an `aria-label` and `aria-pressed`, the
