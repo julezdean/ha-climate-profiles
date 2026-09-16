@@ -48,7 +48,7 @@
           "edit_profile": "Profil bearbeiten",
           "reorder": "Reihenfolge ändern",
           "delete_profile": "Profile löschen",
-          "custom_name": "„Benutzerdefiniert“ umbenennen"
+          "custom_name": "„benutzerdefiniert“ umbenennen"
         }
       },
       "entities": {
@@ -114,7 +114,7 @@
         }
       },
       "custom_name": {
-        "title": "„Benutzerdefiniert“ umbenennen",
+        "title": "„benutzerdefiniert“ umbenennen",
         "description": "Wird angezeigt, sobald der aktuelle Zustand zu keinem deiner Profile passt.",
         "data": {
           "custom_profile_name": "Name"

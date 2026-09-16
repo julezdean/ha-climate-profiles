@@ -47,10 +47,10 @@ cases - do not "fix" them into a normal state:
 
 | File | State |
 | --- | --- |
-| `card-light.png`, `card-dark.png` | "Komfort" active, both themes |
+| `card-light.png`, `card-dark.png` | "Comfort" active, both themes |
 | `card-themes.png` | both themes side by side |
 | `card-custom.png` | one manual change, no profile matches -> custom |
-| `card-off.png` | device off, the "Aus" profile matches |
+| `card-off.png` | device off, the "Off" profile matches |
 | `card-heating.png` | a radiator thermostat: no fan, no swing, no switches |
 | `card-capture.png` | something was changed by hand, the capture offer is up |
 

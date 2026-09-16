@@ -1,65 +1,65 @@
 # Profiles are server side, so they work everywhere - not just in the card.
 
 # --- apply a profile on a schedule -------------------------------------------
-- alias: Klimaanlage nachts leise
+- alias: Quiet at night
   triggers:
     - trigger: time
       at: "22:30:00"
   actions:
     - action: climate_profiles.apply_profile
       target:
-        entity_id: sensor.wohnzimmer_klimaprofil
+        entity_id: sensor.living_room_climate_profile
       data:
-        profile: Nacht
+        profile: Night
 
 # --- react to the active profile ---------------------------------------------
 # Match on the attribute, not on the state: the state is the display name and
 # changes when you rename a profile, the id never does.
-- alias: Hinweis wenn manuell verstellt
+- alias: Tell me when it was changed by hand
   triggers:
     - trigger: state
-      entity_id: sensor.wohnzimmer_klimaprofil
+      entity_id: sensor.living_room_climate_profile
       attribute: active_profile_id
       to: "__custom__"
       for: "00:30:00"
   actions:
     - action: notify.mobile_app
       data:
-        message: Die Klimaanlage läuft seit einer halben Stunde auf eigenen Werten.
+        message: The air conditioner has been on its own values for half an hour.
 
 # --- change a single value ---------------------------------------------------
-- alias: Beim Verlassen eine Stufe wärmer
+- alias: A little warmer once nobody is home
   triggers:
     - trigger: state
-      entity_id: person.julien
+      entity_id: person.someone
       to: not_home
   actions:
     - action: climate_profiles.set_value
       target:
-        entity_id: sensor.wohnzimmer_klimaprofil
+        entity_id: sensor.living_room_climate_profile
       data:
         temperature: 26
 
 # --- the select entity, e.g. for voice assistants ----------------------------
-- alias: Klima auf Komfort
+- alias: Climate to Comfort
   triggers:
     - trigger: event
       event_type: my_voice_command
   actions:
     - action: select.select_option
       target:
-        entity_id: select.wohnzimmer_profil
+        entity_id: select.living_room_profile
       data:
-        option: Komfort
+        option: Comfort
 
 # --- keep a manual change ----------------------------------------------------
 # Nothing is captured automatically. If you want that behaviour anyway, this is
 # the honest way to build it: only after the state has been stable for a while,
 # and only into a profile you named.
-- alias: Abweichung nach einer Stunde ins Nachtprofil übernehmen
+- alias: Save a deviation into the night profile after an hour
   triggers:
     - trigger: state
-      entity_id: sensor.wohnzimmer_klimaprofil
+      entity_id: sensor.living_room_climate_profile
       attribute: active_profile_id
       to: "__custom__"
       for: "01:00:00"
@@ -70,21 +70,21 @@
   actions:
     - action: climate_profiles.capture_profile
       target:
-        entity_id: sensor.wohnzimmer_klimaprofil
+        entity_id: sensor.living_room_climate_profile
       data:
-        profile: Nacht
+        profile: Night
         values:
           - temperature
 
 # --- save the current state as a new profile ---------------------------------
-- alias: Aktuellen Zustand sichern
+- alias: Save the current state
   triggers:
     - trigger: event
       event_type: my_button_pressed
   actions:
     - action: climate_profiles.save_as_profile
       target:
-        entity_id: sensor.wohnzimmer_klimaprofil
+        entity_id: sensor.living_room_climate_profile
       data:
-        name: "Gesichert {{ now().strftime('%d.%m. %H:%M') }}"
+        name: "Saved {{ now().strftime('%d.%m. %H:%M') }}"
         color: "#f59e0b"

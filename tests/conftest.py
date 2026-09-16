@@ -16,10 +16,10 @@ from custom_components.climate_profiles.models import (
     ProfileSet,
 )
 
-CLIMATE = "climate.wohnzimmer"
-FAN = "number.wohnzimmer_luftergeschwindigkeit"
-DISPLAY = "switch.wohnzimmer_gerateanzeige"
-SILENT = "switch.wohnzimmer_flustermodus"
+CLIMATE = "climate.living_room"
+FAN = "number.living_room_fan_speed"
+DISPLAY = "switch.living_room_display"
+SILENT = "switch.living_room_silent"
 
 
 @pytest.fixture

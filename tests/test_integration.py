@@ -23,8 +23,8 @@ from custom_components.climate_profiles.const import (
 
 from .conftest import CLIMATE, DISPLAY, SILENT, set_device_state, settle
 
-SENSOR = "sensor.wohnzimmer_climate_profile"
-SELECT = "select.wohnzimmer_profile"
+SENSOR = "sensor.living_room_climate_profile"
+SELECT = "select.living_room_profile"
 
 PROFILES = [
     {"id": "aus", "name": "Aus", "color": "#64748b", "values": {"hvac_mode": "off"}},
@@ -56,7 +56,7 @@ async def setup_entry(
     *,
     profiles=None,
     options=None,
-    title: str = "Wohnzimmer",
+    title: str = "Living room",
 ) -> MockConfigEntry:
     """Set up one config entry with the mocked device already in place."""
     entry = MockConfigEntry(
@@ -65,7 +65,7 @@ async def setup_entry(
         data=entry_data,
         options={
             CONF_PROFILES: PROFILES if profiles is None else profiles,
-            CONF_CUSTOM_NAME: "Benutzerdefiniert",
+            CONF_CUSTOM_NAME: "Custom",
             **(options or {}),
         },
         unique_id=entry_data[CONF_CLIMATE_ENTITY],
@@ -113,7 +113,7 @@ async def test_a_manual_change_switches_to_custom(hass, entry_data):
     await settle(hass)
 
     state = hass.states.get(SENSOR)
-    assert state.state == "Benutzerdefiniert"
+    assert state.state == "Custom"
     assert state.attributes[ATTR_ACTIVE_PROFILE_ID] == CUSTOM_PROFILE_ID
 
 
@@ -135,7 +135,7 @@ async def test_select_lists_the_profiles_plus_custom(hass, entry_data):
         "Aus",
         "Komfort",
         "Kuehlung",
-        "Benutzerdefiniert",
+        "Custom",
     ]
 
 
@@ -234,13 +234,13 @@ async def test_applying_custom_writes_nothing(hass, entry_data, calls):
     await hass.services.async_call(
         DOMAIN,
         "apply_profile",
-        {"entity_id": SENSOR, "profile": "Benutzerdefiniert"},
+        {"entity_id": SENSOR, "profile": "Custom"},
         blocking=True,
     )
     await hass.async_block_till_done()
 
     assert not any(calls[key] for key in calls)
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"
 
 
 async def test_select_applies_a_profile(hass, entry_data, calls):
@@ -302,7 +302,7 @@ async def test_without_optional_entities_nothing_breaks(hass, calls):
         "silent": None,
     }
     # "Komfort" defines display/silent, which this device cannot do -> custom.
-    assert state.state == "Benutzerdefiniert"
+    assert state.state == "Custom"
 
     await hass.services.async_call(
         DOMAIN,
@@ -364,7 +364,7 @@ async def test_two_instances_stay_independent(hass, entry_data):
     await setup_entry(hass, {CONF_CLIMATE_ENTITY: "climate.buero"}, profiles=PROFILES)
 
     assert hass.states.get(SENSOR).state == "Komfort"
-    assert hass.states.get("sensor.mock_title_klimaprofil") is None or True
+    assert hass.states.get("sensor.mock_title_climate_profile") is None or True
     buero = next(
         s
         for s in hass.states.async_all("sensor")

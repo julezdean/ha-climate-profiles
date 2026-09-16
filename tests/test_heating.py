@@ -15,8 +15,8 @@ from custom_components.climate_profiles.models import Capabilities, EntityMap
 from .conftest import settle
 from .test_integration import setup_entry
 
-HEATER = "climate.heizung_wohnzimmer"
-SENSOR = "sensor.heizung_climate_profile"
+HEATER = "climate.living_room_radiator"
+SENSOR = "sensor.radiator_climate_profile"
 
 HEATING_PROFILES = [
     {"id": "off", "name": "Aus", "color": "#64748b", "values": {"hvac_mode": "off"}},
@@ -59,7 +59,7 @@ async def setup_heater(hass, **kwargs):
     """Set up an entry for the thermostat."""
     kwargs.setdefault("profiles", HEATING_PROFILES)
     return await setup_entry(
-        hass, {CONF_CLIMATE_ENTITY: HEATER}, title="Heizung", **kwargs
+        hass, {CONF_CLIMATE_ENTITY: HEATER}, title="Radiator", **kwargs
     )
 
 
@@ -94,7 +94,7 @@ async def test_half_degree_steps_are_compared_correctly(hass):
 
     set_heater(hass, temperature=21.0)
     await settle(hass)
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"
 
 
 async def test_applying_a_heating_profile(hass):
@@ -208,4 +208,4 @@ async def test_a_range_thermostat_never_matches_a_temperature(hass):
             },
         ],
     )
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"

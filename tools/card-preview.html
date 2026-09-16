@@ -8,7 +8,7 @@
 
   Usage: see docs/screenshots.md
 -->
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -123,19 +123,19 @@
     <script>
       /* --- a fake Home Assistant --- */
       const PROFILES = [
-        { id: "p1", name: "Aus", color: "#64748b", icon: "mdi:power", order: 0,
+        { id: "p1", name: "Off", color: "#64748b", icon: "mdi:power", order: 0,
           protected: true, values: { hvac_mode: "off" } },
         { id: "p2", name: "Away", color: "#3b82f6", icon: null, order: 1,
           protected: false,
           values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
-        { id: "p3", name: "Komfort", color: "#22c55e", icon: null, order: 2,
+        { id: "p3", name: "Comfort", color: "#22c55e", icon: null, order: 2,
           values: { hvac_mode: "cool", temperature: 24, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
-        { id: "p4", name: "Komfort+", color: "#10b981", icon: null, order: 3,
+        { id: "p4", name: "Comfort+", color: "#10b981", icon: null, order: 3,
           values: { hvac_mode: "cool", temperature: 22, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
-        { id: "p5", name: "Nacht", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,
+        { id: "p5", name: "Night", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,
           values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
                     display: "off", silent: "on" } },
         { id: "p6", name: "Max", color: "#ef4444", icon: null, order: 5,
@@ -143,26 +143,26 @@
                     fan: 100, display: "off", silent: "off" } },
       ];
 
-      const DE = {
-        "component.climate.entity_component._.state.off": "Aus",
-        "component.climate.entity_component._.state.cool": "Kühlen",
-        "component.climate.entity_component._.state.heat": "Heizen",
-        "component.climate.entity_component._.state.dry": "Trocknen",
-        "component.climate.entity_component._.state.fan_only": "Nur Lüfter",
-        "component.climate.entity_component._.state.auto": "Automatik",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.auto": "Automatik",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.silent": "Leise",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.low": "Niedrig",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.medium": "Mittel",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.high": "Hoch",
-        "component.climate.entity_component._.state_attributes.fan_mode.state.full": "Maximum",
-        "component.climate.entity_component._.state_attributes.swing_mode.state.off": "Aus",
-        "component.climate.entity_component._.state_attributes.swing_mode.state.vertical": "Vertikal",
+      const EN = {
+        "component.climate.entity_component._.state.off": "Off",
+        "component.climate.entity_component._.state.cool": "Cool",
+        "component.climate.entity_component._.state.heat": "Heat",
+        "component.climate.entity_component._.state.dry": "Dry",
+        "component.climate.entity_component._.state.fan_only": "Fan only",
+        "component.climate.entity_component._.state.auto": "Auto",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.auto": "Auto",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.silent": "Silent",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.low": "Low",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.medium": "Medium",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.high": "High",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.full": "Full",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.off": "Off",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.vertical": "Vertical",
         "component.climate.entity_component._.state_attributes.swing_mode.state.horizontal": "Horizontal",
-        "component.climate.entity_component._.state_attributes.swing_mode.state.both": "Beide",
-        "component.climate.entity_component._.state_attributes.hvac_action.state.heating": "Heizt",
-        "component.climate.entity_component._.state_attributes.hvac_action.state.cooling": "Kühlt",
-        "component.climate.entity_component._.state_attributes.hvac_action.state.idle": "Bereit",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.both": "Both",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.heating": "Heating",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.cooling": "Cooling",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.idle": "Idle",
       };
 
       function buildHass(overrides = {}) {
@@ -174,7 +174,7 @@
           fan: 42,
           display: "off",
           silent: "off",
-          active_profile: "Komfort",
+          active_profile: "Comfort",
           active_profile_id: "p3",
           active_profile_color: "#22c55e",
           applying: false,
@@ -184,18 +184,18 @@
         };
 
         return {
-          language: "de",
+          language: "en",
           config: { unit_system: { temperature: "°C" } },
-          localize: (key) => DE[key] || "",
+          localize: (key) => EN[key] || "",
           callService: async (domain, service, data) => {
             console.log("callService", domain, service, data);
           },
           states: {
-            "sensor.wohnzimmer_klimaprofil": {
-              entity_id: "sensor.wohnzimmer_klimaprofil",
+            "sensor.living_room_climate_profile": {
+              entity_id: "sensor.living_room_climate_profile",
               state: state.active_profile,
               attributes: {
-                friendly_name: "Wohnzimmer",
+                friendly_name: "Living room",
                 active_profile: state.active_profile,
                 active_profile_id: state.active_profile_id,
                 active_profile_color: state.active_profile_color,
@@ -203,7 +203,7 @@
                 changed_values: state.changed_values,
                 last_matched_profile_id: state.last_matched_profile_id,
                 profiles: PROFILES,
-                custom_profile: { id: "__custom__", name: "Benutzerdefiniert", color: "#78909c" },
+                custom_profile: { id: "__custom__", name: "Custom", color: "#78909c" },
                 current_values: {},
                 capabilities: {
                   hvac_modes: ["off", "cool", "dry", "fan_only", "heat", "auto"],
@@ -213,18 +213,18 @@
                   fan_min: 1, fan_max: 100, fan_step: 1,
                 },
                 entities: {
-                  climate: "climate.wohnzimmer",
-                  fan: "number.wohnzimmer_luftergeschwindigkeit",
-                  display: "switch.wohnzimmer_gerateanzeige",
-                  silent: "switch.wohnzimmer_flustermodus",
+                  climate: "climate.living_room",
+                  fan: "number.living_room_fan_speed",
+                  display: "switch.living_room_display",
+                  silent: "switch.living_room_silent",
                 },
               },
             },
-            "climate.wohnzimmer": {
-              entity_id: "climate.wohnzimmer",
+            "climate.living_room": {
+              entity_id: "climate.living_room",
               state: state.hvac_mode,
               attributes: {
-                friendly_name: "Wohnzimmer Klimaanlage",
+                friendly_name: "Living room AC",
                 temperature: state.temperature,
                 current_temperature: 25.4,
                 hvac_action: state.hvac_mode === "off" ? "off" : "cooling",
@@ -236,20 +236,20 @@
                 min_temp: 16, max_temp: 30, target_temp_step: 1,
               },
             },
-            "number.wohnzimmer_luftergeschwindigkeit": {
-              entity_id: "number.wohnzimmer_luftergeschwindigkeit",
+            "number.living_room_fan_speed": {
+              entity_id: "number.living_room_fan_speed",
               state: String(state.fan),
-              attributes: { min: 1, max: 100, step: 1, friendly_name: "Lüftergeschwindigkeit" },
+              attributes: { min: 1, max: 100, step: 1, friendly_name: "Fan speed" },
             },
-            "switch.wohnzimmer_gerateanzeige": {
-              entity_id: "switch.wohnzimmer_gerateanzeige",
+            "switch.living_room_display": {
+              entity_id: "switch.living_room_display",
               state: state.display,
-              attributes: { friendly_name: "Geräteanzeige" },
+              attributes: { friendly_name: "Display" },
             },
-            "switch.wohnzimmer_flustermodus": {
-              entity_id: "switch.wohnzimmer_flustermodus",
+            "switch.living_room_silent": {
+              entity_id: "switch.living_room_silent",
               state: state.silent,
-              attributes: { friendly_name: "Flüstermodus" },
+              attributes: { friendly_name: "Silent mode" },
             },
           },
         };
@@ -258,26 +258,26 @@
       /* A radiator thermostat: no fan, no swing, no extra switches, half
          degree steps and a much wider range. The card has to shrink to it. */
       const HEATING_PROFILES = [
-        { id: "h1", name: "Aus", color: "#64748b", icon: "mdi:power", order: 0,
+        { id: "h1", name: "Off", color: "#64748b", icon: "mdi:power", order: 0,
           values: { hvac_mode: "off" } },
-        { id: "h2", name: "Absenkung", color: "#3b82f6", icon: null, order: 1,
+        { id: "h2", name: "Setback", color: "#3b82f6", icon: null, order: 1,
           values: { hvac_mode: "heat", temperature: 17 } },
-        { id: "h3", name: "Komfort", color: "#ef4444", icon: null, order: 2,
+        { id: "h3", name: "Comfort", color: "#ef4444", icon: null, order: 2,
           values: { hvac_mode: "heat", temperature: 21.5 } },
-        { id: "h4", name: "Nacht", color: "#8b5cf6", icon: "mdi:weather-night", order: 3,
+        { id: "h4", name: "Night", color: "#8b5cf6", icon: "mdi:weather-night", order: 3,
           values: { hvac_mode: "heat", temperature: 19 } },
       ];
 
       function asHeating(hass) {
-        const sensor = hass.states["sensor.wohnzimmer_klimaprofil"];
+        const sensor = hass.states["sensor.living_room_climate_profile"];
         const attrs = sensor.attributes;
-        attrs.friendly_name = "Heizung Wohnzimmer";
+        attrs.friendly_name = "Living room radiator";
         attrs.profiles = HEATING_PROFILES;
-        attrs.active_profile = "Komfort";
+        attrs.active_profile = "Comfort";
         attrs.active_profile_id = "h3";
         attrs.active_profile_color = "#ef4444";
         attrs.entities = {
-          climate: "climate.heizung_wohnzimmer",
+          climate: "climate.living_room_radiator",
           fan: null,
           display: null,
           silent: null,
@@ -293,18 +293,18 @@
           fan_max: null,
           fan_step: 1,
         };
-        sensor.state = "Komfort";
+        sensor.state = "Comfort";
 
-        delete hass.states["climate.wohnzimmer"];
-        delete hass.states["number.wohnzimmer_luftergeschwindigkeit"];
-        delete hass.states["switch.wohnzimmer_gerateanzeige"];
-        delete hass.states["switch.wohnzimmer_flustermodus"];
+        delete hass.states["climate.living_room"];
+        delete hass.states["number.living_room_fan_speed"];
+        delete hass.states["switch.living_room_display"];
+        delete hass.states["switch.living_room_silent"];
 
-        hass.states["climate.heizung_wohnzimmer"] = {
-          entity_id: "climate.heizung_wohnzimmer",
+        hass.states["climate.living_room_radiator"] = {
+          entity_id: "climate.living_room_radiator",
           state: "heat",
           attributes: {
-            friendly_name: "Heizung Wohnzimmer",
+            friendly_name: "Living room radiator",
             temperature: 21.5,
             current_temperature: 20.2,
             hvac_action: "heating",
@@ -337,7 +337,7 @@
         const card = document.createElement("climate-profile-card");
         card.setConfig({
           type: "custom:climate-profile-card",
-          entity: "sensor.wohnzimmer_klimaprofil",
+          entity: "sensor.living_room_climate_profile",
           ...(params.get("card") ? JSON.parse(decodeURIComponent(params.get("card"))) : {}),
         });
         card.hass = device(buildHass(overrides));

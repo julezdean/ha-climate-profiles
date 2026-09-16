@@ -3,13 +3,13 @@
 
 # --- minimal: everything comes from the integration -------------------------
 type: custom:climate-profile-card
-entity: sensor.wohnzimmer_klimaprofil
+entity: sensor.living_room_climate_profile
 
 ---
 # --- with options -----------------------------------------------------------
 type: custom:climate-profile-card
-entity: sensor.wohnzimmer_klimaprofil
-name: Wohnzimmer            # overrides the entity's friendly name
+entity: sensor.living_room_climate_profile
+name: Living room           # overrides the entity's friendly name
 profile_layout: auto        # auto | grid | scroll
 show_temperature: true
 show_hvac: true
@@ -22,7 +22,7 @@ show_silent: true
 ---
 # --- a compact card: profiles and temperature only ---------------------------
 type: custom:climate-profile-card
-entity: sensor.schlafzimmer_klimaprofil
+entity: sensor.bedroom_climate_profile
 show_hvac: false
 show_fan_mode: false
 show_swing: false
@@ -37,13 +37,13 @@ columns: 2
 square: false
 cards:
   - type: custom:climate-profile-card
-    entity: sensor.wohnzimmer_klimaprofil
+    entity: sensor.living_room_climate_profile
   - type: custom:climate-profile-card
-    entity: sensor.schlafzimmer_klimaprofil
+    entity: sensor.bedroom_climate_profile
 
 ---
 # --- without the custom card: the select entity works on its own -------------
 type: entities
 entities:
-  - entity: select.wohnzimmer_profil
-  - entity: sensor.wohnzimmer_klimaprofil
+  - entity: select.living_room_profile
+  - entity: sensor.living_room_climate_profile

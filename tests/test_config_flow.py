@@ -70,7 +70,7 @@ async def test_full_flow_creates_an_entry_with_starter_profiles(hass):
     }
     names = [p[CONF_PROFILE_NAME] for p in result["options"][CONF_PROFILES]]
     assert names == ["Aus", "Away", "Komfort", "Nacht", "Max"]
-    assert result["options"][CONF_CUSTOM_NAME] == "Benutzerdefiniert"
+    assert result["options"][CONF_CUSTOM_NAME] == "Custom"
 
 
 async def test_optional_entities_may_be_skipped(hass):
@@ -160,7 +160,7 @@ async def setup_options(hass, profiles=None):
             CONF_DISPLAY_ENTITY: DISPLAY,
             CONF_SILENT_ENTITY: SILENT,
         },
-        options={CONF_PROFILES: profiles or [], CONF_CUSTOM_NAME: "Benutzerdefiniert"},
+        options={CONF_PROFILES: profiles or [], CONF_CUSTOM_NAME: "Custom"},
         unique_id=CLIMATE,
     )
     entry.add_to_hass(hass)

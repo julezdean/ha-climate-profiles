@@ -19,7 +19,7 @@ matching happens server side, and a custom Lovelace card renders it.
 * a profile only defines the values it cares about; applying it leaves
   everything else exactly where it is
 * the integration continuously reports which profile matches the current state
-  - and **Benutzerdefiniert** ("custom") as soon as you change anything by hand
+  - and **Custom** as soon as you change anything by hand
 * custom is a status, never a preset: it has no stored values and never writes
   anything back
 * adjusted something by hand? Write it back into the profile it came from, or
@@ -47,7 +47,10 @@ Assistant. By hand it is the same thing:
 
 ### Manual
 
-1. copy `custom_components/climate_profiles` into your `config/custom_components`
+1. download `climate_profiles.zip` from the [latest
+   release](https://github.com/julezdean/ha-climate-profiles/releases/latest)
+   and unpack it into `config/custom_components/climate_profiles/`, or copy the
+   `custom_components/climate_profiles` folder out of the repository
 2. restart Home Assistant
 
 The Lovelace card is registered automatically. You do not have to add a
@@ -105,7 +108,7 @@ So put specific profiles above broad ones.
 
 ```yaml
 type: custom:climate-profile-card
-entity: sensor.wohnzimmer_klimaprofil
+entity: sensor.living_room_climate_profile
 ```
 
 Everything else - profiles, colours, which controls exist, the temperature
@@ -193,9 +196,9 @@ Both gaps are pinned down by tests in `tests/test_heating.py`.
 ```yaml
 action: climate_profiles.apply_profile
 target:
-  entity_id: sensor.wohnzimmer_klimaprofil
+  entity_id: sensor.living_room_climate_profile
 data:
-  profile: Komfort        # name or id
+  profile: Comfort        # name or id
 ```
 
 Writes only the values the profile defines. Values that already match produce
@@ -210,7 +213,7 @@ that do exist; it never destabilises Home Assistant.
 ```yaml
 action: climate_profiles.set_value
 target:
-  entity_id: sensor.wohnzimmer_klimaprofil
+  entity_id: sensor.living_room_climate_profile
 data:
   temperature: 23
   silent: true
@@ -224,9 +227,9 @@ corresponds to. All fields are optional, at least one is required.
 ```yaml
 action: climate_profiles.capture_profile
 target:
-  entity_id: sensor.wohnzimmer_klimaprofil
+  entity_id: sensor.living_room_climate_profile
 data:
-  profile: Komfort        # optional - defaults to the profile that last matched
+  profile: Comfort        # optional - defaults to the profile that last matched
   values: [temperature]   # optional - defaults to deciding automatically
 ```
 
@@ -235,7 +238,7 @@ data:
 ```yaml
 action: climate_profiles.save_as_profile
 target:
-  entity_id: sensor.wohnzimmer_klimaprofil
+  entity_id: sensor.living_room_climate_profile
 data:
   name: Mittagshitze
   color: "#f59e0b"        # optional
@@ -248,11 +251,11 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 ## Sensor attributes
 
 ```yaml
-active_profile: Komfort
+active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
 profiles: [{id, name, color, icon, order, protected, values}, …]
-custom_profile: {id: __custom__, name: Benutzerdefiniert, color: "#78909c"}
+custom_profile: {id: __custom__, name: Custom, color: "#78909c"}
 current_values: {hvac_mode: cool, temperature: 24.0, …}
 capabilities: {hvac_modes: […], min_temp: 16, target_temp_step: 1, …}
 entities: {climate: …, fan: …, display: …, silent: …}

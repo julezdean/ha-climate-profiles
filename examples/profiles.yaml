@@ -2,6 +2,9 @@
 # in the config entry's options. For reference only - profiles are configured
 # in the UI (Settings -> Devices & services -> Climate Profiles -> Configure),
 # not in YAML. Values you do not list are never touched.
+#
+# The names below are the ones that package used, kept so a migration can be
+# compared line by line. A fresh install names the custom profile "Custom".
 
 profiles:
   - id: 0f2c9a1e6b754f0a9f1d2c3b4a5e6f70

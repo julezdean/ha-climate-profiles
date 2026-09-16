@@ -71,7 +71,7 @@ STRING_KEYS: Final[frozenset[str]] = frozenset(
 #: Stable, language independent id of the virtual profile. Automations should
 #: match on the ``active_profile_id`` attribute, never on the localised state.
 CUSTOM_PROFILE_ID: Final = "__custom__"
-DEFAULT_CUSTOM_NAME: Final = "Benutzerdefiniert"
+DEFAULT_CUSTOM_NAME: Final = "Custom"
 DEFAULT_CUSTOM_COLOR: Final = "#78909c"
 DEFAULT_PROFILE_COLOR: Final = "#03a9f4"
 

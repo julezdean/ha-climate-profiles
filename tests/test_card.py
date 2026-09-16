@@ -41,7 +41,7 @@ card.hass = hass;
 CHANGED = {
     "temperature": 23,
     "fan_mode": "high",
-    "active_profile": "Benutzerdefiniert",
+    "active_profile": "Custom",
     "active_profile_id": "__custom__",
     "active_profile_color": "#78909c",
     "changed_values": ["temperature", "fan_mode"],
@@ -116,9 +116,9 @@ async def test_the_capture_bar_names_what_changed(open_card):
     assert await capture.is_visible()
 
     values = await capture.locator(".capture-values").inner_text()
-    assert "Temperatur" in values
-    assert "Lüftermodus" in values
-    assert "Komfort" in await capture.locator(".capture-into").inner_text()
+    assert "Temperature" in values
+    assert "Fan mode" in values
+    assert "Comfort" in await capture.locator(".capture-into").inner_text()
 
 
 async def test_capturing_calls_the_service(open_card):
@@ -130,7 +130,7 @@ async def test_capturing_calls_the_service(open_card):
         {
             "domain": "climate_profiles",
             "service": "capture_profile",
-            "data": {"entity_id": "sensor.wohnzimmer_klimaprofil"},
+            "data": {"entity_id": "sensor.living_room_climate_profile"},
         }
     ]
 
@@ -152,7 +152,7 @@ async def test_saving_as_a_new_profile_asks_for_a_name(open_card):
             "domain": "climate_profiles",
             "service": "save_as_profile",
             "data": {
-                "entity_id": "sensor.wohnzimmer_klimaprofil",
+                "entity_id": "sensor.living_room_climate_profile",
                 "name": "Mittagshitze",
             },
         }
@@ -180,7 +180,7 @@ async def test_escape_closes_the_name_field(open_card):
 
 
 async def test_a_protected_profile_offers_only_the_new_profile_route(open_card):
-    """The "Aus" profile is protected in the preview fixture."""
+    """The "Off" profile is protected in the preview fixture."""
     page = await open_card(
         {
             **CHANGED,
@@ -193,7 +193,7 @@ async def test_a_protected_profile_offers_only_the_new_profile_route(open_card):
     assert await capture.is_visible()
     assert await capture.locator(".capture-into").is_hidden()
     assert await capture.locator(".capture-new").is_visible()
-    assert "schreibgeschützt" in await capture.locator(".capture-title").inner_text()
+    assert "write protected" in await capture.locator(".capture-title").inner_text()
 
 
 # --- regressions -----------------------------------------------------------

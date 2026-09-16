@@ -42,7 +42,7 @@ async def test_a_manual_change_is_written_into_the_active_profile(hass, entry_da
 
     set_device_state(hass, temperature=23)
     await settle(hass)
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"
 
     await capture(hass)
 
@@ -104,7 +104,7 @@ async def test_after_a_restart_nothing_is_assumed(hass, entry_data):
     """No profile has matched yet, so there is no target to capture into."""
     set_device_state(hass, temperature=23)
     await setup_entry(hass, entry_data)
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"
     assert hass.states.get(SENSOR).attributes["last_matched_profile_id"] is None
 
     with pytest.raises(ServiceValidationError):

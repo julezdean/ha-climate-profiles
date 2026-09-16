@@ -80,7 +80,7 @@ async def test_the_card_sees_the_target_while_the_device_catches_up(hass, entry_
     await task
     await settle(hass)
     # The device never actually moved, so the optimistic value is given up.
-    assert hass.states.get(SENSOR).state == "Benutzerdefiniert"
+    assert hass.states.get(SENSOR).state == "Custom"
 
 
 async def test_a_burst_of_state_changes_is_collapsed(hass, entry_data):

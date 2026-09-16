@@ -42,7 +42,7 @@ SHOTS: dict[str, dict] = {
         "theme": "light",
         "state": {
             "temperature": 23,
-            "active_profile": "Benutzerdefiniert",
+            "active_profile": "Custom",
             "active_profile_id": "__custom__",
             "active_profile_color": "#78909c",
         },
@@ -51,7 +51,7 @@ SHOTS: dict[str, dict] = {
         "theme": "light",
         "state": {
             "hvac_mode": "off",
-            "active_profile": "Aus",
+            "active_profile": "Off",
             "active_profile_id": "p1",
             "active_profile_color": "#64748b",
         },
@@ -64,7 +64,7 @@ SHOTS: dict[str, dict] = {
         "state": {
             "temperature": 23,
             "fan_mode": "high",
-            "active_profile": "Benutzerdefiniert",
+            "active_profile": "Custom",
             "active_profile_id": "__custom__",
             "active_profile_color": "#78909c",
             "changed_values": ["temperature", "fan_mode"],
