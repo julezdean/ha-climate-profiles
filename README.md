@@ -34,6 +34,12 @@ matching happens server side, and a custom Lovelace card renders it.
 
 ### HACS (recommended)
 
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=julezdean&repository=ha-climate-profiles&category=integration)
+
+The button opens this repository in your own HACS, adding it as a custom
+repository if it is not known there yet. Download it and restart Home
+Assistant. By hand it is the same thing:
+
 1. HACS → Integrations → ⋮ → *Custom repositories*
 2. add this repository, category *Integration*
 3. install **Climate Profiles**
