@@ -1,0 +1,90 @@
+# Profiles are server side, so they work everywhere - not just in the card.
+
+# --- apply a profile on a schedule -------------------------------------------
+- alias: Klimaanlage nachts leise
+  triggers:
+    - trigger: time
+      at: "22:30:00"
+  actions:
+    - action: climate_profiles.apply_profile
+      target:
+        entity_id: sensor.wohnzimmer_klimaprofil
+      data:
+        profile: Nacht
+
+# --- react to the active profile ---------------------------------------------
+# Match on the attribute, not on the state: the state is the display name and
+# changes when you rename a profile, the id never does.
+- alias: Hinweis wenn manuell verstellt
+  triggers:
+    - trigger: state
+      entity_id: sensor.wohnzimmer_klimaprofil
+      attribute: active_profile_id
+      to: "__custom__"
+      for: "00:30:00"
+  actions:
+    - action: notify.mobile_app
+      data:
+        message: Die Klimaanlage läuft seit einer halben Stunde auf eigenen Werten.
+
+# --- change a single value ---------------------------------------------------
+- alias: Beim Verlassen eine Stufe wärmer
+  triggers:
+    - trigger: state
+      entity_id: person.julien
+      to: not_home
+  actions:
+    - action: climate_profiles.set_value
+      target:
+        entity_id: sensor.wohnzimmer_klimaprofil
+      data:
+        temperature: 26
+
+# --- the select entity, e.g. for voice assistants ----------------------------
+- alias: Klima auf Komfort
+  triggers:
+    - trigger: event
+      event_type: my_voice_command
+  actions:
+    - action: select.select_option
+      target:
+        entity_id: select.wohnzimmer_profil
+      data:
+        option: Komfort
+
+# --- keep a manual change ----------------------------------------------------
+# Nothing is captured automatically. If you want that behaviour anyway, this is
+# the honest way to build it: only after the state has been stable for a while,
+# and only into a profile you named.
+- alias: Abweichung nach einer Stunde ins Nachtprofil übernehmen
+  triggers:
+    - trigger: state
+      entity_id: sensor.wohnzimmer_klimaprofil
+      attribute: active_profile_id
+      to: "__custom__"
+      for: "01:00:00"
+  conditions:
+    - condition: time
+      after: "22:00:00"
+      before: "06:00:00"
+  actions:
+    - action: climate_profiles.capture_profile
+      target:
+        entity_id: sensor.wohnzimmer_klimaprofil
+      data:
+        profile: Nacht
+        values:
+          - temperature
+
+# --- save the current state as a new profile ---------------------------------
+- alias: Aktuellen Zustand sichern
+  triggers:
+    - trigger: event
+      event_type: my_button_pressed
+  actions:
+    - action: climate_profiles.save_as_profile
+      target:
+        entity_id: sensor.wohnzimmer_klimaprofil
+      data:
+        name: "Gesichert {{ now().strftime('%d.%m. %H:%M') }}"
+        color: "#f59e0b"

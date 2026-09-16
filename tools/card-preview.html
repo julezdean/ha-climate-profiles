@@ -1,0 +1,365 @@
+<!doctype html>
+<!--
+  Offline preview harness for climate-profile-card.js.
+
+  It stubs the few Home Assistant elements the card uses (ha-card, ha-icon)
+  and feeds it a fake `hass` object, so the card can be looked at - and
+  screenshotted for the README - without a running Home Assistant.
+
+  Usage: see docs/screenshots.md
+-->
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Climate Profile Card – Preview</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: nowrap;
+        justify-content: center;
+        align-items: flex-start;
+        font-family: Roboto, -apple-system, "Segoe UI", sans-serif;
+        background: #e9eef3;
+      }
+      /* tools/make_screenshots.py clips to #stage, so it must hug the cards. */
+      #stage { display: flex; align-items: stretch; width: max-content; }
+      .frame { width: 420px; padding: 20px; box-sizing: content-box; }
+      .frame[hidden] { display: none; }
+      .frame h2 {
+        margin: 0 0 12px;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        opacity: 0.6;
+      }
+      body.shot .frame h2 { display: none; }
+      #measured {
+        position: fixed;
+        left: -9999px;
+        top: 0;
+      }
+      /* Home Assistant's default light theme variables */
+      .light {
+        background: #f2f4f7;
+        color: #212121;
+        --card-background-color: #ffffff;
+        --primary-text-color: #212121;
+        --secondary-text-color: #727272;
+        --divider-color: rgba(0, 0, 0, 0.12);
+        --primary-color: #03a9f4;
+        --error-color: #db4437;
+        --rgb-error-color: 219, 68, 55;
+        --rgb-primary-text-color: 33, 33, 33;
+        --ha-card-border-radius: 16px;
+      }
+      /* Home Assistant's default dark theme variables */
+      .dark {
+        background: #111417;
+        color: #e1e1e1;
+        --card-background-color: #1c1f23;
+        --primary-text-color: #e1e1e1;
+        --secondary-text-color: #9b9b9b;
+        --divider-color: rgba(225, 225, 225, 0.12);
+        --primary-color: #03a9f4;
+        --error-color: #ef5350;
+        --rgb-error-color: 239, 83, 80;
+        --rgb-primary-text-color: 225, 225, 225;
+        --ha-card-border-radius: 16px;
+      }
+      .dark h2 { color: #e1e1e1; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div class="frame light" id="frame-light"><h2>Light</h2><div id="light"></div></div>
+      <div class="frame dark" id="frame-dark"><h2>Dark</h2><div id="dark"></div></div>
+    </div>
+    <span id="measured">0</span>
+
+    <script>
+      /* --- stubs for the Home Assistant elements the card uses --- */
+      class HaCard extends HTMLElement {
+        connectedCallback() {
+          if (this._done) return;
+          this._done = true;
+          const style = document.createElement("style");
+          style.textContent = `:host{display:block;background:var(--card-background-color,#fff);
+            border-radius:var(--ha-card-border-radius,16px);
+            box-shadow:0 2px 8px rgba(0,0,0,.14);}`;
+          const shadow = this.attachShadow({ mode: "open" });
+          shadow.append(style, document.createElement("slot"));
+        }
+      }
+      customElements.define("ha-card", HaCard);
+
+      /* Inline SVG rather than an icon font: the real ha-icon lives inside the
+         card's shadow DOM, where a document level stylesheet would not apply. */
+      class HaIcon extends HTMLElement {
+        static get observedAttributes() { return ["icon"]; }
+        connectedCallback() { this._render(); }
+        attributeChangedCallback() { this._render(); }
+        _render() {
+          const name = (this.getAttribute("icon") || "").replace(/^mdi:/, "");
+          const path = (window.MDI_PATHS || {})[name];
+          if (!path) console.warn("preview: missing icon", name);
+          this.style.display = "inline-flex";
+          this.style.alignItems = "center";
+          this.style.justifyContent = "center";
+          this.style.width = "var(--mdc-icon-size, 24px)";
+          this.style.height = "var(--mdc-icon-size, 24px)";
+          this.innerHTML = `<svg viewBox="0 0 24 24" width="100%" height="100%"
+            fill="currentColor" aria-hidden="true"><path d="${path || ""}"></path></svg>`;
+        }
+      }
+      customElements.define("ha-icon", HaIcon);
+    </script>
+
+    <script src="./mdi-paths.js"></script>
+    <script src="../custom_components/climate_profiles/frontend/climate-profile-card.js"></script>
+
+    <script>
+      /* --- a fake Home Assistant --- */
+      const PROFILES = [
+        { id: "p1", name: "Aus", color: "#64748b", icon: "mdi:power", order: 0,
+          protected: true, values: { hvac_mode: "off" } },
+        { id: "p2", name: "Away", color: "#3b82f6", icon: null, order: 1,
+          protected: false,
+          values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
+                    fan_mode: "auto", display: "off", silent: "off" } },
+        { id: "p3", name: "Komfort", color: "#22c55e", icon: null, order: 2,
+          values: { hvac_mode: "cool", temperature: 24, swing_mode: "off",
+                    fan_mode: "auto", display: "off", silent: "off" } },
+        { id: "p4", name: "Komfort+", color: "#10b981", icon: null, order: 3,
+          values: { hvac_mode: "cool", temperature: 22, swing_mode: "off",
+                    fan_mode: "auto", display: "off", silent: "off" } },
+        { id: "p5", name: "Nacht", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,
+          values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
+                    display: "off", silent: "on" } },
+        { id: "p6", name: "Max", color: "#ef4444", icon: null, order: 5,
+          values: { hvac_mode: "cool", temperature: 16, swing_mode: "vertical",
+                    fan: 100, display: "off", silent: "off" } },
+      ];
+
+      const DE = {
+        "component.climate.entity_component._.state.off": "Aus",
+        "component.climate.entity_component._.state.cool": "Kühlen",
+        "component.climate.entity_component._.state.heat": "Heizen",
+        "component.climate.entity_component._.state.dry": "Trocknen",
+        "component.climate.entity_component._.state.fan_only": "Nur Lüfter",
+        "component.climate.entity_component._.state.auto": "Automatik",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.auto": "Automatik",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.silent": "Leise",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.low": "Niedrig",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.medium": "Mittel",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.high": "Hoch",
+        "component.climate.entity_component._.state_attributes.fan_mode.state.full": "Maximum",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.off": "Aus",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.vertical": "Vertikal",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.horizontal": "Horizontal",
+        "component.climate.entity_component._.state_attributes.swing_mode.state.both": "Beide",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.heating": "Heizt",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.cooling": "Kühlt",
+        "component.climate.entity_component._.state_attributes.hvac_action.state.idle": "Bereit",
+      };
+
+      function buildHass(overrides = {}) {
+        const state = {
+          hvac_mode: "cool",
+          temperature: 24,
+          fan_mode: "auto",
+          swing_mode: "off",
+          fan: 42,
+          display: "off",
+          silent: "off",
+          active_profile: "Komfort",
+          active_profile_id: "p3",
+          active_profile_color: "#22c55e",
+          applying: false,
+          changed_values: [],
+          last_matched_profile_id: "p3",
+          ...overrides,
+        };
+
+        return {
+          language: "de",
+          config: { unit_system: { temperature: "°C" } },
+          localize: (key) => DE[key] || "",
+          callService: async (domain, service, data) => {
+            console.log("callService", domain, service, data);
+          },
+          states: {
+            "sensor.wohnzimmer_klimaprofil": {
+              entity_id: "sensor.wohnzimmer_klimaprofil",
+              state: state.active_profile,
+              attributes: {
+                friendly_name: "Wohnzimmer",
+                active_profile: state.active_profile,
+                active_profile_id: state.active_profile_id,
+                active_profile_color: state.active_profile_color,
+                applying: state.applying,
+                changed_values: state.changed_values,
+                last_matched_profile_id: state.last_matched_profile_id,
+                profiles: PROFILES,
+                custom_profile: { id: "__custom__", name: "Benutzerdefiniert", color: "#78909c" },
+                current_values: {},
+                capabilities: {
+                  hvac_modes: ["off", "cool", "dry", "fan_only", "heat", "auto"],
+                  fan_modes: ["auto", "silent", "low", "medium", "high", "full"],
+                  swing_modes: ["off", "vertical", "horizontal", "both"],
+                  min_temp: 16, max_temp: 30, target_temp_step: 1,
+                  fan_min: 1, fan_max: 100, fan_step: 1,
+                },
+                entities: {
+                  climate: "climate.wohnzimmer",
+                  fan: "number.wohnzimmer_luftergeschwindigkeit",
+                  display: "switch.wohnzimmer_gerateanzeige",
+                  silent: "switch.wohnzimmer_flustermodus",
+                },
+              },
+            },
+            "climate.wohnzimmer": {
+              entity_id: "climate.wohnzimmer",
+              state: state.hvac_mode,
+              attributes: {
+                friendly_name: "Wohnzimmer Klimaanlage",
+                temperature: state.temperature,
+                current_temperature: 25.4,
+                hvac_action: state.hvac_mode === "off" ? "off" : "cooling",
+                fan_mode: state.fan_mode,
+                swing_mode: state.swing_mode,
+                hvac_modes: ["off", "cool", "dry", "fan_only", "heat", "auto"],
+                fan_modes: ["auto", "silent", "low", "medium", "high", "full"],
+                swing_modes: ["off", "vertical", "horizontal", "both"],
+                min_temp: 16, max_temp: 30, target_temp_step: 1,
+              },
+            },
+            "number.wohnzimmer_luftergeschwindigkeit": {
+              entity_id: "number.wohnzimmer_luftergeschwindigkeit",
+              state: String(state.fan),
+              attributes: { min: 1, max: 100, step: 1, friendly_name: "Lüftergeschwindigkeit" },
+            },
+            "switch.wohnzimmer_gerateanzeige": {
+              entity_id: "switch.wohnzimmer_gerateanzeige",
+              state: state.display,
+              attributes: { friendly_name: "Geräteanzeige" },
+            },
+            "switch.wohnzimmer_flustermodus": {
+              entity_id: "switch.wohnzimmer_flustermodus",
+              state: state.silent,
+              attributes: { friendly_name: "Flüstermodus" },
+            },
+          },
+        };
+      }
+
+      /* A radiator thermostat: no fan, no swing, no extra switches, half
+         degree steps and a much wider range. The card has to shrink to it. */
+      const HEATING_PROFILES = [
+        { id: "h1", name: "Aus", color: "#64748b", icon: "mdi:power", order: 0,
+          values: { hvac_mode: "off" } },
+        { id: "h2", name: "Absenkung", color: "#3b82f6", icon: null, order: 1,
+          values: { hvac_mode: "heat", temperature: 17 } },
+        { id: "h3", name: "Komfort", color: "#ef4444", icon: null, order: 2,
+          values: { hvac_mode: "heat", temperature: 21.5 } },
+        { id: "h4", name: "Nacht", color: "#8b5cf6", icon: "mdi:weather-night", order: 3,
+          values: { hvac_mode: "heat", temperature: 19 } },
+      ];
+
+      function asHeating(hass) {
+        const sensor = hass.states["sensor.wohnzimmer_klimaprofil"];
+        const attrs = sensor.attributes;
+        attrs.friendly_name = "Heizung Wohnzimmer";
+        attrs.profiles = HEATING_PROFILES;
+        attrs.active_profile = "Komfort";
+        attrs.active_profile_id = "h3";
+        attrs.active_profile_color = "#ef4444";
+        attrs.entities = {
+          climate: "climate.heizung_wohnzimmer",
+          fan: null,
+          display: null,
+          silent: null,
+        };
+        attrs.capabilities = {
+          hvac_modes: ["off", "heat", "auto"],
+          fan_modes: [],
+          swing_modes: [],
+          min_temp: 5,
+          max_temp: 35,
+          target_temp_step: 0.5,
+          fan_min: null,
+          fan_max: null,
+          fan_step: 1,
+        };
+        sensor.state = "Komfort";
+
+        delete hass.states["climate.wohnzimmer"];
+        delete hass.states["number.wohnzimmer_luftergeschwindigkeit"];
+        delete hass.states["switch.wohnzimmer_gerateanzeige"];
+        delete hass.states["switch.wohnzimmer_flustermodus"];
+
+        hass.states["climate.heizung_wohnzimmer"] = {
+          entity_id: "climate.heizung_wohnzimmer",
+          state: "heat",
+          attributes: {
+            friendly_name: "Heizung Wohnzimmer",
+            temperature: 21.5,
+            current_temperature: 20.2,
+            hvac_action: "heating",
+            hvac_modes: ["off", "heat", "auto"],
+            min_temp: 5,
+            max_temp: 35,
+            target_temp_step: 0.5,
+          },
+        };
+        return hass;
+      }
+
+      const DEVICES = { ac: (hass) => hass, heating: asHeating };
+
+      const params = new URLSearchParams(location.search);
+      const overrides = params.get("state")
+        ? JSON.parse(decodeURIComponent(params.get("state")))
+        : {};
+
+      const theme = params.get("theme") || "both";
+      const device = DEVICES[params.get("device") || "ac"] || DEVICES.ac;
+      const shot = params.get("shot") === "1";
+      if (shot) document.body.classList.add("shot");
+
+      for (const id of ["light", "dark"]) {
+        if (theme !== "both" && theme !== id) {
+          document.getElementById(`frame-${id}`).hidden = true;
+          continue;
+        }
+        const card = document.createElement("climate-profile-card");
+        card.setConfig({
+          type: "custom:climate-profile-card",
+          entity: "sensor.wohnzimmer_klimaprofil",
+          ...(params.get("card") ? JSON.parse(decodeURIComponent(params.get("card"))) : {}),
+        });
+        card.hass = device(buildHass(overrides));
+        document.getElementById(id).appendChild(card);
+      }
+      if (theme === "dark") document.body.style.background = "#111417";
+
+      window.setCardState = (o) => {
+        document.querySelectorAll("climate-profile-card").forEach((c) => {
+          c.hass = device(buildHass(o));
+        });
+      };
+
+      /* tools/make-screenshots.sh reads this back via --dump-dom, so the
+         window height never has to be guessed. */
+      const publishHeight = () => {
+        document.getElementById("measured").textContent = String(
+          Math.ceil(document.documentElement.scrollHeight)
+        );
+      };
+      requestAnimationFrame(() => requestAnimationFrame(publishHeight));
+      publishHeight();
+    </script>
+  </body>
+</html>

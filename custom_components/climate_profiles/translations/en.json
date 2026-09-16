@@ -1,0 +1,258 @@
+{
+  "title": "Climate Profiles",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Climate device",
+        "description": "Pick the air conditioner you want to control with profiles.",
+        "data": {
+          "name": "Name",
+          "climate_entity": "Climate entity"
+        },
+        "data_description": {
+          "name": "Used for the device and the entity names, e.g. \"Living room\".",
+          "climate_entity": "Supported modes, temperature range and step width are read from this entity."
+        }
+      },
+      "entities": {
+        "title": "Optional entities",
+        "description": "Many air conditioners expose extra controls. Anything you leave empty is simply not offered - neither in profiles nor on the card.",
+        "data": {
+          "fan_entity": "Fan speed (number)",
+          "display_entity": "Display (switch)",
+          "silent_entity": "Silent mode (switch)"
+        }
+      },
+      "profiles": {
+        "title": "Profiles",
+        "description": "A starter set is built from what your device actually supports. You can rename, change, reorder and delete everything afterwards.",
+        "data": {
+          "create_default_profiles": "Create starter profiles"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "This entity does not exist (any more)."
+    },
+    "abort": {
+      "already_configured": "This climate entity is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Climate Profiles",
+        "menu_options": {
+          "entities": "Optional entities",
+          "add_profile": "Add profile",
+          "edit_profile": "Edit profile",
+          "reorder": "Change order",
+          "delete_profile": "Delete profiles",
+          "custom_name": "Rename \"custom\""
+        }
+      },
+      "entities": {
+        "title": "Optional entities",
+        "description": "Clear a field to stop using that function.",
+        "data": {
+          "fan_entity": "Fan speed (number)",
+          "display_entity": "Display (switch)",
+          "silent_entity": "Silent mode (switch)"
+        }
+      },
+      "add_profile": {
+        "title": "New profile",
+        "description": "Only fill in what this profile should change. Empty fields are left untouched when the profile is applied.",
+        "data": {
+          "name": "Name",
+          "color": "Colour",
+          "icon": "Icon",
+          "hvac_mode": "Mode",
+          "temperature": "Temperature",
+          "fan_mode": "Fan mode",
+          "swing_mode": "Swing mode",
+          "fan": "Fan speed",
+          "display": "Display",
+          "silent": "Silent mode",
+          "protected": "Write protected"
+        }
+      },
+      "edit_profile": {
+        "title": "Edit profile",
+        "data": {
+          "id": "Profile"
+        }
+      },
+      "edit_values": {
+        "title": "Edit {profile}",
+        "description": "Clear a field to remove that value from the profile.",
+        "data": {
+          "name": "Name",
+          "color": "Colour",
+          "icon": "Icon",
+          "hvac_mode": "Mode",
+          "temperature": "Temperature",
+          "fan_mode": "Fan mode",
+          "swing_mode": "Swing mode",
+          "fan": "Fan speed",
+          "display": "Display",
+          "silent": "Silent mode",
+          "protected": "Write protected"
+        }
+      },
+      "delete_profile": {
+        "title": "Delete profiles",
+        "data": {
+          "selected": "Profiles"
+        }
+      },
+      "reorder": {
+        "title": "Change order",
+        "description": "Pick the profiles one after another in the order you want. The first profile that matches the current state wins. Profiles you leave out keep their position at the end.",
+        "data": {
+          "order": "Order"
+        }
+      },
+      "custom_name": {
+        "title": "Rename \"custom\"",
+        "description": "Shown whenever the current state matches none of your profiles.",
+        "data": {
+          "custom_profile_name": "Name"
+        }
+      }
+    },
+    "error": {
+      "invalid_profile": "This profile could not be saved. Please check name and values."
+    }
+  },
+  "selector": {
+    "on_off": {
+      "options": {
+        "on": "On",
+        "off": "Off"
+      }
+    },
+    "value_keys": {
+      "options": {
+        "hvac_mode": "Mode",
+        "temperature": "Temperature",
+        "swing_mode": "Swing mode",
+        "fan_mode": "Fan mode",
+        "fan": "Fan speed",
+        "display": "Display",
+        "silent": "Silent mode"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "active_profile": {
+        "name": "Climate profile"
+      }
+    },
+    "select": {
+      "profile": {
+        "name": "Profile"
+      }
+    }
+  },
+  "services": {
+    "apply_profile": {
+      "name": "Apply profile",
+      "description": "Applies a stored profile. Only the values the profile defines are written; everything else keeps its current value.",
+      "fields": {
+        "profile": {
+          "name": "Profile",
+          "description": "Name or id of the profile."
+        }
+      }
+    },
+    "set_value": {
+      "name": "Set value",
+      "description": "Writes individual values and re-evaluates which profile that state corresponds to.",
+      "fields": {
+        "hvac_mode": {
+          "name": "Mode",
+          "description": "One of the modes the device supports."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature."
+        },
+        "swing_mode": {
+          "name": "Swing mode",
+          "description": "One of the swing modes the device supports."
+        },
+        "fan_mode": {
+          "name": "Fan mode",
+          "description": "One of the fan modes the device supports."
+        },
+        "fan": {
+          "name": "Fan speed",
+          "description": "Value for the configured number entity."
+        },
+        "display": {
+          "name": "Display",
+          "description": "Turns the display on or off."
+        },
+        "silent": {
+          "name": "Silent mode",
+          "description": "Turns silent mode on or off."
+        }
+      }
+    },
+    "capture_profile": {
+      "name": "Capture into profile",
+      "description": "Writes the current state into a stored profile. Values the profile already defines are updated; a value you changed by hand is added.",
+      "fields": {
+        "profile": {
+          "name": "Profile",
+          "description": "Name or id. Defaults to the profile that matched most recently."
+        },
+        "values": {
+          "name": "Values",
+          "description": "Capture only these values instead of deciding automatically."
+        }
+      }
+    },
+    "save_as_profile": {
+      "name": "Save as new profile",
+      "description": "Stores the current state as a new profile at the end of the list.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Name of the new profile."
+        },
+        "color": {
+          "name": "Colour",
+          "description": "Hex colour, e.g. #3b82f6."
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "Optional icon."
+        },
+        "values": {
+          "name": "Values",
+          "description": "Store only these values instead of the whole state."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_profile": {
+      "message": "Unknown profile \"{profile}\". Available profiles: {known}."
+    },
+    "no_capture_target": {
+      "message": "There is no profile to capture into. No profile has matched since the last restart, so name the profile explicitly."
+    },
+    "profile_protected": {
+      "message": "The profile \"{profile}\" is write protected. Remove the protection in the options, or save the state as a new profile."
+    },
+    "profile_needs_a_name": {
+      "message": "A new profile needs a name."
+    },
+    "nothing_to_capture": {
+      "message": "None of the configured entities currently reports a usable value."
+    }
+  }
+}

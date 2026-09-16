@@ -1,0 +1,49 @@
+# Lovelace examples for the Climate Profile Card.
+# The card is registered automatically - no resource entry needed.
+
+# --- minimal: everything comes from the integration -------------------------
+type: custom:climate-profile-card
+entity: sensor.wohnzimmer_klimaprofil
+
+---
+# --- with options -----------------------------------------------------------
+type: custom:climate-profile-card
+entity: sensor.wohnzimmer_klimaprofil
+name: Wohnzimmer            # overrides the entity's friendly name
+profile_layout: auto        # auto | grid | scroll
+show_temperature: true
+show_hvac: true
+show_fan_mode: true
+show_swing: true
+show_fan: true
+show_display: true
+show_silent: true
+
+---
+# --- a compact card: profiles and temperature only ---------------------------
+type: custom:climate-profile-card
+entity: sensor.schlafzimmer_klimaprofil
+show_hvac: false
+show_fan_mode: false
+show_swing: false
+show_fan: false
+show_display: false
+show_silent: false
+
+---
+# --- several devices next to each other --------------------------------------
+type: grid
+columns: 2
+square: false
+cards:
+  - type: custom:climate-profile-card
+    entity: sensor.wohnzimmer_klimaprofil
+  - type: custom:climate-profile-card
+    entity: sensor.schlafzimmer_klimaprofil
+
+---
+# --- without the custom card: the select entity works on its own -------------
+type: entities
+entities:
+  - entity: select.wohnzimmer_profil
+  - entity: sensor.wohnzimmer_klimaprofil

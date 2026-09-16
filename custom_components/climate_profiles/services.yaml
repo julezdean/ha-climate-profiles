@@ -1,0 +1,116 @@
+apply_profile:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor
+  fields:
+    profile:
+      required: true
+      example: Komfort
+      selector:
+        text:
+
+set_value:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor
+  fields:
+    hvac_mode:
+      example: cool
+      selector:
+        text:
+    temperature:
+      example: 24
+      selector:
+        number:
+          min: 5
+          max: 35
+          step: 0.5
+          mode: box
+          unit_of_measurement: "°C"
+    swing_mode:
+      example: "off"
+      selector:
+        text:
+    fan_mode:
+      example: auto
+      selector:
+        text:
+    fan:
+      example: 100
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: box
+    display:
+      example: false
+      selector:
+        boolean:
+    silent:
+      example: true
+      selector:
+        boolean:
+
+capture_profile:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor
+  fields:
+    profile:
+      example: Komfort
+      selector:
+        text:
+    values:
+      example: '["temperature"]'
+      selector:
+        select:
+          multiple: true
+          mode: list
+          translation_key: value_keys
+          options:
+            - hvac_mode
+            - temperature
+            - swing_mode
+            - fan_mode
+            - fan
+            - display
+            - silent
+
+save_as_profile:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor
+  fields:
+    name:
+      required: true
+      example: Mittagshitze
+      selector:
+        text:
+    color:
+      example: "#3b82f6"
+      selector:
+        text:
+    icon:
+      example: mdi:weather-sunny
+      selector:
+        icon:
+    values:
+      example: '["temperature"]'
+      selector:
+        select:
+          multiple: true
+          mode: list
+          translation_key: value_keys
+          options:
+            - hvac_mode
+            - temperature
+            - swing_mode
+            - fan_mode
+            - fan
+            - display
+            - silent

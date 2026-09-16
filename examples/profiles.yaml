@@ -1,0 +1,71 @@
+# The profile set from the original YAML package, as the integration stores it
+# in the config entry's options. For reference only - profiles are configured
+# in the UI (Settings -> Devices & services -> Climate Profiles -> Configure),
+# not in YAML. Values you do not list are never touched.
+
+profiles:
+  - id: 0f2c9a1e6b754f0a9f1d2c3b4a5e6f70
+    name: Aus
+    color: "#64748b"
+    icon: mdi:power
+    values:
+      hvac_mode: "off"
+
+  - id: 1a2b3c4d5e6f708192a3b4c5d6e7f801
+    name: Away
+    color: "#3b82f6"
+    values:
+      hvac_mode: cool
+      temperature: 26
+      swing_mode: "off"
+      fan_mode: auto
+      display: "off"
+      silent: "off"
+
+  - id: 2b3c4d5e6f708192a3b4c5d6e7f80192
+    name: Komfort
+    color: "#22c55e"
+    values:
+      hvac_mode: cool
+      temperature: 24
+      swing_mode: "off"
+      fan_mode: auto
+      display: "off"
+      silent: "off"
+
+  - id: 3c4d5e6f708192a3b4c5d6e7f8019203
+    name: KomfortPlus
+    color: "#10b981"
+    values:
+      hvac_mode: cool
+      temperature: 22
+      swing_mode: "off"
+      fan_mode: auto
+      display: "off"
+      silent: "off"
+
+  # A partial profile: it says nothing about fan_mode, so applying it leaves
+  # the fan wherever it currently is.
+  - id: 4d5e6f708192a3b4c5d6e7f801920314
+    name: Nacht
+    color: "#8b5cf6"
+    icon: mdi:weather-night
+    values:
+      hvac_mode: cool
+      temperature: 26
+      swing_mode: "off"
+      display: "off"
+      silent: "on"
+
+  - id: 5e6f708192a3b4c5d6e7f80192031425
+    name: Max
+    color: "#ef4444"
+    values:
+      hvac_mode: cool
+      temperature: 16
+      swing_mode: vertical
+      fan: 100
+      display: "off"
+      silent: "off"
+
+custom_profile_name: Benutzerdefiniert

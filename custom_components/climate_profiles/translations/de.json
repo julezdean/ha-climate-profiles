@@ -1,0 +1,258 @@
+{
+  "title": "Climate Profiles",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Klimagerät",
+        "description": "Wähle die Klimaanlage, die du über Profile steuern möchtest.",
+        "data": {
+          "name": "Name",
+          "climate_entity": "Climate Entity"
+        },
+        "data_description": {
+          "name": "Wird für das Device und die Entity-Namen verwendet, z. B. „Wohnzimmer“.",
+          "climate_entity": "Unterstützte Modi, Temperaturbereich und Schrittweite werden aus dieser Entity gelesen."
+        }
+      },
+      "entities": {
+        "title": "Optionale Entities",
+        "description": "Viele Klimageräte bieten zusätzliche Regler an. Was du leer lässt, wird nicht angeboten – weder in Profilen noch in der Card.",
+        "data": {
+          "fan_entity": "Lüftergeschwindigkeit (number)",
+          "display_entity": "Geräteanzeige (switch)",
+          "silent_entity": "Flüstermodus (switch)"
+        }
+      },
+      "profiles": {
+        "title": "Profile",
+        "description": "Ein Startsatz wird aus dem gebaut, was dein Gerät tatsächlich unterstützt. Umbenennen, ändern, sortieren und löschen kannst du danach jederzeit.",
+        "data": {
+          "create_default_profiles": "Startprofile anlegen"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "Diese Entity gibt es (nicht mehr)."
+    },
+    "abort": {
+      "already_configured": "Diese Climate Entity ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Climate Profiles",
+        "menu_options": {
+          "entities": "Optionale Entities",
+          "add_profile": "Profil hinzufügen",
+          "edit_profile": "Profil bearbeiten",
+          "reorder": "Reihenfolge ändern",
+          "delete_profile": "Profile löschen",
+          "custom_name": "„Benutzerdefiniert“ umbenennen"
+        }
+      },
+      "entities": {
+        "title": "Optionale Entities",
+        "description": "Ein Feld leeren heißt: diese Funktion wird nicht mehr verwendet.",
+        "data": {
+          "fan_entity": "Lüftergeschwindigkeit (number)",
+          "display_entity": "Geräteanzeige (switch)",
+          "silent_entity": "Flüstermodus (switch)"
+        }
+      },
+      "add_profile": {
+        "title": "Neues Profil",
+        "description": "Trag nur ein, was dieses Profil ändern soll. Leere Felder bleiben beim Anwenden unangetastet.",
+        "data": {
+          "name": "Name",
+          "color": "Farbe",
+          "icon": "Icon",
+          "hvac_mode": "Modus",
+          "temperature": "Temperatur",
+          "fan_mode": "Lüftermodus",
+          "swing_mode": "Swing-Modus",
+          "fan": "Lüftergeschwindigkeit",
+          "display": "Geräteanzeige",
+          "silent": "Flüstermodus",
+          "protected": "Schreibgeschützt"
+        }
+      },
+      "edit_profile": {
+        "title": "Profil bearbeiten",
+        "data": {
+          "id": "Profil"
+        }
+      },
+      "edit_values": {
+        "title": "{profile} bearbeiten",
+        "description": "Ein Feld leeren entfernt diesen Wert aus dem Profil.",
+        "data": {
+          "name": "Name",
+          "color": "Farbe",
+          "icon": "Icon",
+          "hvac_mode": "Modus",
+          "temperature": "Temperatur",
+          "fan_mode": "Lüftermodus",
+          "swing_mode": "Swing-Modus",
+          "fan": "Lüftergeschwindigkeit",
+          "display": "Geräteanzeige",
+          "silent": "Flüstermodus",
+          "protected": "Schreibgeschützt"
+        }
+      },
+      "delete_profile": {
+        "title": "Profile löschen",
+        "data": {
+          "selected": "Profile"
+        }
+      },
+      "reorder": {
+        "title": "Reihenfolge ändern",
+        "description": "Wähle die Profile nacheinander in der gewünschten Reihenfolge aus. Das erste Profil, das zum aktuellen Zustand passt, gewinnt. Nicht gewählte Profile bleiben hinten stehen.",
+        "data": {
+          "order": "Reihenfolge"
+        }
+      },
+      "custom_name": {
+        "title": "„Benutzerdefiniert“ umbenennen",
+        "description": "Wird angezeigt, sobald der aktuelle Zustand zu keinem deiner Profile passt.",
+        "data": {
+          "custom_profile_name": "Name"
+        }
+      }
+    },
+    "error": {
+      "invalid_profile": "Dieses Profil konnte nicht gespeichert werden. Prüfe Name und Werte."
+    }
+  },
+  "selector": {
+    "on_off": {
+      "options": {
+        "on": "An",
+        "off": "Aus"
+      }
+    },
+    "value_keys": {
+      "options": {
+        "hvac_mode": "Modus",
+        "temperature": "Temperatur",
+        "swing_mode": "Swing-Modus",
+        "fan_mode": "Lüftermodus",
+        "fan": "Lüftergeschwindigkeit",
+        "display": "Geräteanzeige",
+        "silent": "Flüstermodus"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "active_profile": {
+        "name": "Klimaprofil"
+      }
+    },
+    "select": {
+      "profile": {
+        "name": "Profil"
+      }
+    }
+  },
+  "services": {
+    "apply_profile": {
+      "name": "Profil anwenden",
+      "description": "Wendet ein gespeichertes Profil an. Es werden nur die Werte geschrieben, die das Profil definiert – alles andere bleibt unverändert.",
+      "fields": {
+        "profile": {
+          "name": "Profil",
+          "description": "Name oder ID des Profils."
+        }
+      }
+    },
+    "set_value": {
+      "name": "Wert setzen",
+      "description": "Schreibt einzelne Werte und prüft anschließend neu, welchem Profil dieser Zustand entspricht.",
+      "fields": {
+        "hvac_mode": {
+          "name": "Modus",
+          "description": "Einer der Modi, die das Gerät unterstützt."
+        },
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Zieltemperatur."
+        },
+        "swing_mode": {
+          "name": "Swing-Modus",
+          "description": "Einer der Swing-Modi, die das Gerät unterstützt."
+        },
+        "fan_mode": {
+          "name": "Lüftermodus",
+          "description": "Einer der Lüftermodi, die das Gerät unterstützt."
+        },
+        "fan": {
+          "name": "Lüftergeschwindigkeit",
+          "description": "Wert für die konfigurierte Number Entity."
+        },
+        "display": {
+          "name": "Geräteanzeige",
+          "description": "Schaltet die Anzeige ein oder aus."
+        },
+        "silent": {
+          "name": "Flüstermodus",
+          "description": "Schaltet den Flüstermodus ein oder aus."
+        }
+      }
+    },
+    "capture_profile": {
+      "name": "In Profil übernehmen",
+      "description": "Schreibt den aktuellen Zustand in ein gespeichertes Profil. Werte, die das Profil bereits definiert, werden aktualisiert; ein von Hand geänderter Wert kommt hinzu.",
+      "fields": {
+        "profile": {
+          "name": "Profil",
+          "description": "Name oder ID. Ohne Angabe das Profil, das zuletzt gepasst hat."
+        },
+        "values": {
+          "name": "Werte",
+          "description": "Nur diese Werte übernehmen, statt automatisch zu entscheiden."
+        }
+      }
+    },
+    "save_as_profile": {
+      "name": "Als neues Profil sichern",
+      "description": "Speichert den aktuellen Zustand als neues Profil am Ende der Liste.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Name des neuen Profils."
+        },
+        "color": {
+          "name": "Farbe",
+          "description": "Hex-Farbe, z. B. #3b82f6."
+        },
+        "icon": {
+          "name": "Icon",
+          "description": "Optionales Icon."
+        },
+        "values": {
+          "name": "Werte",
+          "description": "Nur diese Werte speichern, statt den ganzen Zustand."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_profile": {
+      "message": "Unbekanntes Profil „{profile}“. Verfügbare Profile: {known}."
+    },
+    "no_capture_target": {
+      "message": "Es gibt kein Profil, in das übernommen werden könnte. Seit dem letzten Neustart hat kein Profil gepasst – gib das Profil ausdrücklich an."
+    },
+    "profile_protected": {
+      "message": "Das Profil „{profile}“ ist schreibgeschützt. Hebe den Schutz in den Optionen auf oder sichere den Zustand als neues Profil."
+    },
+    "profile_needs_a_name": {
+      "message": "Ein neues Profil braucht einen Namen."
+    },
+    "nothing_to_capture": {
+      "message": "Keine der konfigurierten Entities meldet gerade einen brauchbaren Wert."
+    }
+  }
+}
