@@ -56,6 +56,8 @@ Assistant. By hand it is the same thing:
 The Lovelace card is registered automatically. You do not have to add a
 resource by hand.
 
+What changed in each version is in the [changelog](CHANGELOG.md).
+
 ## Setup
 
 **Settings → Devices & services → Add integration → Climate Profiles**
