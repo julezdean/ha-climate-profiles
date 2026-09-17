@@ -8,32 +8,25 @@ which one is currently active.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-from homeassistant.components import frontend
-from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .coordinator import ClimateProfilesConfigEntry, ClimateProfilesCoordinator
+from .frontend import async_register_card, async_remove_card
 from .models import EntityMap, ProfileError
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR]
 
-FRONTEND_URL_BASE = f"/{DOMAIN}/frontend"
-CARD_FILENAME = "climate-profile-card.js"
-_FRONTEND_REGISTERED = f"{DOMAIN}_frontend_registered"
-
 
 async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
-    """Register the Lovelace card once, even before the first entry exists."""
-    await _async_register_frontend(hass)
+    """Register the Lovelace card, even before the first entry exists."""
+    await async_register_card(hass)
     return True
 
 
@@ -52,6 +45,10 @@ async def async_setup_entry(
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+    # Reconciled per entry, not once per run: async_setup does not run again
+    # when an entry is added after the last one was removed.
+    await async_register_card(hass)
     return True
 
 
@@ -81,40 +78,18 @@ async def async_reload_entry(
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """Serve the Lovelace card and load it automatically.
+async def async_remove_entry(
+    hass: HomeAssistant, entry: ClimateProfilesConfigEntry
+) -> None:
+    """Take the Lovelace resource out with the last entry.
 
-    Users do not have to add a Lovelace resource by hand; the version query
-    string busts the browser cache after an update.
+    Left behind, it would point at a path nothing serves once the integration
+    is uninstalled - and a dead resource looks exactly like a broken card.
     """
-    if hass.data.get(_FRONTEND_REGISTERED):
-        return
-    hass.data[_FRONTEND_REGISTERED] = True
-
-    card_path = Path(__file__).parent / "frontend" / CARD_FILENAME
-    if not card_path.is_file():  # pragma: no cover - broken installation
-        _LOGGER.error("Lovelace card is missing at %s", card_path)
-        return
-
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig(
-                f"{FRONTEND_URL_BASE}/{CARD_FILENAME}", str(card_path), False
-            )
-        ]
-    )
-
-    integration = await async_get_integration(hass, DOMAIN)
-    url = f"{FRONTEND_URL_BASE}/{CARD_FILENAME}?v={integration.version}"
-
-    # The integration is fully usable without a frontend (entities, services,
-    # automations), so a missing frontend is a note, not a failure.
-    if "frontend" in hass.config.components:
-        frontend.add_extra_js_url(hass, url)
-        _LOGGER.debug("Registered %s at %s", CARD_FILENAME, url)
-    else:
-        _LOGGER.info(
-            "Frontend not loaded - add %s as a Lovelace resource manually if "
-            "you want the card",
-            url,
-        )
+    remaining = [
+        item
+        for item in hass.config_entries.async_entries(DOMAIN)
+        if item.entry_id != entry.entry_id
+    ]
+    if not remaining:
+        await async_remove_card(hass)

@@ -53,8 +53,10 @@ Assistant. By hand it is the same thing:
    `custom_components/climate_profiles` folder out of the repository
 2. restart Home Assistant
 
-The Lovelace card is registered automatically. You do not have to add a
-resource by hand.
+The Lovelace card is registered automatically, as a resource under
+**Settings → Dashboards → Resources** - you do not have to add it by hand. Only
+a dashboard whose resources are declared in YAML owns that list itself; there
+the log says which URL to add.
 
 What changed in each version is in the [changelog](CHANGELOG.md).
 

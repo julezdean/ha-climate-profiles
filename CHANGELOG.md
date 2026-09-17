@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-09-17
+
+### Fixed
+
+- The card is registered as a Lovelace resource instead of through
+  `frontend.add_extra_js_url`. The script tag that call injects lives in the
+  Home Assistant page, and that page is cached by the service worker, per
+  browser and per phone: a client holding an older copy never saw the card and
+  showed "custom element not found" - across restarts, past a hard reload, and
+  looking exactly like a card that is broken rather than one that never
+  arrived. Resources are read from the resource list over the websocket API at
+  runtime, so a cached page no longer decides whether the card exists. The
+  entry is matched by path, so an update replaces it rather than leaving a
+  second one behind, and the last config entry to go takes the resource with
+  it.
+- The card file was checked for existence in the event loop. That check now
+  runs in the executor, like every other file access during setup.
+
 ## [1.0.0] - 2026-09-16
 
 ### Added
