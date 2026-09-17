@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "2.0.0-beta.1";
 
 /* eslint-disable no-console */
 console.info(
@@ -109,7 +109,8 @@ class ClimateProfileCard extends HTMLElement {
     this._signature = "";
     this._pending = new Map(); // key -> { value, until }
     this._tempTimer = null;
-    this._fanTimer = null;
+    //: One debounce timer per slider, keyed by the value it belongs to.
+    this._sliderTimers = {};
     this._busy = 0;
     this._naming = false;
     this._error = null;
@@ -137,13 +138,9 @@ class ClimateProfileCard extends HTMLElement {
       throw new Error("entity must be the `sensor.…` entity of Climate Profiles.");
     }
     this._config = {
-      show_temperature: true,
-      show_hvac: true,
-      show_fan_mode: true,
-      show_swing: true,
-      show_fan: true,
-      show_display: true,
-      show_silent: true,
+      // Everything is shown unless it is hidden, so a value added later needs
+      // no change here and none in the dashboard.
+      hide: [],
       profile_layout: "auto",
       ...config,
     };
@@ -178,9 +175,22 @@ class ClimateProfileCard extends HTMLElement {
     const entities = attrs.entities || {};
     const caps = attrs.capabilities || {};
     const climate = entities.climate ? hass.states[entities.climate] : null;
-    const fan = entities.fan ? hass.states[entities.fan] : null;
-    const display = entities.display ? hass.states[entities.display] : null;
-    const silent = entities.silent ? hass.states[entities.silent] : null;
+
+    // The additional values: the integration says what they are called and how
+    // to draw them, this only reads their state. The card knows no value by
+    // name any more - it only ever sees ids here.
+    const additional = (attrs.additional_values || [])
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((definition) => {
+        const state = hass.states[definition.entity] || null;
+        return {
+          ...definition,
+          state,
+          value: this._readValue(definition, state),
+        };
+      })
+      .filter((value) => value.kind);
 
     const unavailable =
       !climate || ["unavailable", "unknown"].includes(climate.state);
@@ -191,9 +201,7 @@ class ClimateProfileCard extends HTMLElement {
       entities,
       caps,
       climate,
-      fan,
-      display,
-      silent,
+      additional,
       unavailable,
       profiles: attrs.profiles || [],
       custom: attrs.custom_profile || {
@@ -217,11 +225,19 @@ class ClimateProfileCard extends HTMLElement {
       target: this._value("temperature", climate?.attributes.temperature),
       current: climate ? climate.attributes.current_temperature : null,
       action: climate ? climate.attributes.hvac_action : null,
-      fanValue: this._value("fan", fan ? Number(fan.state) : null),
-      displayOn: display ? display.state === "on" : null,
-      silentOn: silent ? silent.state === "on" : null,
       unit: hass.config.unit_system.temperature || "°C",
     };
+  }
+
+  /** Read one additional value's state in the shape its kind needs. */
+  _readValue(definition, state) {
+    if (!state || ["unavailable", "unknown"].includes(state.state)) return null;
+    if (definition.kind === "number") {
+      const number = Number(state.state);
+      return Number.isFinite(number) ? number : null;
+    }
+    if (definition.kind === "boolean") return state.state === "on";
+    return state.state;
   }
 
   /** Optimistic value: what the user just asked for, until the state agrees. */
@@ -247,8 +263,16 @@ class ClimateProfileCard extends HTMLElement {
     this._pending.set(key, { value, until: Date.now() + ms });
   }
 
-  _visible(option, available) {
-    return this._config[option] !== false && Boolean(available);
+  /**
+   * Everything configured is shown unless it is hidden, so a value added later
+   * appears without editing every dashboard. One list over one key space - the
+   * four climate keys and the ids of the additional values, the same mix that
+   * a profile's ``values`` carries.
+   */
+  _visible(key, available) {
+    const hide = this._config.hide;
+    const hidden = Array.isArray(hide) && hide.includes(key);
+    return !hidden && Boolean(available);
   }
 
   /* ---- rendering ---- */
@@ -267,9 +291,12 @@ class ClimateProfileCard extends HTMLElement {
       model.hvacModes.join(","),
       model.fanModes.join(","),
       model.swingModes.join(","),
-      Boolean(model.fan),
-      Boolean(model.display),
-      Boolean(model.silent),
+      // A value added, removed, renamed or repointed changes the controls, so
+      // the card has to be rebuilt rather than repainted.
+      model.additional
+        .map((v) => `${v.id}:${v.name}:${v.kind}:${Boolean(v.state)}`)
+        .join("|"),
+      (this._config.hide || []).join(","),
       this._config.profile_layout,
     ].join("::");
 
@@ -481,7 +508,7 @@ class ClimateProfileCard extends HTMLElement {
     wrap.innerHTML = "";
     this._controls = {};
 
-    if (this._visible("show_hvac", model.hvacModes.length)) {
+    if (this._visible("hvac_mode", model.hvacModes.length)) {
       wrap.appendChild(
         this._segmented({
           key: "hvac_mode",
@@ -499,7 +526,7 @@ class ClimateProfileCard extends HTMLElement {
     row.className = "row";
     let rowUsed = false;
 
-    if (this._visible("show_fan_mode", model.fanModes.length)) {
+    if (this._visible("fan_mode", model.fanModes.length)) {
       row.appendChild(
         this._picker({
           key: "fan_mode",
@@ -516,7 +543,7 @@ class ClimateProfileCard extends HTMLElement {
       );
       rowUsed = true;
     }
-    if (this._visible("show_swing", model.swingModes.length)) {
+    if (this._visible("swing_mode", model.swingModes.length)) {
       row.appendChild(
         this._picker({
           key: "swing_mode",
@@ -535,34 +562,39 @@ class ClimateProfileCard extends HTMLElement {
     }
     if (rowUsed) wrap.appendChild(row);
 
-    if (this._visible("show_fan", model.fan)) {
-      wrap.appendChild(this._slider(model));
-    }
-
+    // The additional values, in their configured order. Which control to draw
+    // follows from the kind, which follows from the entity's domain - nothing
+    // here knows what any single value means.
     const toggles = document.createElement("div");
     toggles.className = "row toggles";
     let togglesUsed = false;
-    if (this._visible("show_display", model.display)) {
-      toggles.appendChild(
-        this._toggle({
-          key: "display",
-          label: this._t("Display"),
-          icon: "mdi:television",
-          onToggle: (on) => this._setValue({ display: on }),
-        })
-      );
-      togglesUsed = true;
-    }
-    if (this._visible("show_silent", model.silent)) {
-      toggles.appendChild(
-        this._toggle({
-          key: "silent",
-          label: this._t("Silent"),
-          icon: "mdi:sleep",
-          onToggle: (on) => this._setValue({ silent: on }),
-        })
-      );
-      togglesUsed = true;
+
+    for (const value of model.additional) {
+      if (!this._visible(value.id, value.state)) continue;
+      if (value.kind === "number") {
+        wrap.appendChild(this._slider(value));
+      } else if (value.kind === "boolean") {
+        toggles.appendChild(
+          this._toggle({
+            key: value.id,
+            label: value.name,
+            icon: value.icon || "mdi:toggle-switch-outline",
+            onToggle: (on) => this._setValue({ [value.id]: on }),
+          })
+        );
+        togglesUsed = true;
+      } else if (value.kind === "option" && (value.options || []).length) {
+        wrap.appendChild(
+          this._picker({
+            key: value.id,
+            label: value.name,
+            icon: value.icon || FALLBACK_ICON,
+            options: value.options,
+            translate: (option) => this._prettify(option),
+            onSelect: (option) => this._setValue({ [value.id]: option }),
+          })
+        );
+      }
     }
     if (togglesUsed) wrap.appendChild(toggles);
   }
@@ -625,7 +657,7 @@ class ClimateProfileCard extends HTMLElement {
     return block;
   }
 
-  _slider(model) {
+  _slider(definition) {
     const block = document.createElement("div");
     block.className = "block";
     block.innerHTML = `
@@ -634,24 +666,28 @@ class ClimateProfileCard extends HTMLElement {
         <output class="slider-value"></output>
       </div>
       <input class="slider" type="range" />`;
-    block.querySelector(".label").textContent = this._t("Fan speed");
+    block.querySelector(".label").textContent = definition.name;
 
+    // The range belongs to the entity, not to us.
     const input = block.querySelector(".slider");
-    input.min = isNum(model.caps.fan_min) ? model.caps.fan_min : 0;
-    input.max = isNum(model.caps.fan_max) ? model.caps.fan_max : 100;
-    input.step = isNum(model.caps.fan_step) && model.caps.fan_step > 0 ? model.caps.fan_step : 1;
-    input.setAttribute("aria-label", this._t("Fan speed"));
+    input.min = isNum(definition.min) ? definition.min : 0;
+    input.max = isNum(definition.max) ? definition.max : 100;
+    input.step = isNum(definition.step) && definition.step > 0 ? definition.step : 1;
+    input.setAttribute("aria-label", definition.name);
 
     input.addEventListener("input", () => {
       const value = Number(input.value);
-      this._setPending("fan", value);
+      this._setPending(definition.id, value);
       this._paintSliderFill(input);
       block.querySelector(".slider-value").textContent = `${formatNumber(value, Number(input.step))}`;
-      clearTimeout(this._fanTimer);
-      this._fanTimer = setTimeout(() => this._setValue({ fan: value }), 500);
+      clearTimeout(this._sliderTimers[definition.id]);
+      this._sliderTimers[definition.id] = setTimeout(
+        () => this._setValue({ [definition.id]: value }),
+        500
+      );
     });
 
-    this._controls.fan = { block, input, kind: "slider" };
+    this._controls[definition.id] = { block, input, kind: "slider" };
     return block;
   }
 
@@ -748,21 +784,26 @@ class ClimateProfileCard extends HTMLElement {
     this._paintGroup("fan_mode", model.fanMode, model.unavailable || !on);
     this._paintGroup("swing_mode", model.swingMode, model.unavailable || !on);
 
-    const fan = this._controls.fan;
-    if (fan) {
-      const value = isNum(model.fanValue) ? model.fanValue : Number(fan.input.min);
-      if (document.activeElement !== fan.input) fan.input.value = value;
-      fan.input.disabled = model.unavailable;
-      fan.block.querySelector(".slider-value").textContent = formatNumber(
-        Number(fan.input.value),
-        Number(fan.input.step)
-      );
-      fan.input.setAttribute("aria-valuetext", `${fan.input.value}`);
-      this._paintSliderFill(fan.input);
+    for (const value of model.additional) {
+      const control = this._controls[value.id];
+      if (!control) continue;
+      const shown = this._value(value.id, value.value);
+      if (control.kind === "slider") {
+        const number = isNum(shown) ? shown : Number(control.input.min);
+        if (document.activeElement !== control.input) control.input.value = number;
+        control.input.disabled = model.unavailable;
+        control.block.querySelector(".slider-value").textContent = formatNumber(
+          Number(control.input.value),
+          Number(control.input.step)
+        );
+        control.input.setAttribute("aria-valuetext", `${control.input.value}`);
+        this._paintSliderFill(control.input);
+      } else if (control.kind === "toggle") {
+        this._paintToggle(value.id, shown, model.unavailable);
+      } else {
+        this._paintGroup(value.id, shown, model.unavailable);
+      }
     }
-
-    this._paintToggle("display", this._value("display", model.displayOn), model.unavailable);
-    this._paintToggle("silent", this._value("silent", model.silentOn), model.unavailable);
 
     this._paintCapture(model);
 
@@ -788,8 +829,14 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     el.captureTitle.textContent = this._t("Changed by hand");
+    // Changed values arrive as keys: four are the climate ones, the rest are
+    // ids only the definitions can name.
     el.captureValues.textContent = changed
-      .map((key) => this._t(VALUE_LABELS[key] || key))
+      .map((key) => {
+        if (CLIMATE_LABELS[key]) return this._t(CLIMATE_LABELS[key]);
+        const value = model.additional.find((item) => item.id === key);
+        return value ? value.name : key;
+      })
       .join(" · ");
 
     const target = model.lastMatched;
@@ -972,14 +1019,13 @@ class ClimateProfileCard extends HTMLElement {
   }
 }
 
-const VALUE_LABELS = {
+//: The four values Home Assistant defines. Everything else is named by the
+//: user, which is why it is not in here.
+const CLIMATE_LABELS = {
   hvac_mode: "Mode",
   temperature: "Temperature",
   swing_mode: "Swing",
   fan_mode: "Fan mode",
-  fan: "Fan speed",
-  display: "Display",
-  silent: "Silent",
 };
 
 const CARD_DE = {
@@ -987,9 +1033,6 @@ const CARD_DE = {
   Mode: "Modus",
   "Fan mode": "Lüftermodus",
   Swing: "Swing",
-  "Fan speed": "Lüftergeschwindigkeit",
-  Display: "Anzeige",
-  Silent: "Flüstermodus",
   On: "An",
   Off: "Aus",
   Currently: "Aktuell",
@@ -1598,29 +1641,89 @@ class ClimateProfileCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    if (this._form) {
+      this._form.hass = hass;
+      this._render();
+    }
+  }
+
+  /**
+   * The switches are built from the sensor's own definitions, so a value the
+   * user added shows up here by itself. They are stored the other way round -
+   * as the list of what to hide - so a value added later is visible without
+   * every dashboard having to be edited.
+   */
+  _values() {
+    const entity = this._config && this._config.entity;
+    const state = entity && this._hass ? this._hass.states[entity] : null;
+    const attrs = state ? state.attributes || {} : {};
+    const climate = [
+      ["temperature", "Temperature"],
+      ["hvac_mode", "Mode"],
+      ["fan_mode", "Fan mode"],
+      ["swing_mode", "Swing"],
+    ];
+    const additional = (attrs.additional_values || [])
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((value) => [value.id, value.name]);
+    return [...climate, ...additional];
+  }
+
+  _schema() {
+    return [
+      ...SCHEMA,
+      {
+        type: "grid",
+        name: "",
+        schema: this._values().map(([key]) => ({
+          name: `show_${key}`,
+          selector: { boolean: {} },
+        })),
+      },
+    ];
+  }
+
+  /** Turn the stored hide list into the switches the form shows. */
+  _data() {
+    const hide = Array.isArray(this._config.hide) ? this._config.hide : [];
+    const data = { ...this._config };
+    delete data.hide;
+    for (const [key] of this._values()) data[`show_${key}`] = !hide.includes(key);
+    return data;
   }
 
   _render() {
-    if (this._form) {
-      this._form.data = this._config;
-      return;
+    const labels = new Map(this._values());
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.hass = this._hass;
+      this._form.computeLabel = (schema) => {
+        if (EDITOR_LABELS[schema.name]) return EDITOR_LABELS[schema.name];
+        const key = String(schema.name).replace(/^show_/, "");
+        return labels.get(key) || schema.name;
+      };
+      this._form.addEventListener("value-changed", (event) => {
+        const value = { ...event.detail.value };
+        const hide = [];
+        for (const [key] of this._values()) {
+          if (value[`show_${key}`] === false) hide.push(key);
+          delete value[`show_${key}`];
+        }
+        if (hide.length) value.hide = hide;
+        else delete value.hide;
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: value },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+      this.appendChild(this._form);
     }
-    this._form = document.createElement("ha-form");
-    this._form.hass = this._hass;
-    this._form.data = this._config;
-    this._form.schema = SCHEMA;
-    this._form.computeLabel = (schema) => EDITOR_LABELS[schema.name] || schema.name;
-    this._form.addEventListener("value-changed", (event) => {
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: event.detail.value },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    });
-    this.appendChild(this._form);
+    this._form.schema = this._schema();
+    this._form.data = this._data();
   }
 }
 
@@ -1644,32 +1747,12 @@ const SCHEMA = [
       },
     },
   },
-  {
-    type: "grid",
-    name: "",
-    schema: [
-      { name: "show_temperature", selector: { boolean: {} } },
-      { name: "show_hvac", selector: { boolean: {} } },
-      { name: "show_fan_mode", selector: { boolean: {} } },
-      { name: "show_swing", selector: { boolean: {} } },
-      { name: "show_fan", selector: { boolean: {} } },
-      { name: "show_display", selector: { boolean: {} } },
-      { name: "show_silent", selector: { boolean: {} } },
-    ],
-  },
 ];
 
 const EDITOR_LABELS = {
   entity: "Climate profile sensor",
   name: "Name (optional)",
   profile_layout: "Profile layout",
-  show_temperature: "Temperature",
-  show_hvac: "Mode",
-  show_fan_mode: "Fan mode",
-  show_swing: "Swing",
-  show_fan: "Fan speed",
-  show_display: "Display",
-  show_silent: "Silent mode",
 };
 
 /* -------------------------------------------------------------------------

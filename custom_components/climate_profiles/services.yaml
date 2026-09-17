@@ -37,22 +37,6 @@ set_value:
       example: auto
       selector:
         text:
-    fan:
-      example: 100
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 1
-          mode: box
-    display:
-      example: false
-      selector:
-        boolean:
-    silent:
-      example: true
-      selector:
-        boolean:
 
 capture_profile:
   target:

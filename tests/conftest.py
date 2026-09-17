@@ -10,10 +10,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from custom_components.climate_profiles.models import (
+    AdditionalValue,
+    AdditionalValueSet,
     Capabilities,
     ClimateProfile,
     EntityMap,
     ProfileSet,
+    Vocabulary,
 )
 
 CLIMATE = "climate.living_room"
@@ -21,11 +24,30 @@ FAN = "number.living_room_fan_speed"
 DISPLAY = "switch.living_room_display"
 SILENT = "switch.living_room_silent"
 
+#: Ids of the additional values used throughout the tests. Production hands out
+#: uuids; an id is just a string, so the tests use speaking ones and stay
+#: readable.
+FAN_ID = "fan"
+DISPLAY_ID = "display"
+SILENT_ID = "silent"
+
 
 @pytest.fixture
-def entities() -> EntityMap:
+def additional() -> AdditionalValueSet:
+    """Return the three additional values of the reference device."""
+    return AdditionalValueSet(
+        (
+            AdditionalValue(id=FAN_ID, name="Fan speed", entity=FAN, order=0),
+            AdditionalValue(id=DISPLAY_ID, name="Display", entity=DISPLAY, order=1),
+            AdditionalValue(id=SILENT_ID, name="Silent", entity=SILENT, order=2),
+        )
+    )
+
+
+@pytest.fixture
+def entities(additional: AdditionalValueSet) -> EntityMap:
     """Return a fully equipped device."""
-    return EntityMap(climate=CLIMATE, fan=FAN, display=DISPLAY, silent=SILENT)
+    return EntityMap(climate=CLIMATE, additional=additional)
 
 
 @pytest.fixture
@@ -44,10 +66,24 @@ def caps() -> Capabilities:
         min_temp=16.0,
         max_temp=30.0,
         temp_step=1.0,
-        fan_min=1.0,
-        fan_max=100.0,
-        fan_step=1.0,
     )
+
+
+#: What the additional entities say about themselves - the coordinator reads
+#: this from their states.
+ADDITIONAL_SPECS = {FAN_ID: {"min": 1.0, "max": 100.0, "step": 1.0}}
+
+
+@pytest.fixture
+def vocab(entities: EntityMap, caps: Capabilities) -> Vocabulary:
+    """Return the vocabulary of a fully equipped device."""
+    return Vocabulary.build(entities, caps, additional_specs=ADDITIONAL_SPECS)
+
+
+@pytest.fixture
+def bare_vocab(bare_entities: EntityMap, caps: Capabilities) -> Vocabulary:
+    """Return the vocabulary of a device with only a climate entity."""
+    return Vocabulary.build(bare_entities, caps)
 
 
 def profile(name: str, values: dict, profile_id: str | None = None) -> ClimateProfile:
@@ -136,19 +172,18 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 @pytest.fixture
 def entry_data() -> dict:
     """Config entry data for a fully equipped device."""
-    from custom_components.climate_profiles.const import (
-        CONF_CLIMATE_ENTITY,
-        CONF_DISPLAY_ENTITY,
-        CONF_FAN_ENTITY,
-        CONF_SILENT_ENTITY,
-    )
+    from custom_components.climate_profiles.const import CONF_CLIMATE_ENTITY
 
-    return {
-        CONF_CLIMATE_ENTITY: CLIMATE,
-        CONF_FAN_ENTITY: FAN,
-        CONF_DISPLAY_ENTITY: DISPLAY,
-        CONF_SILENT_ENTITY: SILENT,
-    }
+    return {CONF_CLIMATE_ENTITY: CLIMATE}
+
+
+def additional_option() -> list[dict]:
+    """Return the additional values as a config entry stores them."""
+    return [
+        {"id": FAN_ID, "name": "Fan speed", "entity": FAN, "order": 0},
+        {"id": DISPLAY_ID, "name": "Display", "entity": DISPLAY, "order": 1},
+        {"id": SILENT_ID, "name": "Silent", "entity": SILENT, "order": 2},
+    ]
 
 
 def set_device_state(

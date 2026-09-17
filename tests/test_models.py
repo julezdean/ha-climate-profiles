@@ -53,9 +53,15 @@ def test_resolve_by_id_and_by_name(profiles):
     assert profiles.resolve("") is None
 
 
-def test_unknown_value_keys_are_rejected():
-    with pytest.raises(ProfileError):
-        ClimateProfile.from_dict({"name": "X", "values": {"turbo": True}})
+def test_unknown_value_keys_survive_storage():
+    """A value whose additional value was deleted must not break the profile.
+
+    Keys cannot be checked here any more: four are the climate ones, the rest
+    are ids this class knows nothing about. The vocabulary drops what is not
+    usable, at the point where it knows.
+    """
+    profile = ClimateProfile.from_dict({"name": "X", "values": {"7f3a": True}})
+    assert profile.values == {"7f3a": True}
 
 
 def test_nameless_profile_is_rejected():
@@ -81,18 +87,14 @@ def test_color_round_trip():
     assert color_to_rgb("#3b82f6") == [59, 130, 246]
 
 
-def test_entity_map_reports_optional_entities():
-    full = EntityMap(
-        climate="climate.x", fan="number.x", display="switch.d", silent="switch.s"
-    )
-    assert full.supports("fan") and full.supports("display") and full.supports("silent")
+def test_entity_map_reports_its_entities(entities, bare_entities):
+    assert entities.entity_for("hvac_mode") == "climate.living_room"
+    assert entities.entity_for("fan") == "number.living_room_fan_speed"
+    assert entities.entity_for("nothing like it") is None
+    assert len(entities.all_entities()) == 4
 
-    bare = EntityMap(climate="climate.x")
-    assert bare.supports("hvac_mode")
-    assert not (
-        bare.supports("fan") or bare.supports("display") or bare.supports("silent")
-    )
-    assert bare.all_entities() == ("climate.x",)
+    assert bare_entities.all_entities() == ("climate.living_room",)
+    assert bare_entities.entity_for("fan") is None
 
 
 def test_entity_map_requires_a_climate_entity():

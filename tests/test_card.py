@@ -80,10 +80,16 @@ async def open_card(base_url):
     async with async_playwright() as play:
         browser = await play.chromium.launch(**launch_options())
 
-        async def factory(state: dict | None = None, device: str = "ac"):
+        async def factory(
+            state: dict | None = None,
+            device: str = "ac",
+            card: dict | None = None,
+        ):
             query = {"theme": "light", "shot": "1", "device": device}
             if state:
                 query["state"] = json.dumps(state)
+            if card:
+                query["card"] = json.dumps(card)
             page = await browser.new_page(viewport={"width": 460, "height": 1200})
             await page.goto(
                 f"{base_url}/tools/card-preview.html?{urllib.parse.urlencode(query)}"
@@ -212,3 +218,51 @@ async def test_a_thermostat_hides_what_it_cannot_do(open_card):
     assert await card.locator(".slider").count() == 0, "no fan slider"
     assert await card.locator(".toggle").count() == 0, "no display/silent toggles"
     assert await card.locator(".segmented").is_visible(), "but the modes are there"
+
+
+# --- additional values -----------------------------------------------------
+
+
+async def test_each_kind_gets_the_control_it_needs(open_card):
+    """The card knows no value by name - only what kind its entity carries."""
+    page = await open_card()
+    card = page.locator("climate-profile-card")
+
+    # A number becomes a slider, carrying the range of its own entity.
+    # The label is upper-cased by the stylesheet, so compare case-insensitively.
+    labels = [
+        text.casefold()
+        for text in await card.locator(".block .label").all_inner_texts()
+    ]
+    assert "fan speed" in labels
+    slider = card.locator("input.slider")
+    assert await slider.get_attribute("min") == "1"
+    assert await slider.get_attribute("max") == "100"
+
+    # Two switches become toggles, named by their definitions.
+    assert await card.locator(".toggle .toggle-label").all_inner_texts() == [
+        "Display",
+        "Silent",
+    ]
+
+    # A select becomes a group of options - a kind the three fixed fields
+    # could never carry.
+    assert await card.get_by_role("button", name="Boost").count() == 1
+
+
+async def test_hiding_a_value_leaves_it_out(open_card):
+    """Everything is shown unless it is hidden, over one key space."""
+    page = await open_card(card={"hide": ["silent", "swing_mode"]})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".toggle .toggle-label").all_inner_texts() == ["Display"]
+    assert await card.get_by_role("button", name="Vertical").count() == 0
+
+
+async def test_a_device_without_additional_values_shows_none(open_card):
+    """A radiator thermostat has none of them, and no empty controls either."""
+    page = await open_card(device="heating")
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator("input.slider").count() == 0
+    assert await card.locator(".toggle").count() == 0

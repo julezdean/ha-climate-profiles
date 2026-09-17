@@ -11,10 +11,10 @@ def calls_by_key(plan):
     return {call.key: call for call in plan.calls}
 
 
-def test_partial_profile_only_touches_defined_keys(entities, caps, komfort_state):
+def test_partial_profile_only_touches_defined_keys(vocab, komfort_state):
     komfort_state |= {"hvac_mode": "cool", "temperature": 26}
     plan = build_apply_plan(
-        {"hvac_mode": "cool", "temperature": 24}, komfort_state, entities, caps
+        {"hvac_mode": "cool", "temperature": 24}, komfort_state, vocab
     )
     assert [call.key for call in plan.calls] == ["temperature"]
     assert plan.calls[0].domain == "climate"
@@ -22,29 +22,27 @@ def test_partial_profile_only_touches_defined_keys(entities, caps, komfort_state
     assert plan.calls[0].data == {"temperature": 24.0}
 
 
-def test_values_that_already_match_produce_no_call(entities, caps, komfort_state):
+def test_values_that_already_match_produce_no_call(vocab, komfort_state):
     plan = build_apply_plan(
         {"hvac_mode": "cool", "temperature": 24, "fan_mode": "auto"},
         komfort_state,
-        entities,
-        caps,
+        vocab,
     )
     assert plan.calls == ()
 
 
-def test_a_mode_change_re_sends_every_defined_value(entities, caps):
+def test_a_mode_change_re_sends_every_defined_value(vocab):
     """The device resets its attributes on a mode change, so do not trust them."""
     current = {"hvac_mode": "off", "temperature": 24, "fan_mode": "auto"}
     plan = build_apply_plan(
         {"hvac_mode": "cool", "temperature": 24, "fan_mode": "auto"},
         current,
-        entities,
-        caps,
+        vocab,
     )
     assert [call.key for call in plan.calls] == ["hvac_mode", "temperature", "fan_mode"]
 
 
-def test_apply_order_matches_the_original_script(entities, caps):
+def test_apply_order_matches_the_original_script(vocab):
     plan = build_apply_plan(
         {
             "silent": "off",
@@ -56,8 +54,7 @@ def test_apply_order_matches_the_original_script(entities, caps):
             "hvac_mode": "cool",
         },
         {"hvac_mode": "off"},
-        entities,
-        caps,
+        vocab,
     )
     assert [call.key for call in plan.calls] == [
         "hvac_mode",
@@ -70,13 +67,12 @@ def test_apply_order_matches_the_original_script(entities, caps):
     ]
 
 
-def test_each_value_goes_to_its_own_entity(entities, caps):
+def test_each_value_goes_to_its_own_entity(vocab):
     plan = calls_by_key(
         build_apply_plan(
             {"fan": 100, "display": "on", "silent": "off", "temperature": 20},
             {},
-            entities,
-            caps,
+            vocab,
         )
     )
     assert plan["fan"].entity_id == FAN
@@ -86,45 +82,43 @@ def test_each_value_goes_to_its_own_entity(entities, caps):
     assert plan["temperature"].entity_id == CLIMATE
 
 
-def test_optional_entities_are_reported_not_crashed(bare_entities, caps):
+def test_optional_entities_are_reported_not_crashed(bare_vocab):
     plan = build_apply_plan(
         {"hvac_mode": "cool", "fan": 100, "display": "on", "silent": "on"},
         {},
-        bare_entities,
-        caps,
+        bare_vocab,
     )
     assert [call.key for call in plan.calls] == ["hvac_mode"]
     assert set(plan.unsupported) == {"fan", "display", "silent"}
 
 
-def test_unsupported_mode_is_rejected_instead_of_sent(entities, caps):
-    plan = build_apply_plan({"hvac_mode": "heat_cool"}, {}, entities, caps)
+def test_unsupported_mode_is_rejected_instead_of_sent(vocab):
+    plan = build_apply_plan({"hvac_mode": "heat_cool"}, {}, vocab)
     assert plan.calls == ()
     assert plan.unsupported == ("hvac_mode",)
 
 
-def test_service_call_uses_the_devices_own_spelling(entities, caps):
-    plan = build_apply_plan({"fan_mode": "AUTO"}, {}, entities, caps)
+def test_service_call_uses_the_devices_own_spelling(vocab):
+    plan = build_apply_plan({"fan_mode": "AUTO"}, {}, vocab)
     assert plan.calls[0].data == {"fan_mode": "auto"}
 
 
-def test_out_of_range_temperature_is_applied_but_flagged(entities, caps):
+def test_out_of_range_temperature_is_applied_but_flagged(vocab):
     """min/max depend on the hvac mode, so refusing outright would be wrong."""
-    plan = build_apply_plan({"temperature": 5}, {}, entities, caps)
+    plan = build_apply_plan({"temperature": 5}, {}, vocab)
     assert plan.calls[0].data == {"temperature": 5.0}
     assert plan.warnings == ("temperature",)
 
 
-def test_force_re_sends_everything(entities, caps, komfort_state):
+def test_force_re_sends_everything(vocab, komfort_state):
     plan = build_apply_plan(
         {"hvac_mode": "cool", "temperature": 24},
         komfort_state,
-        entities,
-        caps,
+        vocab,
         force=True,
     )
     assert [call.key for call in plan.calls] == ["hvac_mode", "temperature"]
 
 
-def test_empty_profile_does_nothing(entities, caps, komfort_state):
-    assert build_apply_plan({}, komfort_state, entities, caps).calls == ()
+def test_empty_profile_does_nothing(vocab, komfort_state):
+    assert build_apply_plan({}, komfort_state, vocab).calls == ()

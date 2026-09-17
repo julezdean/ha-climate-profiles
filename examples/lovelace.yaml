@@ -11,24 +11,15 @@ type: custom:climate-profile-card
 entity: sensor.living_room_climate_profile
 name: Living room           # overrides the entity's friendly name
 profile_layout: auto        # auto | grid | scroll
-show_temperature: true
-show_hvac: true
-show_fan_mode: true
-show_swing: true
-show_fan: true
-show_display: true
-show_silent: true
+# Everything is shown unless it is hidden. The list mixes the four climate
+# keys with the ids of your additional values - the editor writes it for you.
+hide: []
 
 ---
 # --- a compact card: profiles and temperature only ---------------------------
 type: custom:climate-profile-card
 entity: sensor.bedroom_climate_profile
-show_hvac: false
-show_fan_mode: false
-show_swing: false
-show_fan: false
-show_display: false
-show_silent: false
+hide: [hvac_mode, fan_mode, swing_mode]
 
 ---
 # --- several devices next to each other --------------------------------------

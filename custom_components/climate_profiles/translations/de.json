@@ -14,15 +14,6 @@
           "climate_entity": "Unterstützte Modi, Temperaturbereich und Schrittweite werden aus dieser Entity gelesen."
         }
       },
-      "entities": {
-        "title": "Optionale Entities",
-        "description": "Viele Klimageräte bieten zusätzliche Regler an. Was du leer lässt, wird nicht angeboten – weder in Profilen noch in der Card.",
-        "data": {
-          "fan_entity": "Lüftergeschwindigkeit (number)",
-          "display_entity": "Geräteanzeige (switch)",
-          "silent_entity": "Flüstermodus (switch)"
-        }
-      },
       "profiles": {
         "title": "Profile",
         "description": "Ein Startsatz wird aus dem gebaut, was dein Gerät tatsächlich unterstützt. Umbenennen, ändern, sortieren und löschen kannst du danach jederzeit.",
@@ -43,21 +34,14 @@
       "init": {
         "title": "Climate Profiles",
         "menu_options": {
-          "entities": "Optionale Entities",
+          "add_value": "Wert hinzufügen",
+          "edit_value": "Wert bearbeiten",
+          "delete_value": "Werte löschen",
           "add_profile": "Profil hinzufügen",
           "edit_profile": "Profil bearbeiten",
           "reorder": "Reihenfolge ändern",
           "delete_profile": "Profile löschen",
           "custom_name": "„benutzerdefiniert“ umbenennen"
-        }
-      },
-      "entities": {
-        "title": "Optionale Entities",
-        "description": "Ein Feld leeren heißt: diese Funktion wird nicht mehr verwendet.",
-        "data": {
-          "fan_entity": "Lüftergeschwindigkeit (number)",
-          "display_entity": "Geräteanzeige (switch)",
-          "silent_entity": "Flüstermodus (switch)"
         }
       },
       "add_profile": {
@@ -119,10 +103,42 @@
         "data": {
           "custom_profile_name": "Name"
         }
+      },
+      "add_value": {
+        "title": "Wert hinzufügen",
+        "description": "Wähle die Entity, die ihn trägt. Der Name kommt aus der Entity, wenn du keinen angibst.",
+        "data": {
+          "entity": "Entity",
+          "name": "Name",
+          "icon": "Symbol"
+        }
+      },
+      "edit_value": {
+        "title": "Wert bearbeiten",
+        "data": {
+          "id": "Wert"
+        }
+      },
+      "edit_value_form": {
+        "title": "„{value}“ bearbeiten",
+        "data": {
+          "entity": "Entity",
+          "name": "Name",
+          "icon": "Symbol"
+        }
+      },
+      "delete_value": {
+        "title": "Werte löschen",
+        "description": "Was deine Profile dafür gespeichert haben, bleibt erhalten - die Entity zurückzulegen stellt wieder her, was diese Profile meinten.",
+        "data": {
+          "id": "Werte"
+        }
       }
     },
     "error": {
-      "invalid_profile": "Dieses Profil konnte nicht gespeichert werden. Prüfe Name und Werte."
+      "invalid_profile": "Dieses Profil konnte nicht gespeichert werden. Prüfe Name und Werte.",
+      "unsupported_domain": "Diese Art von Entity hat keinen einzelnen Wert zum Vergleichen und ist deshalb nicht verwendbar.",
+      "entity_not_found": "Diese Entity gibt es (nicht mehr)."
     }
   },
   "selector": {
@@ -186,18 +202,6 @@
         "fan_mode": {
           "name": "Lüftermodus",
           "description": "Einer der Lüftermodi, die das Gerät unterstützt."
-        },
-        "fan": {
-          "name": "Lüftergeschwindigkeit",
-          "description": "Wert für die konfigurierte Number Entity."
-        },
-        "display": {
-          "name": "Geräteanzeige",
-          "description": "Schaltet die Anzeige ein oder aus."
-        },
-        "silent": {
-          "name": "Flüstermodus",
-          "description": "Schaltet den Flüstermodus ein oder aus."
         }
       }
     },
@@ -253,6 +257,9 @@
     },
     "nothing_to_capture": {
       "message": "Keine der konfigurierten Entities meldet gerade einen brauchbaren Wert."
+    },
+    "unknown_value": {
+      "message": "Unbekannter Wert: {value}. Dieses Gerät kennt: {known}."
     }
   }
 }

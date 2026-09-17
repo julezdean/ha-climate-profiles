@@ -97,7 +97,7 @@ async def test_the_url_carries_the_version(
     """Without it a browser keeps the cached card after an update."""
     await frontend.async_register_card(hass)
 
-    assert _urls(lovelace)[0].endswith("?v=1.0.1")
+    assert _urls(lovelace)[0].endswith("?v=2.0.0-beta.1")
 
 
 async def test_serves_the_card_over_http(
@@ -134,7 +134,7 @@ async def test_updates_an_entry_from_an_older_version(
 
     urls = _urls(lovelace)
     assert len(urls) == 1
-    assert urls[0].endswith("?v=1.0.1")
+    assert urls[0].endswith("?v=2.0.0-beta.1")
 
 
 async def test_leaves_other_resources_alone(

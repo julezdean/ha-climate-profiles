@@ -3,6 +3,11 @@
 Everything in here is a pure function over plain data. The coordinator reads
 the states, calls into this module and executes the resulting plan; no matching
 rule lives anywhere else (and none of it lives in the frontend).
+
+What a value *is* - number, boolean or option, with which range and which
+options - is not decided here. It arrives as a :class:`Vocabulary`, because
+with entities the user picks it is runtime knowledge. That keeps this module
+free of Home Assistant imports and testable on its own.
 """
 
 from __future__ import annotations
@@ -13,21 +18,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
-    BOOLEAN_KEYS,
     FLOAT_EPSILON,
-    KEY_REQUIRES_ENTITY,
-    NUMERIC_KEYS,
-    STRING_KEYS,
-    VALUE_DISPLAY,
-    VALUE_FAN,
-    VALUE_FAN_MODE,
+    KIND_BOOLEAN,
+    KIND_NUMBER,
+    KIND_OPTION,
     VALUE_HVAC_MODE,
-    VALUE_KEYS,
-    VALUE_SILENT,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
-from .models import Capabilities, ClimateProfile, EntityMap, ProfileSet
+from .models import ClimateProfile, ProfileSet, ValueSpec, Vocabulary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,26 +35,36 @@ _EMPTY_STATES = frozenset({"", "unknown", "unavailable", "none", "null"})
 _TRUE_STATES = frozenset({"on", "true", "yes", "1", "open", "home"})
 _FALSE_STATES = frozenset({"off", "false", "no", "0", "closed", "not_home"})
 
+#: The service that writes each climate key. These four are Home Assistant's,
+#: not ours; everything else follows from the domain of its entity.
+_CLIMATE_SERVICES: dict[str, tuple[str, str]] = {
+    VALUE_HVAC_MODE: ("set_hvac_mode", "hvac_mode"),
+    VALUE_TEMPERATURE: ("set_temperature", "temperature"),
+    VALUE_SWING_MODE: ("set_swing_mode", "swing_mode"),
+    "fan_mode": ("set_fan_mode", "fan_mode"),
+}
+
 
 # ---------------------------------------------------------------------------
 # normalisation
 # ---------------------------------------------------------------------------
 
 
-def normalise_value(key: str, raw: Any) -> Any | None:
+def normalise_value(spec: ValueSpec | None, raw: Any) -> Any | None:
     """Return ``raw`` in the canonical form used for comparison.
 
     ``None`` means "no usable value" - an unavailable entity, an empty string
-    or garbage. A profile that defines such a key can never match.
+    or garbage, or a key this entry does not know. A profile that defines such
+    a key can never match.
     """
-    if raw is None:
+    if spec is None or raw is None:
         return None
 
-    if key in BOOLEAN_KEYS:
+    if spec.kind == KIND_BOOLEAN:
         return _to_bool(raw)
-    if key in NUMERIC_KEYS:
+    if spec.kind == KIND_NUMBER:
         return _to_float(raw)
-    if key in STRING_KEYS:
+    if spec.kind == KIND_OPTION:
         return _to_str(raw)
     return None
 
@@ -96,15 +105,20 @@ def _to_str(raw: Any) -> str | None:
     return None if text in _EMPTY_STATES else text
 
 
-def normalise_values(raw: Mapping[str, Any]) -> dict[str, Any]:
-    """Normalise a whole mapping, dropping keys without a usable value."""
+def normalise_values(vocab: Vocabulary, raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalise a whole mapping, dropping keys without a usable value.
+
+    Keys the vocabulary does not know are dropped too: an additional value that
+    was deleted leaves its values behind in every profile that set it, and they
+    have to stay harmless rather than make the profile unmatchable.
+    """
     result: dict[str, Any] = {}
-    for key in VALUE_KEYS:
-        if key not in raw:
+    for spec in vocab:
+        if spec.key not in raw:
             continue
-        value = normalise_value(key, raw[key])
+        value = normalise_value(spec, raw[spec.key])
         if value is not None:
-            result[key] = value
+            result[spec.key] = value
     return result
 
 
@@ -130,19 +144,16 @@ def canonical_option(value: str, options: Sequence[str]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def values_equal(
-    key: str, left: Any, right: Any, caps: Capabilities | None = None
-) -> bool:
-    """Compare two *normalised* values of ``key``.
+def values_equal(spec: ValueSpec | None, left: Any, right: Any) -> bool:
+    """Compare two *normalised* values of one key.
 
-    Floats are compared with half the device's step width as tolerance, so a
+    Floats are compared with half the entity's step width as tolerance, so a
     device reporting ``23.999`` still matches a profile asking for ``24``.
     """
-    if left is None or right is None:
+    if spec is None or left is None or right is None:
         return False
-    if key in NUMERIC_KEYS:
-        step = (caps or Capabilities()).step_for(key)
-        tolerance = max(abs(step) / 2.0, FLOAT_EPSILON)
+    if spec.kind == KIND_NUMBER:
+        tolerance = max(abs(spec.step) / 2.0, FLOAT_EPSILON)
         return abs(float(left) - float(right)) <= tolerance
     return left == right
 
@@ -150,21 +161,21 @@ def values_equal(
 def profile_matches(
     profile: ClimateProfile,
     current_values: Mapping[str, Any],
-    caps: Capabilities | None = None,
+    vocab: Vocabulary,
 ) -> bool:
     """Return whether every value defined by ``profile`` is currently set.
 
     Keys the profile does not define are ignored - a profile is a partial
-    description of a state, not a full one. A profile without any value never
-    matches; it would otherwise match everything.
+    description of a state, not a full one. A profile without any usable value
+    never matches; it would otherwise match everything.
     """
-    wanted = normalise_values(profile.values)
+    wanted = normalise_values(vocab, profile.values)
     if not wanted:
         return False
 
-    current = normalise_values(current_values)
+    current = normalise_values(vocab, current_values)
     return all(
-        values_equal(key, value, current.get(key), caps)
+        values_equal(vocab.get(key), value, current.get(key))
         for key, value in wanted.items()
     )
 
@@ -172,7 +183,7 @@ def profile_matches(
 def resolve_active_profile(
     profiles: ProfileSet,
     current_values: Mapping[str, Any],
-    caps: Capabilities | None = None,
+    vocab: Vocabulary,
 ) -> ClimateProfile | None:
     """Return the first matching profile, or ``None`` for "custom".
 
@@ -180,7 +191,7 @@ def resolve_active_profile(
     writes anything back, it is purely a statement about the current state.
     """
     for profile in profiles:
-        if profile_matches(profile, current_values, caps):
+        if profile_matches(profile, current_values, vocab):
             return profile
     return None
 
@@ -215,9 +226,9 @@ class ApplyPlan:
     """What applying a profile would do."""
 
     calls: tuple[ProfileServiceCall, ...] = ()
-    #: Keys that cannot be applied at all (missing entity, unsupported value).
+    #: Keys that cannot be applied at all (unknown key, unsupported value).
     unsupported: tuple[str, ...] = ()
-    #: Keys that are applied but look wrong (e.g. outside the device's range).
+    #: Keys that are applied but look wrong (e.g. outside the entity's range).
     warnings: tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
@@ -228,8 +239,7 @@ class ApplyPlan:
 def build_apply_plan(
     values: Mapping[str, Any],
     current_values: Mapping[str, Any],
-    entities: EntityMap,
-    caps: Capabilities | None = None,
+    vocab: Vocabulary,
     *,
     force: bool = False,
 ) -> ApplyPlan:
@@ -244,32 +254,32 @@ def build_apply_plan(
       many devices reset their attributes on a mode change, so the state we
       compared against is about to become stale.
     """
-    caps = caps or Capabilities()
-    current = normalise_values(current_values)
+    current = normalise_values(vocab, current_values)
 
     wanted: dict[str, Any] = {}
     unsupported: list[str] = []
     warnings: list[str] = []
 
-    for key in VALUE_KEYS:
-        if key not in values:
-            continue
-        if key in KEY_REQUIRES_ENTITY and not entities.supports(key):
+    for key in values:
+        spec = vocab.get(key)
+        if spec is None:
+            # Either an additional value that is gone, or one whose entity is
+            # of a domain that carries no single value.
             unsupported.append(key)
             continue
-        value = normalise_value(key, values[key])
+        value = normalise_value(spec, values[key])
         if value is None:
             unsupported.append(key)
             continue
-        if key in STRING_KEYS:
-            option = canonical_option(value, caps.options_for(key))
+        if spec.kind == KIND_OPTION:
+            option = canonical_option(value, spec.options)
             if option is None:
                 unsupported.append(key)
                 continue
             wanted[key] = option
             continue
-        if key in NUMERIC_KEYS:
-            low, high = caps.range_for(key)
+        if spec.kind == KIND_NUMBER:
+            low, high = spec.minimum, spec.maximum
             if (low is not None and value < low - FLOAT_EPSILON) or (
                 high is not None and value > high + FLOAT_EPSILON
             ):
@@ -278,60 +288,63 @@ def build_apply_plan(
                 warnings.append(key)
         wanted[key] = value
 
+    mode_spec = vocab.get(VALUE_HVAC_MODE)
     mode_changes = VALUE_HVAC_MODE in wanted and not values_equal(
-        VALUE_HVAC_MODE,
-        normalise_value(VALUE_HVAC_MODE, wanted[VALUE_HVAC_MODE]),
+        mode_spec,
+        normalise_value(mode_spec, wanted[VALUE_HVAC_MODE]),
         current.get(VALUE_HVAC_MODE),
-        caps,
     )
     resend_everything = force or mode_changes
 
     calls: list[ProfileServiceCall] = []
-    for key in VALUE_KEYS:  # VALUE_KEYS carries the apply order
-        if key not in wanted:
+    for spec in vocab:  # the vocabulary carries the apply order
+        if spec.key not in wanted:
             continue
-        value = wanted[key]
-        compare = normalise_value(key, value)
-        if not resend_everything and values_equal(key, compare, current.get(key), caps):
+        value = wanted[spec.key]
+        compare = normalise_value(spec, value)
+        if not resend_everything and values_equal(spec, compare, current.get(spec.key)):
             continue
-        call = _build_call(key, value, entities)
+        call = _build_call(spec, value)
         if call is None:
-            unsupported.append(key)
+            unsupported.append(spec.key)
             continue
         calls.append(call)
 
     return ApplyPlan(tuple(calls), tuple(unsupported), tuple(warnings))
 
 
-def _build_call(key: str, value: Any, entities: EntityMap) -> ProfileServiceCall | None:
-    """Return the service call that writes ``value`` to the right entity."""
-    if key == VALUE_HVAC_MODE:
+def _build_call(spec: ValueSpec, value: Any) -> ProfileServiceCall | None:
+    """Return the service call that writes ``value`` to the right entity.
+
+    The four climate keys name their service explicitly - they are Home
+    Assistant's and do not follow a pattern. Everything else follows from the
+    domain of the entity behind it, which is the whole point of the design:
+    adding a value means picking an entity, not teaching this function a new
+    special case.
+    """
+    if spec.is_climate:
+        if (service := _CLIMATE_SERVICES.get(spec.key)) is None:
+            return None
+        name, field_name = service
         return ProfileServiceCall(
-            "climate", "set_hvac_mode", entities.climate, {"hvac_mode": value}, key
+            "climate", name, spec.entity, {field_name: value}, spec.key
         )
-    if key == VALUE_TEMPERATURE:
+
+    if spec.kind == KIND_NUMBER:
         return ProfileServiceCall(
-            "climate", "set_temperature", entities.climate, {"temperature": value}, key
+            spec.domain, "set_value", spec.entity, {"value": value}, spec.key
         )
-    if key == VALUE_SWING_MODE:
+    if spec.kind == KIND_BOOLEAN:
         return ProfileServiceCall(
-            "climate", "set_swing_mode", entities.climate, {"swing_mode": value}, key
+            spec.domain,
+            "turn_on" if value else "turn_off",
+            spec.entity,
+            {},
+            spec.key,
         )
-    if key == VALUE_FAN_MODE:
+    if spec.kind == KIND_OPTION:
         return ProfileServiceCall(
-            "climate", "set_fan_mode", entities.climate, {"fan_mode": value}, key
-        )
-    if key == VALUE_FAN and entities.fan:
-        return ProfileServiceCall(
-            "number", "set_value", entities.fan, {"value": value}, key
-        )
-    if key == VALUE_DISPLAY and entities.display:
-        return ProfileServiceCall(
-            "switch", "turn_on" if value else "turn_off", entities.display, {}, key
-        )
-    if key == VALUE_SILENT and entities.silent:
-        return ProfileServiceCall(
-            "switch", "turn_on" if value else "turn_off", entities.silent, {}, key
+            spec.domain, "select_option", spec.entity, {"option": value}, spec.key
         )
     return None
 
@@ -341,32 +354,29 @@ def _build_call(key: str, value: Any, entities: EntityMap) -> ProfileServiceCall
 # ---------------------------------------------------------------------------
 
 
-def storage_value(key: str, value: Any, caps: Capabilities | None = None) -> Any:
+def storage_value(spec: ValueSpec | None, value: Any) -> Any:
     """Return a normalised value in the form profiles are stored in.
 
     Booleans become ``"on"``/``"off"`` so the options flow can show them in its
-    dropdown, whole numbers lose their ``.0``, and strings keep the device's
+    dropdown, whole numbers lose their ``.0``, and options keep the entity's
     own spelling.
     """
-    if value is None:
+    if spec is None or value is None:
         return None
-    if key in BOOLEAN_KEYS:
+    if spec.kind == KIND_BOOLEAN:
         return "on" if value else "off"
-    if key in NUMERIC_KEYS:
+    if spec.kind == KIND_NUMBER:
         number = round(float(value), 2)
         return int(number) if float(number).is_integer() else number
-    if key in STRING_KEYS:
-        return (
-            canonical_option(str(value), (caps or Capabilities()).options_for(key))
-            or value
-        )
+    if spec.kind == KIND_OPTION:
+        return canonical_option(str(value), spec.options) or value
     return value
 
 
 def changed_keys(
     baseline: Mapping[str, Any] | None,
     current: Mapping[str, Any],
-    caps: Capabilities | None = None,
+    vocab: Vocabulary,
 ) -> tuple[str, ...]:
     """Return the keys whose value differs from ``baseline``.
 
@@ -375,23 +385,23 @@ def changed_keys(
     """
     if baseline is None:
         return ()
-    before = normalise_values(baseline)
-    now = normalise_values(current)
+    before = normalise_values(vocab, baseline)
+    now = normalise_values(vocab, current)
     return tuple(
-        key
-        for key in VALUE_KEYS
-        if key in now and not values_equal(key, now[key], before.get(key), caps)
+        spec.key
+        for spec in vocab
+        if spec.key in now
+        and not values_equal(spec, now[spec.key], before.get(spec.key))
     )
 
 
 def capture_values(
     profile_values: Mapping[str, Any],
     current_values: Mapping[str, Any],
-    entities: EntityMap,
+    vocab: Vocabulary,
     *,
     baseline: Mapping[str, Any] | None = None,
     keys: Sequence[str] | None = None,
-    caps: Capabilities | None = None,
 ) -> dict[str, Any]:
     """Return what ``profile_values`` should become after capturing the state.
 
@@ -407,29 +417,29 @@ def capture_values(
     A value that cannot be read right now is never written. Keys the profile
     already has keep their stored value in that case rather than disappearing.
     """
-    current = normalise_values(current_values)
+    current = normalise_values(vocab, current_values)
+    changed = changed_keys(baseline, current_values, vocab)
     wanted: list[str] = (
         list(keys)
         if keys is not None
         else [
-            key
-            for key in VALUE_KEYS
-            if key in profile_values
-            or key in changed_keys(baseline, current_values, caps)
+            spec.key
+            for spec in vocab
+            if spec.key in profile_values or spec.key in changed
         ]
     )
 
     captured = dict(profile_values)
-    for key in VALUE_KEYS:
-        if key not in wanted or not entities.supports(key):
+    for spec in vocab:
+        if spec.key not in wanted:
             continue
-        value = storage_value(key, current.get(key), caps)
+        value = storage_value(spec, current.get(spec.key))
         if value is None:
             continue
-        captured[key] = value
+        captured[spec.key] = value
     return captured
 
 
-def usable_values(values: Mapping[str, Any], entities: EntityMap) -> dict[str, Any]:
-    """Drop values whose optional entity is not configured."""
-    return {key: value for key, value in values.items() if entities.supports(key)}
+def usable_values(values: Mapping[str, Any], vocab: Vocabulary) -> dict[str, Any]:
+    """Drop values whose key this entry does not know (any more)."""
+    return {key: value for key, value in values.items() if key in vocab}

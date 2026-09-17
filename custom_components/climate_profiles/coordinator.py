@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import Any
@@ -26,6 +27,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CLIMATE_KINDS,
+    CONF_ADDITIONAL,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
     CUSTOM_PROFILE_ID,
@@ -33,12 +36,8 @@ from .const import (
     DEFAULT_CUSTOM_NAME,
     DOMAIN,
     RECALC_DEBOUNCE_SECONDS,
-    VALUE_DISPLAY,
-    VALUE_FAN,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
-    VALUE_KEYS,
-    VALUE_SILENT,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
@@ -50,11 +49,13 @@ from .matching import (
     resolve_active_profile,
 )
 from .models import (
+    AdditionalValueSet,
     Capabilities,
     ClimateProfile,
     EntityMap,
     ProfileError,
     ProfileSet,
+    Vocabulary,
     new_profile_id,
     normalise_color,
 )
@@ -71,6 +72,9 @@ class ProfileState:
     active: ClimateProfile | None
     values: dict[str, Any]
     capabilities: Capabilities
+    #: What this entry knows: the four climate keys plus the additional
+    #: values, with the kind and limits each one is compared against.
+    vocabulary: Vocabulary
     available: bool
     applying: bool = False
     #: The profile that matched most recently in this session, and which of
@@ -108,7 +112,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 immediate=False,
             ),
         )
-        self.entities = EntityMap.from_config(entry.data)
+        self.entities = EntityMap.from_config(entry.data, self._read_additional())
         self._apply_task: asyncio.Task[None] | None = None
         #: (profile id, values at the time it became active) - the baseline
         #: "capture" uses to tell a deliberate change from an untouched value.
@@ -118,6 +122,28 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._renew_baseline = False
 
     # -- configuration ------------------------------------------------------
+
+    def _read_additional(self) -> AdditionalValueSet:
+        """Return the configured additional values.
+
+        Unlike the climate entity these are preference, not identity, so they
+        live in the options - and a change to them has to reload the entry,
+        because a different set of entities has to be listened to.
+        """
+        try:
+            return AdditionalValueSet.from_list(
+                self.config_entry.options.get(CONF_ADDITIONAL)
+            )
+        except ProfileError as err:
+            _LOGGER.error(
+                "Invalid additional values for %s: %s", self.config_entry.title, err
+            )
+            return AdditionalValueSet()
+
+    @property
+    def additional(self) -> AdditionalValueSet:
+        """Return the configured additional values."""
+        return self.entities.additional
 
     @property
     def profiles(self) -> ProfileSet:
@@ -163,13 +189,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             values[VALUE_FAN_MODE] = climate.attributes.get("fan_mode")
             values[VALUE_SWING_MODE] = climate.attributes.get("swing_mode")
 
-        for key, entity_id in (
-            (VALUE_FAN, self.entities.fan),
-            (VALUE_DISPLAY, self.entities.display),
-            (VALUE_SILENT, self.entities.silent),
-        ):
-            if entity_id and (state := self.hass.states.get(entity_id)) is not None:
-                values[key] = state.state
+        for value in self.entities.additional:
+            if (state := self.hass.states.get(value.entity)) is not None:
+                values[value.id] = state.state
 
         return values, available
 
@@ -179,16 +201,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         climate = self.hass.states.get(self.entities.climate)
         attrs = climate.attributes if climate else {}
 
-        fan_min = fan_max = None
-        fan_step = 1.0
-        if (
-            self.entities.fan
-            and (number := self.hass.states.get(self.entities.fan)) is not None
-        ):
-            fan_min = _as_float(number.attributes.get("min"))
-            fan_max = _as_float(number.attributes.get("max"))
-            fan_step = _as_float(number.attributes.get("step")) or 1.0
-
         return Capabilities(
             hvac_modes=tuple(str(mode) for mode in attrs.get("hvac_modes") or ()),
             fan_modes=tuple(str(mode) for mode in attrs.get("fan_modes") or ()),
@@ -196,17 +208,48 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             min_temp=_as_float(attrs.get("min_temp")),
             max_temp=_as_float(attrs.get("max_temp")),
             temp_step=_as_float(attrs.get("target_temp_step")) or 0.5,
-            fan_min=fan_min,
-            fan_max=fan_max,
-            fan_step=fan_step,
+        )
+
+    @callback
+    def _read_additional_specs(self) -> dict[str, dict[str, Any]]:
+        """Read what each additional entity says about itself.
+
+        The limits of an additional value are not ours to define: a number
+        carries ``min``/``max``/``step``, a select carries ``options``. Read
+        here, handed to the vocabulary, never assumed.
+        """
+        specs: dict[str, dict[str, Any]] = {}
+        for value in self.entities.additional:
+            state = self.hass.states.get(value.entity)
+            if state is None:
+                continue
+            attrs = state.attributes
+            specs[value.id] = {
+                "min": _as_float(attrs.get("min")),
+                "max": _as_float(attrs.get("max")),
+                "step": _as_float(attrs.get("step")) or 1.0,
+                "options": tuple(str(option) for option in attrs.get("options") or ()),
+            }
+        return specs
+
+    @callback
+    def _read_vocabulary(self) -> Vocabulary:
+        """Return what this entry knows about right now."""
+        return Vocabulary.build(
+            self.entities,
+            self._read_capabilities(),
+            additional_specs=self._read_additional_specs(),
         )
 
     async def _async_update_data(self) -> ProfileState:
         """Recalculate the active profile from the current states."""
         values, available = self._read_values()
         capabilities = self._read_capabilities()
+        vocabulary = Vocabulary.build(
+            self.entities, capabilities, additional_specs=self._read_additional_specs()
+        )
         profiles = self.profiles
-        active = resolve_active_profile(profiles, values, capabilities)
+        active = resolve_active_profile(profiles, values, vocabulary)
         applying = self._apply_task is not None and not self._apply_task.done()
 
         if active is not None and (
@@ -228,7 +271,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # keeps matching while you adjust a value it does not define, and that
         # is precisely a change worth offering to capture.
         changed = (
-            changed_keys(self._baseline[1], values, capabilities)
+            changed_keys(self._baseline[1], values, vocabulary)
             if self._baseline is not None
             else ()
         )
@@ -236,6 +279,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             active,
             values,
             capabilities,
+            vocabulary,
             available,
             applying,
             last_matched,
@@ -289,6 +333,38 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
         await self._async_run_apply(profile.values, optimistic=profile)
 
+    @callback
+    def resolve_value_keys(self, values: Mapping[str, Any]) -> dict[str, Any]:
+        """Return ``values`` with every key resolved to what it addresses.
+
+        The four climate keys pass through. Everything else is an additional
+        value, addressed by its id or by its name - the same rule profiles
+        follow, and the reason ids win: a value literally named like another
+        one's id cannot shadow it.
+        """
+        resolved: dict[str, Any] = {}
+        unknown: list[str] = []
+        for key, value in values.items():
+            if key in CLIMATE_KINDS:
+                resolved[key] = value
+                continue
+            if (found := self.additional.resolve(key)) is not None:
+                resolved[found.id] = value
+                continue
+            unknown.append(key)
+
+        if unknown:
+            known = ", ".join([*CLIMATE_KINDS, *(v.name for v in self.additional)])
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_value",
+                translation_placeholders={
+                    "value": ", ".join(sorted(unknown)),
+                    "known": known,
+                },
+            )
+        return resolved
+
     async def async_set_values(self, values: dict[str, Any]) -> None:
         """Write individual values, then re-evaluate which profile that is."""
         if not values:
@@ -336,10 +412,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         values = capture_values(
             target.values,
             state.values,
-            self.entities,
+            state.vocabulary,
             baseline=baseline,
             keys=keys,
-            caps=state.capabilities,
         )
         updated = target.with_values(values)
         _LOGGER.debug("Captured %s into %s", values, updated.name)
@@ -370,9 +445,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         values = capture_values(
             {},
             state.values,
-            self.entities,
-            keys=list(keys) if keys else list(VALUE_KEYS),
-            caps=state.capabilities,
+            state.vocabulary,
+            keys=list(keys) if keys else list(state.vocabulary.keys()),
         )
         if not values:
             raise ServiceValidationError(
@@ -436,7 +510,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     ) -> None:
         """Execute the plan for ``values``."""
         state = self.data or await self._async_update_data()
-        plan = build_apply_plan(values, state.values, self.entities, state.capabilities)
+        plan = build_apply_plan(values, state.values, state.vocabulary)
         self._log_plan(plan)
 
         if optimistic is not None or plan.calls:

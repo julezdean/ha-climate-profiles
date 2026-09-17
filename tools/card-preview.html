@@ -143,6 +143,26 @@
                     fan: 100, display: "off", silent: "off" } },
       ];
 
+      /* The additional values, exactly as the integration reports them. The
+         ids are speaking here so the fixture stays readable; production hands
+         out uuids. */
+      const ADDITIONAL = [
+        { id: "fan", name: "Fan speed", entity: "number.living_room_fan_speed",
+          icon: null, order: 0, kind: "number", min: 1, max: 100, step: 1,
+          options: [] },
+        { id: "display", name: "Display", entity: "switch.living_room_display",
+          icon: "mdi:television", order: 1, kind: "boolean", min: null,
+          max: null, step: 1, options: [] },
+        { id: "silent", name: "Silent", entity: "switch.living_room_silent",
+          icon: "mdi:sleep", order: 2, kind: "boolean", min: null, max: null,
+          step: 1, options: [] },
+        /* A select: the kind of value the three fixed fields could never
+           cover, which is the whole point of additional values. */
+        { id: "preset", name: "Preset", entity: "select.living_room_preset",
+          icon: "mdi:tune", order: 3, kind: "option", min: null, max: null,
+          step: 1, options: ["eco", "boost", "sleep"] },
+      ];
+
       const EN = {
         "component.climate.entity_component._.state.off": "Off",
         "component.climate.entity_component._.state.cool": "Cool",
@@ -174,6 +194,7 @@
           fan: 42,
           display: "off",
           silent: "off",
+          preset: "eco",
           active_profile: "Comfort",
           active_profile_id: "p3",
           active_profile_color: "#22c55e",
@@ -203,6 +224,7 @@
                 changed_values: state.changed_values,
                 last_matched_profile_id: state.last_matched_profile_id,
                 profiles: PROFILES,
+                additional_values: ADDITIONAL,
                 custom_profile: { id: "__custom__", name: "Custom", color: "#78909c" },
                 current_values: {},
                 capabilities: {
@@ -210,13 +232,15 @@
                   fan_modes: ["auto", "silent", "low", "medium", "high", "full"],
                   swing_modes: ["off", "vertical", "horizontal", "both"],
                   min_temp: 16, max_temp: 30, target_temp_step: 1,
-                  fan_min: 1, fan_max: 100, fan_step: 1,
                 },
                 entities: {
                   climate: "climate.living_room",
-                  fan: "number.living_room_fan_speed",
-                  display: "switch.living_room_display",
-                  silent: "switch.living_room_silent",
+                  additional: {
+                    fan: "number.living_room_fan_speed",
+                    display: "switch.living_room_display",
+                    silent: "switch.living_room_silent",
+                    preset: "select.living_room_preset",
+                  },
                 },
               },
             },
@@ -251,6 +275,14 @@
               state: state.silent,
               attributes: { friendly_name: "Silent mode" },
             },
+            "select.living_room_preset": {
+              entity_id: "select.living_room_preset",
+              state: state.preset,
+              attributes: {
+                friendly_name: "Preset",
+                options: ["eco", "boost", "sleep"],
+              },
+            },
           },
         };
       }
@@ -278,10 +310,9 @@
         attrs.active_profile_color = "#ef4444";
         attrs.entities = {
           climate: "climate.living_room_radiator",
-          fan: null,
-          display: null,
-          silent: null,
+          additional: {},
         };
+        attrs.additional_values = [];
         attrs.capabilities = {
           hvac_modes: ["off", "heat", "auto"],
           fan_modes: [],
@@ -289,9 +320,6 @@
           min_temp: 5,
           max_temp: 35,
           target_temp_step: 0.5,
-          fan_min: null,
-          fan_max: null,
-          fan_step: 1,
         };
         sensor.state = "Comfort";
 
@@ -299,6 +327,7 @@
         delete hass.states["number.living_room_fan_speed"];
         delete hass.states["switch.living_room_display"];
         delete hass.states["switch.living_room_silent"];
+        delete hass.states["select.living_room_preset"];
 
         hass.states["climate.living_room_radiator"] = {
           entity_id: "climate.living_room_radiator",

@@ -15,6 +15,7 @@ from .const import (
     ATTR_ACTIVE_PROFILE,
     ATTR_ACTIVE_PROFILE_COLOR,
     ATTR_ACTIVE_PROFILE_ID,
+    ATTR_ADDITIONAL,
     ATTR_APPLYING,
     ATTR_CAPABILITIES,
     ATTR_CHANGED_VALUES,
@@ -33,12 +34,8 @@ from .const import (
     SERVICE_CAPTURE_PROFILE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
-    VALUE_DISPLAY,
-    VALUE_FAN,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
-    VALUE_KEYS,
-    VALUE_SILENT,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
@@ -46,6 +43,21 @@ from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
 from .matching import normalise_values
 
+#: Keys a service call carries that name its target, not a value.
+_TARGET_KEYS = frozenset({"entity_id", "device_id", "area_id", "floor_id", "label_id"})
+
+
+def _at_least_one_value(data: dict[str, Any]) -> dict[str, Any]:
+    """Reject a call that names no value at all."""
+    if not set(data) - _TARGET_KEYS:
+        raise vol.Invalid("set_value needs at least one value")
+    return data
+
+
+#: Only the four climate keys are typed here. An additional value's kind
+#: follows from an entity the user picked, so it is known at runtime and
+#: nowhere else - the coordinator checks it against the vocabulary and names
+#: what it knows when it does not fit.
 SET_VALUE_SCHEMA = vol.All(
     cv.make_entity_service_schema(
         {
@@ -53,19 +65,17 @@ SET_VALUE_SCHEMA = vol.All(
             vol.Optional(VALUE_TEMPERATURE): vol.Coerce(float),
             vol.Optional(VALUE_SWING_MODE): cv.string,
             vol.Optional(VALUE_FAN_MODE): cv.string,
-            vol.Optional(VALUE_FAN): vol.Coerce(float),
-            vol.Optional(VALUE_DISPLAY): cv.boolean,
-            vol.Optional(VALUE_SILENT): cv.boolean,
-        }
+        },
+        extra=vol.ALLOW_EXTRA,
     ),
-    cv.has_at_least_one_key(*VALUE_KEYS),
+    _at_least_one_value,
 )
 
 
 CAPTURE_PROFILE_SCHEMA = cv.make_entity_service_schema(
     {
         vol.Optional(ATTR_PROFILE): cv.string,
-        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [vol.In(VALUE_KEYS)]),
+        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -74,7 +84,7 @@ SAVE_AS_PROFILE_SCHEMA = cv.make_entity_service_schema(
         vol.Required(ATTR_NAME): cv.string,
         vol.Optional(ATTR_COLOR): cv.string,
         vol.Optional(ATTR_ICON): cv.icon,
-        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [vol.In(VALUE_KEYS)]),
+        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -162,8 +172,15 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                 "name": coordinator.custom_name,
                 "color": DEFAULT_CUSTOM_COLOR,
             },
-            ATTR_CURRENT_VALUES: normalise_values(data.values) if data else {},
+            ATTR_CURRENT_VALUES: (
+                normalise_values(data.vocabulary, data.values) if data else {}
+            ),
             ATTR_CAPABILITIES: data.capabilities.as_dict() if data else {},
+            # The card only ever sees ids in ``values``; these say what they
+            # are called, which entity they are and how to draw them.
+            ATTR_ADDITIONAL: coordinator.additional.as_frontend(
+                data.vocabulary if data else None
+            ),
             ATTR_ENTITIES: coordinator.entities.as_dict(),
             ATTR_APPLYING: bool(data and data.applying),
             # What "capture" would write into, and what it would change.
@@ -183,7 +200,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
     async def async_set_value_service(self, **values: Any) -> None:
         """Handle ``climate_profiles.set_value``."""
         await self.coordinator.async_set_values(
-            {key: value for key, value in values.items() if key in VALUE_KEYS}
+            self.coordinator.resolve_value_keys(values)
         )
 
     async def async_capture_profile_service(

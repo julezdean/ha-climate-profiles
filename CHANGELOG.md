@@ -4,6 +4,63 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-09-17
+
+### Changed
+
+- **The three fixed optional entities are gone.** A config entry used to drive
+  a fan speed `number`, a display `switch` and a silent mode `switch` - the
+  vocabulary of one air conditioner. It now drives any number of **additional
+  values**, each backed by an entity you pick: `number`, `input_number`,
+  `switch`, `input_boolean`, `select` or `input_select`, the domains whose
+  state is a single value. Two of the three old fields were the same thing
+  twice anyway - `display` and `silent` were both a switch, told apart by
+  nothing but the label the card drew.
+- Each additional value carries a stable id of its own, and profiles store
+  their values under it. Renaming a value or pointing it at a different entity
+  leaves every profile that sets it intact - the same reasoning that made
+  `active_profile_id` the thing to trigger on rather than the profile name.
+- The card draws what the kind of a value needs: a number becomes a slider
+  with the range of its own entity, a boolean a toggle, a select a group of
+  options. Name and icon come from the value, so nothing in the card knows any
+  single value by name any more.
+- `set_value` takes any of your values, by name or by id, alongside the four
+  climate ones. An unknown name is refused with the list of what the device
+  knows instead of being ignored.
+- The values a profile sets are read from what the entry knows at the moment
+  it is evaluated, so a deleted additional value no longer makes a profile
+  unreadable - its stored value is simply skipped, and putting the entity back
+  restores what the profile meant.
+- Setup asks for the climate entity and the starter profiles only; additional
+  values are added afterwards under **Configure**.
+- The integration declares `CONFIG_SCHEMA` as config-entry-only, so a stray
+  `climate_profiles:` block in `configuration.yaml` is an error rather than
+  something silently ignored.
+
+### Card configuration
+
+- The seven `show_*` options are replaced by one `hide` list, over one key
+  space: the four climate keys and the ids of your additional values, the same
+  mix a profile's values carry. Everything configured is shown unless it is
+  hidden, so a value added later appears without editing every dashboard. The
+  visual editor still shows a switch per value and writes the list for you.
+
+### Attributes
+
+- `additional_values` is new and says what each id is called, which entity is
+  behind it, how to draw it and which limits it has.
+- `current_values` and `changed_values` carry the ids of additional values.
+- `entities` is now `{climate, additional: {id: entity_id}}`.
+- `capabilities` no longer carries `fan_min`/`fan_max`/`fan_step`; the limits
+  of an additional value belong to its own entity and ship with its definition.
+
+### Migration
+
+None. Nothing was running this integration, so the old fields are dropped
+rather than converted. An entry created with 1.x keeps its climate entity and
+its profiles; the three optional entities have to be added again as additional
+values, and profiles that set them need those values filled in once more.
+
 ## [1.0.1] - 2026-09-17
 
 ### Fixed

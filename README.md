@@ -13,8 +13,9 @@ matching happens server side, and a custom Lovelace card renders it.
 
 ## What it does
 
-* pick a climate entity, optionally a fan speed `number`, a display `switch`
-  and a silent mode `switch` - anything you leave out is simply not offered
+* pick a climate entity, then add as many **additional values** as your device
+  has: a fan speed `number`, a display `switch`, a preset `select` - anything
+  whose state is a single value
 * create as many profiles as you like, with your own names, colours and icons
 * a profile only defines the values it cares about; applying it leaves
   everything else exactly where it is
@@ -65,11 +66,15 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 **Settings → Devices & services → Add integration → Climate Profiles**
 
 1. **Climate device** - a name and the `climate` entity.
-2. **Optional entities** - fan speed (`number`), display (`switch`), silent
-   mode (`switch`). Leave empty what your device does not have.
-3. **Profiles** - a starter set is offered, built from what your device
+2. **Profiles** - a starter set is offered, built from what your device
    actually supports. Modes it does not advertise are left out, temperatures
    are clamped into its range.
+
+Everything your device has beyond the climate entity is added afterwards, under
+**Configure → Add a value**: pick the entity, and it is there. Supported are
+`number`, `input_number`, `switch`, `input_boolean`, `select` and
+`input_select` - the domains whose state is a single value, which is what a
+profile can compare and write.
 
 Each config entry creates one device with two entities:
 
@@ -84,7 +89,9 @@ Each config entry creates one device with two entities:
 
 | Menu entry | What it does |
 | --- | --- |
-| Optional entities | add or remove fan/display/silent later; clearing a field stops that function being used |
+| Add a value | an additional value, backed by an entity you pick |
+| Edit a value | point it at a different entity, rename it, give it an icon |
+| Delete values | what profiles stored for them is kept, so putting the entity back restores what they meant |
 | Add profile | name, colour, icon and the values it should set |
 | Edit profile | change everything; **clear a field to remove that value from the profile** |
 | Change order | the order profiles are matched and shown in |
@@ -122,15 +129,18 @@ range - comes from the integration. Options, all optional:
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
 | `profile_layout` | `auto` | `auto`, `grid` or `scroll` |
-| `show_temperature` | `true` | big temperature readout with −/+ |
-| `show_hvac` | `true` | mode selector |
-| `show_fan_mode` | `true` | fan mode chips |
-| `show_swing` | `true` | swing mode chips |
-| `show_fan` | `true` | fan speed slider |
-| `show_display` | `true` | display toggle |
-| `show_silent` | `true` | silent mode toggle |
+| `hide` | `[]` | values to leave out, by key or id |
 
-A control that the device does not offer is hidden regardless of the setting.
+Everything configured is shown unless you hide it, so a value you add later
+appears without editing every dashboard. The list mixes the four climate keys
+with the ids of your additional values, the same way a profile's values do:
+
+```yaml
+hide: [swing_mode, 7f3a9c1e…]
+```
+
+The visual editor shows a switch per value and writes this list for you. A
+control whose device does not offer it is hidden regardless.
 More examples: [`examples/lovelace.yaml`](examples/lovelace.yaml).
 
 | Profile active | Nothing matches |
@@ -220,11 +230,16 @@ target:
   entity_id: sensor.living_room_climate_profile
 data:
   temperature: 23
-  silent: true
+  Silent: true          # an additional value, by name or by id
 ```
 
 Writes individual values and re-evaluates which profile that state
 corresponds to. All fields are optional, at least one is required.
+
+Besides the four climate values you can name any of your additional values,
+by its name or by its id - ids win, so a value named like another one's id
+cannot shadow it. An unknown name is refused with the list of what this device
+knows.
 
 ### `climate_profiles.capture_profile`
 
@@ -260,9 +275,10 @@ active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
 profiles: [{id, name, color, icon, order, protected, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c"}
-current_values: {hvac_mode: cool, temperature: 24.0, …}
+additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
+current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
 capabilities: {hvac_modes: […], min_temp: 16, target_temp_step: 1, …}
-entities: {climate: …, fan: …, display: …, silent: …}
+entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 last_matched_profile_id: 2b3c4d5e…   # what "capture" would write into
 changed_values: [temperature]        # what it would change; empty after a restart
@@ -270,6 +286,11 @@ changed_values: [temperature]        # what it would change; empty after a resta
 
 Automations should trigger on `active_profile_id`. The state is the display
 name and changes when you rename a profile; the id does not.
+
+The same holds for the additional values: `current_values` and `changed_values`
+carry their ids, and `additional_values` says what each id is called and which
+entity is behind it. Renaming a value or pointing it at a different entity
+leaves every profile that sets it intact.
 
 ## How matching works
 

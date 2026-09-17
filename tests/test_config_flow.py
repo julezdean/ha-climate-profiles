@@ -9,21 +9,24 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.climate_profiles.config_flow import build_default_profiles
 from custom_components.climate_profiles.const import (
+    CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
     CONF_CUSTOM_NAME,
-    CONF_DISPLAY_ENTITY,
-    CONF_FAN_ENTITY,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_VALUES,
     CONF_PROFILES,
-    CONF_SILENT_ENTITY,
     DOMAIN,
 )
-from custom_components.climate_profiles.models import Capabilities, EntityMap
+from custom_components.climate_profiles.models import Capabilities
 
-from .conftest import CLIMATE, DISPLAY, FAN, SILENT, set_device_state
+from .conftest import (
+    CLIMATE,
+    FAN,
+    additional_option,
+    set_device_state,
+)
 
 
 async def run_config_flow(hass, *, optional=True, defaults=True):
@@ -36,18 +39,6 @@ async def run_config_flow(hass, *, optional=True, defaults=True):
 
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_NAME: "Wohnzimmer", CONF_CLIMATE_ENTITY: CLIMATE}
-    )
-    assert result["step_id"] == "entities"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            CONF_FAN_ENTITY: FAN,
-            CONF_DISPLAY_ENTITY: DISPLAY,
-            CONF_SILENT_ENTITY: SILENT,
-        }
-        if optional
-        else {},
     )
     assert result["step_id"] == "profiles"
 
@@ -62,14 +53,9 @@ async def test_full_flow_creates_an_entry_with_starter_profiles(hass):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Wohnzimmer"
-    assert result["data"] == {
-        CONF_CLIMATE_ENTITY: CLIMATE,
-        CONF_FAN_ENTITY: FAN,
-        CONF_DISPLAY_ENTITY: DISPLAY,
-        CONF_SILENT_ENTITY: SILENT,
-    }
+    assert result["data"] == {CONF_CLIMATE_ENTITY: CLIMATE}
     names = [p[CONF_PROFILE_NAME] for p in result["options"][CONF_PROFILES]]
-    assert names == ["Aus", "Away", "Komfort", "Nacht", "Max"]
+    assert names == ["Off", "Away", "Comfort", "Night", "Max"]
     assert result["options"][CONF_CUSTOM_NAME] == "Custom"
 
 
@@ -127,9 +113,9 @@ def test_default_profiles_skip_what_the_device_cannot_do():
         max_temp=30,
         temp_step=0.5,
     )
-    profiles = build_default_profiles(caps, EntityMap(climate=CLIMATE))
+    profiles = build_default_profiles(caps)
     # Only the "off" profile survives, everything else needs cooling.
-    assert [p.name for p in profiles] == ["Aus"]
+    assert [p.name for p in profiles] == ["Off"]
 
 
 def test_default_profiles_clamp_to_the_devices_range():
@@ -140,7 +126,7 @@ def test_default_profiles_clamp_to_the_devices_range():
         max_temp=30,
         temp_step=1,
     )
-    profiles = build_default_profiles(caps, EntityMap(climate=CLIMATE))
+    profiles = build_default_profiles(caps)
     maximum = next(p for p in profiles if p.name == "Max")
     assert maximum.values["temperature"] == 18  # blueprint says 16
 
@@ -148,19 +134,18 @@ def test_default_profiles_clamp_to_the_devices_range():
 # --- options flow ----------------------------------------------------------
 
 
-async def setup_options(hass, profiles=None):
+async def setup_options(hass, profiles=None, *, additional=True):
     """Set up an entry and open its options flow."""
     set_device_state(hass)
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Wohnzimmer",
-        data={
-            CONF_CLIMATE_ENTITY: CLIMATE,
-            CONF_FAN_ENTITY: FAN,
-            CONF_DISPLAY_ENTITY: DISPLAY,
-            CONF_SILENT_ENTITY: SILENT,
+        data={CONF_CLIMATE_ENTITY: CLIMATE},
+        options={
+            CONF_PROFILES: profiles or [],
+            CONF_CUSTOM_NAME: "Custom",
+            CONF_ADDITIONAL: additional_option() if additional else [],
         },
-        options={CONF_PROFILES: profiles or [], CONF_CUSTOM_NAME: "Custom"},
         unique_id=CLIMATE,
     )
     entry.add_to_hass(hass)
@@ -278,20 +263,44 @@ async def test_reordering_profiles(hass):
     ]
 
 
-async def test_changing_the_optional_entities(hass):
-    entry = await setup_options(hass)
+async def test_adding_an_additional_value(hass):
+    entry = await setup_options(hass, additional=False)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "entities"}
+        result["flow_id"], {"next_step_id": "add_value"}
     )
-    # Clearing display and silent removes them from the entry's data.
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_FAN_ENTITY: FAN}
+        result["flow_id"], {"entity": FAN}
     )
     await hass.async_block_till_done()
 
-    assert entry.data == {CONF_CLIMATE_ENTITY: CLIMATE, CONF_FAN_ENTITY: FAN}
+    added = entry.options[CONF_ADDITIONAL]
+    assert len(added) == 1
+    assert added[0]["entity"] == FAN
+    # No name given, so it is taken from the entity.
+    assert added[0]["name"]
+    assert added[0]["id"]
+
+
+async def test_a_pre_filled_name_that_is_taken_gets_a_counter(hass):
+    """Two switches are both called "Silent" without anybody deciding that."""
+    entry = await setup_options(hass, additional=False)
+    hass.states.async_set("switch.one", "off", {"friendly_name": "Silent"})
+    hass.states.async_set("switch.two", "off", {"friendly_name": "Silent"})
+
+    for entity_id in ("switch.one", "switch.two"):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "add_value"}
+        )
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], {"entity": entity_id}
+        )
+        await hass.async_block_till_done()
+
+    names = [value["name"] for value in entry.options[CONF_ADDITIONAL]]
+    assert names == ["Silent", "Silent (2)"]
 
 
 async def test_renaming_the_custom_profile(hass):

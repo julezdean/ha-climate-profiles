@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.climate_profiles.const import (
     ATTR_ACTIVE_PROFILE_ID,
     ATTR_CAPABILITIES,
+    CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
@@ -21,7 +22,14 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
 )
 
-from .conftest import CLIMATE, DISPLAY, SILENT, set_device_state, settle
+from .conftest import (
+    CLIMATE,
+    DISPLAY,
+    SILENT,
+    additional_option,
+    set_device_state,
+    settle,
+)
 
 SENSOR = "sensor.living_room_climate_profile"
 SELECT = "select.living_room_profile"
@@ -66,6 +74,7 @@ async def setup_entry(
         options={
             CONF_PROFILES: PROFILES if profiles is None else profiles,
             CONF_CUSTOM_NAME: "Custom",
+            CONF_ADDITIONAL: additional_option(),
             **(options or {}),
         },
         unique_id=entry_data[CONF_CLIMATE_ENTITY],
@@ -121,10 +130,15 @@ async def test_capabilities_come_from_the_device(hass, entry_data):
     set_device_state(hass)
     await setup_entry(hass, entry_data)
 
-    caps = hass.states.get(SENSOR).attributes[ATTR_CAPABILITIES]
+    attributes = hass.states.get(SENSOR).attributes
+    caps = attributes[ATTR_CAPABILITIES]
     assert caps["hvac_modes"] == ["off", "cool", "dry", "fan_only", "heat", "auto"]
     assert caps["min_temp"] == 16
-    assert caps["fan_max"] == 100
+
+    # The limits of an additional value belong to its own entity.
+    fan = next(v for v in attributes["additional_values"] if v["id"] == "fan")
+    assert fan["max"] == 100
+    assert fan["kind"] == "number"
 
 
 async def test_select_lists_the_profiles_plus_custom(hass, entry_data):
@@ -292,15 +306,12 @@ async def test_set_value_needs_at_least_one_value(hass, entry_data, calls):
 
 async def test_without_optional_entities_nothing_breaks(hass, calls):
     set_device_state(hass, temperature=26)
-    await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+    await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, options={CONF_ADDITIONAL: []}
+    )
 
     state = hass.states.get(SENSOR)
-    assert state.attributes["entities"] == {
-        "climate": CLIMATE,
-        "fan": None,
-        "display": None,
-        "silent": None,
-    }
+    assert state.attributes["entities"] == {"climate": CLIMATE, "additional": {}}
     # "Komfort" defines display/silent, which this device cannot do -> custom.
     assert state.state == "Custom"
 

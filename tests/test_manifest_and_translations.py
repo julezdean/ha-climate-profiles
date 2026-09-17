@@ -9,12 +9,12 @@ from pathlib import Path
 import yaml
 
 from custom_components.climate_profiles.const import (
+    CLIMATE_KEYS,
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
-    VALUE_KEYS,
 )
 
 COMPONENT = (
@@ -76,7 +76,9 @@ def test_services_match_the_code():
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
     }
-    assert set(services[SERVICE_SET_VALUE]["fields"]) == set(VALUE_KEYS)
+    # Only the climate keys are documented: an additional value is named by
+    # the user, so it cannot appear in a static service definition.
+    assert set(services[SERVICE_SET_VALUE]["fields"]) == set(CLIMATE_KEYS)
     assert services[SERVICE_APPLY_PROFILE]["fields"]["profile"]["required"] is True
 
 
@@ -101,12 +103,15 @@ def test_translations_cover_the_same_keys():
 
 def test_config_and_options_steps_are_translated():
     strings = load_json("strings.json")
-    config_steps = {"user", "entities", "profiles"}
+    config_steps = {"user", "profiles"}
     assert config_steps <= set(strings["config"]["step"])
 
     options_steps = {
         "init",
-        "entities",
+        "add_value",
+        "edit_value",
+        "edit_value_form",
+        "delete_value",
         "add_profile",
         "edit_profile",
         "edit_values",

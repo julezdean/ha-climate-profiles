@@ -14,9 +14,17 @@ DOMAIN: Final = "climate_profiles"
 # --- config entry data -----------------------------------------------------
 
 CONF_CLIMATE_ENTITY: Final = "climate_entity"
-CONF_FAN_ENTITY: Final = "fan_entity"
-CONF_DISPLAY_ENTITY: Final = "display_entity"
-CONF_SILENT_ENTITY: Final = "silent_entity"
+
+#: The additional values a config entry drives, each backed by an entity of the
+#: user's choosing. Lives in the entry's options, not its data: unlike the
+#: climate entity it is preference rather than identity.
+CONF_ADDITIONAL: Final = "additional_values"
+
+CONF_ADDITIONAL_ID: Final = "id"
+CONF_ADDITIONAL_NAME: Final = "name"
+CONF_ADDITIONAL_ENTITY: Final = "entity"
+CONF_ADDITIONAL_ICON: Final = "icon"
+CONF_ADDITIONAL_ORDER: Final = "order"
 
 # --- config entry options --------------------------------------------------
 
@@ -36,35 +44,45 @@ VALUE_HVAC_MODE: Final = "hvac_mode"
 VALUE_TEMPERATURE: Final = "temperature"
 VALUE_SWING_MODE: Final = "swing_mode"
 VALUE_FAN_MODE: Final = "fan_mode"
-VALUE_FAN: Final = "fan"
-VALUE_DISPLAY: Final = "display"
-VALUE_SILENT: Final = "silent"
 
-#: Every supported key, in the order in which the values are applied.
-#: ``hvac_mode`` goes first because most devices ignore everything else while
-#: they are off - this mirrors the behaviour of the original YAML script.
-VALUE_KEYS: Final[tuple[str, ...]] = (
+#: The keys that live on the climate entity itself, in the order in which they
+#: are applied. ``hvac_mode`` goes first because most devices ignore everything
+#: else while they are off - this mirrors the original YAML script. Additional
+#: values are applied after these, in their configured order.
+CLIMATE_KEYS: Final[tuple[str, ...]] = (
     VALUE_HVAC_MODE,
     VALUE_TEMPERATURE,
     VALUE_SWING_MODE,
     VALUE_FAN_MODE,
-    VALUE_FAN,
-    VALUE_DISPLAY,
-    VALUE_SILENT,
 )
 
-#: Keys that are only usable when the matching optional entity is configured.
-KEY_REQUIRES_ENTITY: Final[dict[str, str]] = {
-    VALUE_FAN: CONF_FAN_ENTITY,
-    VALUE_DISPLAY: CONF_DISPLAY_ENTITY,
-    VALUE_SILENT: CONF_SILENT_ENTITY,
+# --- what a value is -------------------------------------------------------
+
+#: How a value is compared, stored and written. Derived from the domain of the
+#: entity behind it, never hard coded per key.
+KIND_NUMBER: Final = "number"
+KIND_BOOLEAN: Final = "boolean"
+KIND_OPTION: Final = "option"
+
+#: The domains an additional value may point at: those whose state is a single
+#: value. A ``light`` would have to answer what "equal" means - brightness?
+#: colour? - and every rule in ``matching`` would have to carry that answer.
+ADDITIONAL_DOMAINS: Final[dict[str, str]] = {
+    "number": KIND_NUMBER,
+    "input_number": KIND_NUMBER,
+    "switch": KIND_BOOLEAN,
+    "input_boolean": KIND_BOOLEAN,
+    "select": KIND_OPTION,
+    "input_select": KIND_OPTION,
 }
 
-BOOLEAN_KEYS: Final[frozenset[str]] = frozenset({VALUE_DISPLAY, VALUE_SILENT})
-NUMERIC_KEYS: Final[frozenset[str]] = frozenset({VALUE_TEMPERATURE, VALUE_FAN})
-STRING_KEYS: Final[frozenset[str]] = frozenset(
-    {VALUE_HVAC_MODE, VALUE_SWING_MODE, VALUE_FAN_MODE}
-)
+#: The kind of each climate key. These four are given by Home Assistant.
+CLIMATE_KINDS: Final[dict[str, str]] = {
+    VALUE_HVAC_MODE: KIND_OPTION,
+    VALUE_TEMPERATURE: KIND_NUMBER,
+    VALUE_SWING_MODE: KIND_OPTION,
+    VALUE_FAN_MODE: KIND_OPTION,
+}
 
 # --- the virtual "custom" profile -----------------------------------------
 
@@ -78,6 +96,10 @@ DEFAULT_PROFILE_COLOR: Final = "#03a9f4"
 # --- attributes ------------------------------------------------------------
 
 ATTR_ACTIVE_PROFILE: Final = "active_profile"
+
+#: The definitions of the additional values, so the card can label and draw
+#: what it otherwise only sees as ids.
+ATTR_ADDITIONAL: Final = "additional_values"
 ATTR_ACTIVE_PROFILE_ID: Final = "active_profile_id"
 ATTR_ACTIVE_PROFILE_COLOR: Final = "active_profile_color"
 ATTR_PROFILES: Final = "profiles"
