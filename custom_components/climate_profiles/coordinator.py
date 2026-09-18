@@ -23,7 +23,10 @@ from homeassistant.const import (
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.debounce import Debouncer
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
@@ -31,10 +34,13 @@ from .const import (
     CONF_ADDITIONAL,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
+    CONF_VALUE_ORDER,
     CUSTOM_PROFILE_ID,
     DEFAULT_CUSTOM_COLOR,
     DEFAULT_CUSTOM_NAME,
     DOMAIN,
+    REACH_MAX_SECONDS,
+    REACH_QUIET_SECONDS,
     RECALC_DEBOUNCE_SECONDS,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
@@ -46,7 +52,10 @@ from .matching import (
     build_apply_plan,
     capture_values,
     changed_keys,
+    normalise_values,
     resolve_active_profile,
+    storage_value,
+    values_equal,
 )
 from .models import (
     AdditionalValueSet,
@@ -66,6 +75,33 @@ type ClimateProfilesConfigEntry = ConfigEntry[ClimateProfilesCoordinator]
 
 
 @dataclass(frozen=True, slots=True)
+class Unreached:
+    """A profile that was applied, but that the device did not keep.
+
+    Two values of one profile can contradict each other on a real device - a
+    silent mode that forces its own fan speed makes "fan full, silent on"
+    impossible. The integration cannot know that, it is device knowledge. It
+    can only see the result, and say so instead of ending on a silent "custom".
+    """
+
+    profile_id: str
+    profile: str
+    #: key -> (wanted, actual), both in the form profiles store them.
+    values: dict[str, tuple[Any, Any]]
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a representation for the frontend and for automations."""
+        return {
+            "profile_id": self.profile_id,
+            "profile": self.profile,
+            "values": {
+                key: {"wanted": wanted, "actual": actual}
+                for key, (wanted, actual) in self.values.items()
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileState:
     """Everything the entities and the card need to render."""
 
@@ -82,6 +118,7 @@ class ProfileState:
     #: after a restart there is no reference point, and "custom" stays custom.
     last_matched: ClimateProfile | None = None
     changed: tuple[str, ...] = ()
+    unreached: Unreached | None = None
 
     @property
     def active_id(self) -> str:
@@ -120,6 +157,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         #: Set when the next recalculation should start a fresh baseline,
         #: i.e. after we wrote the state ourselves.
         self._renew_baseline = False
+        #: The profile last applied, until it is either matched or judged
+        #: unreached - and when the device was last touched or last moved.
+        self._target: ClimateProfile | None = None
+        self._last_call = 0.0
+        self._last_change = 0.0
+        self._reach_timer: Any = None
+        self._unreached: Unreached | None = None
 
     # -- configuration ------------------------------------------------------
 
@@ -139,6 +183,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 "Invalid additional values for %s: %s", self.config_entry.title, err
             )
             return AdditionalValueSet()
+
+    @property
+    def value_order(self) -> list[str]:
+        """Return the configured apply order (without ``hvac_mode``)."""
+        return list(self.config_entry.options.get(CONF_VALUE_ORDER) or [])
 
     @property
     def additional(self) -> AdditionalValueSet:
@@ -239,6 +288,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self.entities,
             self._read_capabilities(),
             additional_specs=self._read_additional_specs(),
+            order=self.value_order,
         )
 
     async def _async_update_data(self) -> ProfileState:
@@ -246,16 +296,31 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         values, available = self._read_values()
         capabilities = self._read_capabilities()
         vocabulary = Vocabulary.build(
-            self.entities, capabilities, additional_specs=self._read_additional_specs()
+            self.entities,
+            capabilities,
+            additional_specs=self._read_additional_specs(),
+            order=self.value_order,
         )
         profiles = self.profiles
         active = resolve_active_profile(profiles, values, vocabulary)
         applying = self._apply_task is not None and not self._apply_task.done()
 
-        if active is not None and (
-            self._renew_baseline
-            or self._baseline is None
-            or self._baseline[0] != active.id
+        # While an applied profile is still on its way, only that one may take
+        # the baseline. Right after the calls the device has not reported yet,
+        # so the profile you just left still matches for a moment - letting it
+        # take the baseline back would count whatever the device does next as
+        # a hand edit of the wrong profile.
+        pending = self._target is not None and (
+            active is None or active.id != self._target.id
+        )
+        if (
+            active is not None
+            and not pending
+            and (
+                self._renew_baseline
+                or self._baseline is None
+                or self._baseline[0] != active.id
+            )
         ):
             # A new reference point, but only when the profile actually
             # changed or we wrote the state ourselves. A partial profile stays
@@ -263,6 +328,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             # the baseline there would forget exactly what you just changed.
             self._baseline = (active.id, dict(values))
         self._renew_baseline = False
+
+        if active is not None:
+            # Any profile matching now makes a verdict about an earlier one
+            # stale; the applied one matching means it simply took.
+            self._unreached = None
+            if self._target is not None and self._target.id == active.id:
+                self._clear_target()
 
         last_matched = (
             profiles.get(self._baseline[0]) if self._baseline is not None else None
@@ -284,6 +356,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             applying,
             last_matched,
             changed,
+            self._unreached,
         )
 
     # -- lifecycle ----------------------------------------------------------
@@ -298,8 +371,22 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self.config_entry.async_on_unload(self._cancel_running_apply)
 
     @callback
-    def _handle_state_change(self, _event: Event[EventStateChangedData]) -> None:
+    def _handle_state_change(self, event: Event[EventStateChangedData]) -> None:
         """Schedule a debounced recalculation."""
+        if self._target is not None:
+            now = self.hass.loop.time()
+            self._last_change = now
+            # How long a device takes to report what it did is the one number
+            # the reach check depends on, and it differs per device. This line
+            # is what the waiting times are set from.
+            new_state = event.data.get("new_state")
+            _LOGGER.debug(
+                "%s: %s is %s, %.2f s after the last call",
+                self.name,
+                event.data.get("entity_id"),
+                new_state.state if new_state is not None else None,
+                now - self._last_call,
+            )
         self.hass.async_create_task(self.async_request_refresh(), eager_start=True)
 
     @callback
@@ -307,6 +394,92 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """Cancel an in-flight apply, e.g. when the entry is unloaded."""
         if self._apply_task is not None and not self._apply_task.done():
             self._apply_task.cancel()
+        self._clear_target()
+
+    # -- did the profile take? ----------------------------------------------
+
+    @callback
+    def _clear_target(self) -> None:
+        """Stop waiting for the applied profile."""
+        self._target = None
+        if self._reach_timer is not None:
+            self._reach_timer()
+            self._reach_timer = None
+
+    @callback
+    def _schedule_reach_check(self, delay: float) -> None:
+        """Look at the result once the device has been quiet for a while."""
+        if self._reach_timer is not None:
+            self._reach_timer()
+        self._reach_timer = async_call_later(
+            self.hass, max(delay, 0.0), self._reach_timer_fired
+        )
+
+    @callback
+    def _reach_timer_fired(self, _now: Any) -> None:
+        """Start the check on the event loop.
+
+        Marked as a callback on purpose: a plain function handed to
+        ``async_call_later`` runs in a worker thread, and creating a task from
+        there is not thread safe - Home Assistant refuses it outright.
+        """
+        self._reach_timer = None
+        self.hass.async_create_task(self._async_check_reached())
+
+    async def _async_check_reached(self) -> None:
+        """Judge whether the applied profile took, once the device is quiet.
+
+        Quiet means no state change for ``REACH_QUIET_SECONDS``, but never
+        later than ``REACH_MAX_SECONDS`` after the last call: a device that
+        keeps reporting must not postpone the verdict forever.
+        """
+        target = self._target
+        if target is None:
+            return
+
+        now = self.hass.loop.time()
+        quiet_for = now - max(self._last_call, self._last_change)
+        if (
+            quiet_for < REACH_QUIET_SECONDS
+            and now - self._last_call < REACH_MAX_SECONDS
+        ):
+            self._schedule_reach_check(REACH_QUIET_SECONDS - quiet_for)
+            return
+
+        await self.async_refresh()
+        state = self.data
+        if state is None or self._target is None:
+            return
+        self._target = None
+        if state.active is not None and state.active.id == target.id:
+            return
+
+        vocab = state.vocabulary
+        wanted = normalise_values(vocab, target.values)
+        current = normalise_values(vocab, state.values)
+        missed = {
+            key: (
+                storage_value(vocab.get(key), value),
+                storage_value(vocab.get(key), current.get(key)),
+            )
+            for key, value in wanted.items()
+            if not values_equal(vocab.get(key), value, current.get(key))
+        }
+        if not missed:
+            return
+
+        self._unreached = Unreached(target.id, target.name, missed)
+        _LOGGER.warning(
+            "%s: profile %s was applied but did not take - %s. Two of its "
+            "values probably contradict each other on this device",
+            self.name,
+            target.name,
+            ", ".join(
+                f"{key} is {actual} instead of {wanted}"
+                for key, (wanted, actual) in missed.items()
+            ),
+        )
+        self.async_set_updated_data(replace(state, unreached=self._unreached))
 
     # -- writing ------------------------------------------------------------
 
@@ -331,6 +504,14 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_placeholders={"profile": reference, "known": known},
             )
 
+        # Applying a profile leaves the one you were in. Whatever differs from
+        # that one afterwards is not a hand edit of it - without this, a
+        # profile the device cannot keep would be offered for capture into the
+        # previous profile.
+        self._baseline = None
+        self._unreached = None
+        self._clear_target()
+        self._target = profile
         await self._async_run_apply(profile.values, optimistic=profile)
 
     @callback
@@ -541,11 +722,16 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 )
         except HomeAssistantError as err:
             _LOGGER.error("Applying values to %s failed: %s", self.name, err)
+            self._clear_target()
             raise
         finally:
             self._apply_task = None
             self._renew_baseline = True
             await self.async_refresh()
+
+        if optimistic is not None and self._target is optimistic:
+            self._last_call = self._last_change = self.hass.loop.time()
+            self._schedule_reach_check(REACH_QUIET_SECONDS)
 
     def _log_plan(self, plan: ApplyPlan) -> None:
         """Tell the user about values that could not be applied cleanly."""

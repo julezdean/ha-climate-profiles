@@ -8,7 +8,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    async_mock_service,
 )
 
 from custom_components.climate_profiles.const import (
@@ -83,20 +82,6 @@ async def setup_entry(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
-
-
-@pytest.fixture
-def calls(hass: HomeAssistant) -> dict:
-    """Record every service call the integration makes."""
-    return {
-        "set_hvac_mode": async_mock_service(hass, "climate", "set_hvac_mode"),
-        "set_temperature": async_mock_service(hass, "climate", "set_temperature"),
-        "set_fan_mode": async_mock_service(hass, "climate", "set_fan_mode"),
-        "set_swing_mode": async_mock_service(hass, "climate", "set_swing_mode"),
-        "set_value": async_mock_service(hass, "number", "set_value"),
-        "turn_on": async_mock_service(hass, "switch", "turn_on"),
-        "turn_off": async_mock_service(hass, "switch", "turn_off"),
-    }
 
 
 # --- entities --------------------------------------------------------------

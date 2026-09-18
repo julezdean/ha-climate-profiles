@@ -145,12 +145,33 @@ building:
   reloaded the entry - every entity blinking to unavailable on the way. The
   comparison reads them from the options too, so a profile change still only
   recalculates while a changed set of entities still reloads.
-- **Ordering was left to the config flow.** Additional values carry an
-  ``order`` like profiles do, set when they are added; there is no reorder
-  step yet. Adding one is what decides where it sits.
+- **The order became a decision of its own.** Values can contradict each
+  other on a device - a silent mode that sets its own fan speed - and then the
+  one written last wins. So the apply order is one list over everything, the
+  climate keys and the additional values mixed, set under Configure; anything
+  it does not name keeps its default place at the end. `hvac_mode` is not in
+  it and always goes first, because most devices ignore everything else while
+  they are off. The card shows the additional values in the same order: one
+  list, one truth, rather than a second sorting nobody can tell apart.
+- **A contradiction cannot be prevented, only reported.** Which values exclude
+  each other is device knowledge. What the integration can do is look: after a
+  profile is applied it waits for the device to be quiet, checks whether the
+  profile took, and if not reports which values the device did not keep. A
+  report, not a fix - offering to write the result into the profile would be
+  the wrong answer whenever the other of the two values was the one meant.
+- **Leaving a profile has to mean leaving it.** Right after the calls the
+  device has not reported yet, so the profile you came from still matches for
+  a moment and used to take the reference point for "changed by hand" back. A
+  profile the device could not keep was then offered for capture into the
+  previous one. While an applied profile is pending, no other profile may take
+  that reference point.
+
+The waiting times are provisional (`REACH_QUIET_SECONDS`,
+`REACH_MAX_SECONDS`): how long a device takes to report what it did differs per
+device, and the debug log of the coordinator records exactly that, so they can
+be set from a real one.
 
 Still open:
 
 - Whether `capture_profile` should offer additional values in the same list as
   the climate ones, or in a second one.
-- A reorder step for additional values, the way profiles have one.

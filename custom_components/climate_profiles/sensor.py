@@ -27,6 +27,7 @@ from .const import (
     ATTR_NAME,
     ATTR_PROFILE,
     ATTR_PROFILES,
+    ATTR_UNREACHED,
     ATTR_VALUES,
     CUSTOM_PROFILE_ID,
     DEFAULT_CUSTOM_COLOR,
@@ -178,8 +179,9 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ATTR_CAPABILITIES: data.capabilities.as_dict() if data else {},
             # The card only ever sees ids in ``values``; these say what they
             # are called, which entity they are and how to draw them.
-            ATTR_ADDITIONAL: coordinator.additional.as_frontend(
-                data.vocabulary if data else None
+            ATTR_ADDITIONAL: _in_apply_order(
+                coordinator.additional.as_frontend(data.vocabulary if data else None),
+                data.vocabulary.keys() if data else (),
             ),
             ATTR_ENTITIES: coordinator.entities.as_dict(),
             ATTR_APPLYING: bool(data and data.applying),
@@ -189,6 +191,11 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                 data.last_matched.id if data and data.last_matched else None
             ),
             ATTR_CHANGED_VALUES: list(data.changed) if data else [],
+            # A profile that was applied but did not take, and why - so an
+            # automation can react instead of guessing from a plain "custom".
+            ATTR_UNREACHED: (
+                data.unreached.as_dict() if data and data.unreached else None
+            ),
         }
 
     # -- services -----------------------------------------------------------
@@ -220,3 +227,18 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         await self.coordinator.async_save_as_profile(
             name, color=color, icon=icon, keys=values
         )
+
+
+def _in_apply_order(
+    definitions: list[dict[str, Any]], order: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Return the definitions in apply order, ``order`` set to the position.
+
+    The card shows the additional values in the order they are applied - one
+    list, one truth, rather than a second sorting nobody can tell apart.
+    """
+    position = {key: index for index, key in enumerate(order)}
+    ordered = sorted(
+        definitions, key=lambda item: position.get(item["id"], len(position))
+    )
+    return [item | {"order": index} for index, item in enumerate(ordered)]

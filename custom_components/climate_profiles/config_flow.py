@@ -51,6 +51,7 @@ from .const import (
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILES,
+    CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_NAME,
     DEFAULT_PROFILE_COLOR,
     DOMAIN,
@@ -93,6 +94,22 @@ ON_OFF_OPTIONS = ["on", "off"]
 # ---------------------------------------------------------------------------
 
 
+#: How the climate keys are called in the reorder list, which mixes them with
+#: the user's own names for the additional values.
+_CLIMATE_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        VALUE_TEMPERATURE: "Temperature",
+        VALUE_SWING_MODE: "Swing",
+        VALUE_FAN_MODE: "Fan mode",
+    },
+    "de": {
+        VALUE_TEMPERATURE: "Temperatur",
+        VALUE_SWING_MODE: "Swing",
+        VALUE_FAN_MODE: "Lüftermodus",
+    },
+}
+
+
 def _float(raw: Any) -> float | None:
     try:
         return float(raw)  # type: ignore[arg-type]
@@ -116,7 +133,11 @@ def read_capabilities(hass: HomeAssistant, entities: EntityMap) -> Capabilities:
     )
 
 
-def read_vocabulary(hass: HomeAssistant, entities: EntityMap) -> Vocabulary:
+def read_vocabulary(
+    hass: HomeAssistant,
+    entities: EntityMap,
+    order: list[str] | None = None,
+) -> Vocabulary:
     """Read what an entry knows about, straight from its entities.
 
     The limits of an additional value belong to its entity, not to us: a
@@ -134,7 +155,10 @@ def read_vocabulary(hass: HomeAssistant, entities: EntityMap) -> Vocabulary:
             "options": tuple(str(o) for o in attrs.get("options") or ()),
         }
     return Vocabulary.build(
-        entities, read_capabilities(hass, entities), additional_specs=specs
+        entities,
+        read_capabilities(hass, entities),
+        additional_specs=specs,
+        order=order,
     )
 
 
@@ -517,7 +541,30 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         return EntityMap.from_config(self.config_entry.data, self._additional)
 
     def _vocab(self) -> Vocabulary:
-        return read_vocabulary(self.hass, self._entities)
+        return read_vocabulary(
+            self.hass,
+            self._entities,
+            list(self.config_entry.options.get(CONF_VALUE_ORDER) or []),
+        )
+
+    def _order_options(self) -> list[SelectOptionDict]:
+        """Every value that can be moved, labelled - ``hvac_mode`` excluded.
+
+        Climate keys are labelled here rather than through the translation
+        files: the list mixes them with the user's own names, and a selector
+        translates either all of its options or none.
+        """
+        labels = _CLIMATE_LABELS.get(
+            (self.hass.config.language or "en").split("-")[0], _CLIMATE_LABELS["en"]
+        )
+        names = {value.id: value.name for value in self._additional}
+        return [
+            SelectOptionDict(
+                value=spec.key, label=labels.get(spec.key) or names[spec.key]
+            )
+            for spec in self._vocab()
+            if spec.key != VALUE_HVAC_MODE and (spec.key in labels or spec.key in names)
+        ]
 
     def _value_options(self) -> list[SelectOptionDict]:
         return [
@@ -558,7 +605,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         """Show what can be changed."""
         options = ["add_value"]
         if self._additional:
-            options += ["edit_value", "delete_value"]
+            options += ["edit_value", "reorder_values", "delete_value"]
         options.append("add_profile")
         if self._profiles:
             options += ["edit_profile", "reorder", "delete_profile"]
@@ -662,13 +709,58 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             description_placeholders={"value": current.name},
         )
 
+    async def async_step_reorder_values(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the order in which values are applied.
+
+        Values can contradict each other on a device - a silent mode that sets
+        its own fan speed wins or loses depending on whether it is written
+        before or after the fan mode. The order decides which. It is also the
+        order the card shows the additional values in.
+
+        ``hvac_mode`` is not offered: it always goes first, because most
+        devices ignore everything else while they are off. Picked one after
+        another, like the profile order; anything left out keeps its relative
+        place at the end.
+        """
+        current = [option["value"] for option in self._order_options()]
+        if user_input is not None:
+            wanted = [
+                key
+                for key in dict.fromkeys(user_input.get(CONF_ORDER, []))
+                if key in current
+            ]
+            order = wanted + [key for key in current if key not in wanted]
+            return self.async_create_entry(
+                data={**self.config_entry.options, CONF_VALUE_ORDER: order}
+            )
+
+        return self.async_show_form(
+            step_id="reorder_values",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ORDER, default=current): SelectSelector(
+                        SelectSelectorConfig(
+                            options=self._order_options(),
+                            mode=SelectSelectorMode.DROPDOWN,
+                            multiple=True,
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+        )
+
     async def async_step_delete_value(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Remove additional values.
 
-        The values stored in profiles are left alone: they are harmless, and
-        putting the entity back restores what those profiles meant.
+        The values stored in profiles are left alone: they are harmless and
+        skipped from then on. They do not come back to life when the entity is
+        added again - that creates a new value with a new id. Swapping the
+        entity behind a value is what editing it is for.
         """
         if user_input is not None:
             chosen = set(user_input.get(CONF_ADDITIONAL_ID) or ())

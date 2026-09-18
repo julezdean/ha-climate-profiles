@@ -26,6 +26,12 @@ CONF_ADDITIONAL_ENTITY: Final = "entity"
 CONF_ADDITIONAL_ICON: Final = "icon"
 CONF_ADDITIONAL_ORDER: Final = "order"
 
+#: The order in which values are applied - and in which the card shows the
+#: additional ones. One list over one key space: the climate keys and the ids of
+#: the additional values, mixed. ``hvac_mode`` is not in it: it always goes
+#: first, because most devices ignore everything else while they are off.
+CONF_VALUE_ORDER: Final = "value_order"
+
 # --- config entry options --------------------------------------------------
 
 CONF_PROFILES: Final = "profiles"
@@ -97,6 +103,10 @@ DEFAULT_PROFILE_COLOR: Final = "#03a9f4"
 
 ATTR_ACTIVE_PROFILE: Final = "active_profile"
 
+#: A profile that was applied but did not take: which one, and which of its
+#: values the device did not keep.
+ATTR_UNREACHED: Final = "unreached"
+
 #: The definitions of the additional values, so the card can label and draw
 #: what it otherwise only sees as ids.
 ATTR_ADDITIONAL: Final = "additional_values"
@@ -132,3 +142,13 @@ RECALC_DEBOUNCE_SECONDS: Final = 0.4
 
 #: Smallest difference that still counts as "a different value" for floats.
 FLOAT_EPSILON: Final = 0.05
+
+# --- did the profile take? -------------------------------------------------
+
+#: After a profile is applied, the device is given this long without any state
+#: change before the result is judged. PROVISIONAL: set from measurements on a
+#: real device, see the debug log of the coordinator.
+REACH_QUIET_SECONDS: Final = 3.0
+#: ... but never longer than this after the last call, so a device that keeps
+#: reporting does not postpone the verdict forever. PROVISIONAL as well.
+REACH_MAX_SECONDS: Final = 30.0

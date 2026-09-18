@@ -7,6 +7,7 @@ operates on these objects.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import uuid4
@@ -567,6 +568,7 @@ class Vocabulary:
         caps: Capabilities | None = None,
         *,
         additional_specs: dict[str, dict[str, Any]] | None = None,
+        order: Sequence[str] | None = None,
     ) -> Vocabulary:
         """Assemble the vocabulary of a config entry.
 
@@ -575,6 +577,11 @@ class Vocabulary:
         ``step`` for the number ones. The coordinator reads it from the states;
         leaving it out yields specs without limits, which compare fine and only
         lose the range check when applying.
+
+        ``order`` is the configured apply order. Keys it names come first, in
+        its order; everything it leaves out keeps its default place after them -
+        so a value added later lands at the end without anybody sorting it.
+        ``hvac_mode`` goes first whatever the list says.
         """
         caps = caps or Capabilities()
         limits = additional_specs or {}
@@ -608,7 +615,7 @@ class Vocabulary:
                     step=float(limit.get("step") or 1.0),
                 )
             )
-        return cls(tuple(specs))
+        return cls(_ordered(specs, order))
 
     def get(self, key: str) -> ValueSpec | None:
         """Return the spec of ``key``, or ``None`` when it is not usable."""
@@ -637,3 +644,19 @@ class Vocabulary:
     def __len__(self) -> int:
         """Return how many values are usable."""
         return len(self.specs)
+
+
+def _ordered(
+    specs: list[ValueSpec], order: Sequence[str] | None
+) -> tuple[ValueSpec, ...]:
+    """Return ``specs`` in the configured apply order, ``hvac_mode`` first."""
+    first = [spec for spec in specs if spec.key == VALUE_HVAC_MODE]
+    rest = [spec for spec in specs if spec.key != VALUE_HVAC_MODE]
+    if order:
+        position = {key: index for index, key in enumerate(dict.fromkeys(order))}
+        listed = sorted(
+            (spec for spec in rest if spec.key in position),
+            key=lambda spec: position[spec.key],
+        )
+        rest = listed + [spec for spec in rest if spec.key not in position]
+    return (*first, *rest)

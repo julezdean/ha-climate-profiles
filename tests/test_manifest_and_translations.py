@@ -111,6 +111,7 @@ def test_config_and_options_steps_are_translated():
         "add_value",
         "edit_value",
         "edit_value_form",
+        "reorder_values",
         "delete_value",
         "add_profile",
         "edit_profile",

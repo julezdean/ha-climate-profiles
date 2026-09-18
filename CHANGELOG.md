@@ -29,13 +29,38 @@ versioning [Semantic Versioning](https://semver.org/).
   knows instead of being ignored.
 - The values a profile sets are read from what the entry knows at the moment
   it is evaluated, so a deleted additional value no longer makes a profile
-  unreadable - its stored value is simply skipped, and putting the entity back
-  restores what the profile meant.
+  unreadable - its stored value is simply skipped. To swap the entity behind
+  a value without losing what profiles set for it, edit the value rather than
+  deleting it: a value added anew gets a new id.
 - Setup asks for the climate entity and the starter profiles only; additional
   values are added afterwards under **Configure**.
 - The integration declares `CONFIG_SCHEMA` as config-entry-only, so a stray
   `climate_profiles:` block in `configuration.yaml` is an error rather than
   something silently ignored.
+
+### Added
+
+- **A profile that does not take is reported.** Two values of one profile can
+  contradict each other on a device - a silent mode that sets its own fan
+  speed makes "fan full, silent on" unreachable. After applying a profile the
+  integration waits until the device has been quiet for a moment and checks
+  whether it took. If not, the sensor carries `unreached` with the values the
+  device did not keep, the log says so, and the card shows it - as a report,
+  not an offer, because only the user knows which of the two values was meant.
+- **The order of the values** can be set under Configure: one list over the
+  climate values and the additional ones, mixed, so a silent mode can be
+  written before or after the fan mode - whichever should win. `hvac_mode`
+  always goes first, because most devices ignore everything else while they
+  are off. The card shows the additional values in the same order.
+
+### Fixed
+
+- Applying a profile the device could not keep made the card offer the result
+  as a hand edit of the profile you came from - "Changed by hand, save into
+  Comfort" after tapping Max. Applying a profile now leaves the previous one
+  for good: until the applied profile matches, no other profile takes the
+  reference point back, even though it keeps matching for the moment before
+  the device reports. This was already the case in 1.x.
 
 ### Card configuration
 

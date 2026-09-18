@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.1";
+const CARD_VERSION = "2.0.0-beta.2";
 
 /* eslint-disable no-console */
 console.info(
@@ -355,6 +355,16 @@ class ClimateProfileCard extends HTMLElement {
 
         <section class="profiles" role="group"></section>
 
+        <section class="unreached" role="status" hidden>
+          <div class="capture-main">
+            <ha-icon icon="mdi:alert-circle-outline"></ha-icon>
+            <div class="capture-text">
+              <span class="capture-title unreached-title"></span>
+              <span class="capture-values unreached-values"></span>
+            </div>
+          </div>
+        </section>
+
         <section class="capture" hidden>
           <div class="capture-main">
             <ha-icon icon="mdi:pencil-outline"></ha-icon>
@@ -402,9 +412,14 @@ class ClimateProfileCard extends HTMLElement {
       ambient: root.querySelector(".ambient"),
       profiles: root.querySelector(".profiles"),
       controls: root.querySelector(".controls"),
+      unreached: root.querySelector(".unreached"),
+      unreachedTitle: root.querySelector(".unreached-title"),
+      unreachedValues: root.querySelector(".unreached-values"),
       capture: root.querySelector(".capture"),
-      captureTitle: root.querySelector(".capture-title"),
-      captureValues: root.querySelector(".capture-values"),
+      // Scoped to their section: the unreached hint reuses the same layout
+      // classes and comes first, so a bare selector would find it instead.
+      captureTitle: root.querySelector(".capture .capture-title"),
+      captureValues: root.querySelector(".capture .capture-values"),
       captureActions: root.querySelector(".capture-actions"),
       captureInto: root.querySelector(".capture-into"),
       captureNew: root.querySelector(".capture-new"),
@@ -805,10 +820,55 @@ class ClimateProfileCard extends HTMLElement {
       }
     }
 
+    this._paintUnreached(model);
     this._paintCapture(model);
 
     el.progress.classList.toggle("busy", Boolean(model.applying));
     el.card.setAttribute("aria-busy", model.applying ? "true" : "false");
+  }
+
+  /**
+   * Says that a profile was applied but did not take, and which of its values
+   * the device did not keep.
+   *
+   * Only a report, no button: the likely cause is two values of the profile
+   * contradicting each other on the device, and only the user knows which of
+   * the two was meant. Offering to write the result into the profile would be
+   * the wrong answer half of the time.
+   */
+  _paintUnreached(model) {
+    const el = this._el;
+    const report = model.attrs.unreached;
+    const show = Boolean(report) && !model.unavailable;
+    el.unreached.hidden = !show;
+    if (!show) return;
+
+    el.unreachedTitle.textContent = `${report.profile} ${this._t("not reached")}`;
+    el.unreachedValues.textContent = Object.entries(report.values || {})
+      .map(([key, { wanted, actual }]) => {
+        const label = CLIMATE_LABELS[key]
+          ? this._t(CLIMATE_LABELS[key])
+          : (model.additional.find((item) => item.id === key) || {}).name || key;
+        const show = (value) => this._valueText(key, value);
+        return `${label}: ${show(actual)} ${this._t("instead of")} ${show(wanted)}`;
+      })
+      .join(" · ");
+  }
+
+  /** A stored value the way the controls show it. */
+  _valueText(key, value) {
+    if (value === null || value === undefined) return "–";
+    if (key === "hvac_mode") {
+      return this._localize(`component.climate.entity_component._.state.${value}`, value);
+    }
+    if (key === "fan_mode" || key === "swing_mode") {
+      return this._localize(
+        `component.climate.entity_component._.state_attributes.${key}.state.${value}`,
+        value
+      );
+    }
+    if (value === "on" || value === "off") return this._t(value === "on" ? "On" : "Off");
+    return typeof value === "number" ? String(value) : this._prettify(String(value));
   }
 
   /**
@@ -1041,6 +1101,8 @@ const CARD_DE = {
   "Turn off": "Ausschalten",
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
   "Changed by hand": "Von Hand geändert",
+  "not reached": "nicht erreicht",
+  "instead of": "statt",
   "Save into": "Übernehmen in",
   "New profile": "Neues Profil",
   "Name of the profile": "Name des Profils",
@@ -1062,6 +1124,8 @@ const STYLES = `
   --cp-surface: var(--card-background-color, #fff);
   --cp-text: var(--primary-text-color, #1f2933);
   --cp-muted: var(--secondary-text-color, #6b7280);
+  /* Home Assistant's warning colour as RGB, for tinted backgrounds. */
+  --cp-warning-rgb: 255, 166, 0;
   --cp-line: var(--divider-color, rgba(127, 127, 127, 0.25));
   --cp-fill: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
   --accent-color: var(--primary-color, #03a9f4);
@@ -1354,6 +1418,7 @@ ha-card.unavailable { opacity: 0.6; }
 /* capture offer */
 /* Every one of these is a flex container, and "display" beats the "hidden"
    attribute - so each needs its own [hidden] rule. */
+.unreached[hidden],
 .capture[hidden],
 .capture-actions[hidden],
 .capture-form[hidden],
@@ -1369,6 +1434,17 @@ ha-card.unavailable { opacity: 0.6; }
   border-radius: 14px;
   background: rgba(var(--accent-rgb), 0.06);
 }
+/* Same layout as the capture bar, but in the warning colour: this is not an
+   offer, it is a report that something did not happen. */
+.unreached {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--cp-warning-rgb), 0.55);
+  border-radius: 14px;
+  background: rgba(var(--cp-warning-rgb), 0.08);
+}
+.unreached .capture-main > ha-icon { color: var(--warning-color, #ffa600); }
 .capture-main {
   display: flex;
   align-items: center;

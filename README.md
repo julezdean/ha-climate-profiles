@@ -91,7 +91,8 @@ Each config entry creates one device with two entities:
 | --- | --- |
 | Add a value | an additional value, backed by an entity you pick |
 | Edit a value | point it at a different entity, rename it, give it an icon |
-| Delete values | what profiles stored for them is kept, so putting the entity back restores what they meant |
+| Order of the values | the order values are written in - and the card shows them in |
+| Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
 | Add profile | name, colour, icon and the values it should set |
 | Edit profile | change everything; **clear a field to remove that value from the profile** |
 | Change order | the order profiles are matched and shown in |
@@ -180,6 +181,28 @@ the quick path, not the deliberate one.
 change" only exists while Home Assistant runs, so a fresh start with a
 deviating state stays custom and offers no target until a profile matches
 again. Name the profile explicitly in the service call if you need it anyway.
+
+### When a profile does not take
+
+Two values of one profile can contradict each other on a real device. A silent
+mode that sets its own fan speed makes "fan mode full, silent on" impossible:
+whichever is written last wins, and the profile can never match afterwards.
+
+The integration cannot know that - it is device knowledge. It can see the
+result. After a profile is applied it waits until the device has been quiet for
+a moment, then checks whether the profile actually took. If not, the card says
+which values the device did not keep:
+
+![A profile that did not take](docs/images/card-unreached.png)
+
+It is a report, not an offer: only you know which of the two values was meant.
+The same verdict is on the sensor as `unreached`, so an automation can react to
+it, and in the log as a warning.
+
+Which value wins is decided by the **order of the values** under Configure. It
+is one list over everything - the climate values and your additional ones,
+mixed - so a silent mode can go before or after the fan mode. The mode itself
+always goes first: most devices ignore everything else while they are off.
 
 ### Not only air conditioners
 
@@ -282,6 +305,8 @@ entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 last_matched_profile_id: 2b3c4d5e…   # what "capture" would write into
 changed_values: [temperature]        # what it would change; empty after a restart
+unreached:                           # a profile that was applied but did not take
+  {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
 ```
 
 Automations should trigger on `active_profile_id`. The state is the display

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from pytest_homeassistant_custom_component.common import async_mock_service
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -232,3 +233,17 @@ async def settle(hass) -> None:
     await hass.async_block_till_done()
     await asyncio.sleep(RECALC_DEBOUNCE_SECONDS + 0.2)
     await hass.async_block_till_done()
+
+
+@pytest.fixture
+def calls(hass) -> dict:
+    """Record every service call the integration makes."""
+    return {
+        "set_hvac_mode": async_mock_service(hass, "climate", "set_hvac_mode"),
+        "set_temperature": async_mock_service(hass, "climate", "set_temperature"),
+        "set_fan_mode": async_mock_service(hass, "climate", "set_fan_mode"),
+        "set_swing_mode": async_mock_service(hass, "climate", "set_swing_mode"),
+        "set_value": async_mock_service(hass, "number", "set_value"),
+        "turn_on": async_mock_service(hass, "switch", "turn_on"),
+        "turn_off": async_mock_service(hass, "switch", "turn_off"),
+    }

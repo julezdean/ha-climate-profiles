@@ -42,8 +42,8 @@ follow on their own.
 
 ## The states in the pictures
 
-`SHOTS` in `tools/make_screenshots.py` lists them. Two are deliberately special
-cases - do not "fix" them into a normal state:
+`SHOTS` in `tools/make_screenshots.py` lists them. Three are deliberately
+special cases - do not "fix" them into a normal state:
 
 | File | State |
 | --- | --- |
@@ -52,6 +52,7 @@ cases - do not "fix" them into a normal state:
 | `card-custom.png` | one manual change, no profile matches -> custom |
 | `card-off.png` | device off, the "Off" profile matches |
 | `card-heating.png` | a radiator thermostat: no fan, no swing, no switches |
+| `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-capture.png` | something was changed by hand, the capture offer is up |
 
 To look at a state interactively:

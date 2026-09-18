@@ -36,6 +36,7 @@
         "menu_options": {
           "add_value": "Wert hinzufügen",
           "edit_value": "Wert bearbeiten",
+          "reorder_values": "Reihenfolge der Werte",
           "delete_value": "Werte löschen",
           "add_profile": "Profil hinzufügen",
           "edit_profile": "Profil bearbeiten",
@@ -129,9 +130,16 @@
       },
       "delete_value": {
         "title": "Werte löschen",
-        "description": "Was deine Profile dafür gespeichert haben, bleibt erhalten - die Entity zurückzulegen stellt wieder her, was diese Profile meinten.",
+        "description": "Was deine Profile dafür gespeichert haben, bleibt stehen, wird aber übersprungen. Die Entity erneut hinzuzufügen legt einen neuen Wert an - um einen Wert auf eine andere Entity zu richten, bearbeite ihn stattdessen.",
         "data": {
           "id": "Werte"
+        }
+      },
+      "reorder_values": {
+        "title": "Reihenfolge der Werte",
+        "description": "Wähle die Werte in der Reihenfolge, in der sie geschrieben werden sollen. Sie entscheidet, welcher gewinnt, wenn sich zwei an deinem Gerät widersprechen - etwa ein Flüstermodus, der seine eigene Lüfterstufe setzt. Die Karte zeigt die zusätzlichen Werte in derselben Reihenfolge. Der Modus kommt immer zuerst; was du wegglässt, behält seinen Platz am Ende.",
+        "data": {
+          "order": "Reihenfolge"
         }
       }
     },

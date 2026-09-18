@@ -36,6 +36,7 @@
         "menu_options": {
           "add_value": "Add a value",
           "edit_value": "Edit a value",
+          "reorder_values": "Order of the values",
           "delete_value": "Delete values",
           "add_profile": "Add profile",
           "edit_profile": "Edit profile",
@@ -129,9 +130,16 @@
       },
       "delete_value": {
         "title": "Delete values",
-        "description": "What your profiles stored for them is kept, so putting the entity back restores what those profiles meant.",
+        "description": "What your profiles stored for them stays, but is skipped from then on. Adding the entity again creates a new value - to point a value at a different entity, edit it instead.",
         "data": {
           "id": "Values"
+        }
+      },
+      "reorder_values": {
+        "title": "Order of the values",
+        "description": "Pick the values in the order they should be written. It decides which one wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The card shows the additional values in the same order. The mode always goes first; anything you leave out keeps its place at the end.",
+        "data": {
+          "order": "Order"
         }
       }
     },

@@ -266,3 +266,39 @@ async def test_a_device_without_additional_values_shows_none(open_card):
 
     assert await card.locator("input.slider").count() == 0
     assert await card.locator(".toggle").count() == 0
+
+
+# --- a profile that did not take --------------------------------------------
+
+UNREACHED = {
+    "temperature": 24,
+    "fan_mode": "silent",
+    "silent": "on",
+    "active_profile": "Custom",
+    "active_profile_id": "__custom__",
+    "active_profile_color": "#78909c",
+    "unreached": {
+        "profile_id": "p6",
+        "profile": "Max",
+        "values": {"fan_mode": {"wanted": "full", "actual": "silent"}},
+    },
+}
+
+
+async def test_the_unreached_hint_is_hidden_by_default(open_card):
+    page = await open_card()
+    assert await page.locator("climate-profile-card .unreached").is_hidden()
+
+
+async def test_an_unreached_profile_is_reported_not_offered(open_card):
+    """A report only: which value did not take, and no button to guess a fix."""
+    page = await open_card(UNREACHED)
+    hint = page.locator("climate-profile-card .unreached")
+
+    assert await hint.is_visible()
+    assert await hint.locator(".unreached-title").inner_text() == "Max not reached"
+    assert (
+        await hint.locator(".unreached-values").inner_text()
+        == "Fan mode: Silent instead of Full"
+    )
+    assert await hint.locator("button").count() == 0

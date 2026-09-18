@@ -58,6 +58,23 @@ SHOTS: dict[str, dict] = {
     },
     # A radiator thermostat: everything the device cannot do is gone.
     "card-heating": {"theme": "light", "device": "heating"},
+    # A profile the device could not keep: two of its values contradict each
+    # other on the device. A report, deliberately without a button.
+    "card-unreached": {
+        "theme": "light",
+        "state": {
+            "fan_mode": "silent",
+            "silent": "on",
+            "active_profile": "Custom",
+            "active_profile_id": "__custom__",
+            "active_profile_color": "#78909c",
+            "unreached": {
+                "profile_id": "p6",
+                "profile": "Max",
+                "values": {"fan_mode": {"wanted": "full", "actual": "silent"}},
+            },
+        },
+    },
     # The offer to write a manual change back into the profile it came from.
     "card-capture": {
         "theme": "light",
