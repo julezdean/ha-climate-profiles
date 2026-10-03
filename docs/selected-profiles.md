@@ -82,8 +82,10 @@ in steps does not store every step on the way.
 
 Unchanged from today, and the same with either option: the state is custom, and
 the card offers to capture the change into the profile it came from or to save
-it as a new one. If that profile is write protected, there is no offer - just
-custom. The offer expires a minute after the last change.
+it as a new one. If that profile is write protected, the offer keeps only the
+"new profile" route. If it stores automatically, there is no offer at all - the
+write is seconds away, and a question that answers itself is noise. The offer
+expires a minute after the last change.
 
 ## What this does not decide
 

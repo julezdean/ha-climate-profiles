@@ -36,6 +36,8 @@ from .const import (
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
+    CONF_CUSTOM_COLOR,
+    CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
@@ -234,6 +236,18 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self.config_entry.options.get(CONF_CUSTOM_NAME) or DEFAULT_CUSTOM_NAME
         ).strip() or DEFAULT_CUSTOM_NAME
 
+    @property
+    def custom_color(self) -> str:
+        """Return the colour of the virtual "custom" profile."""
+        return normalise_color(
+            self.config_entry.options.get(CONF_CUSTOM_COLOR), DEFAULT_CUSTOM_COLOR
+        )
+
+    @property
+    def custom_icon(self) -> str | None:
+        """Return the icon of the virtual "custom" profile, if it has one."""
+        return self.config_entry.options.get(CONF_CUSTOM_ICON) or None
+
     def profile_name(self, profile: ClimateProfile | None) -> str:
         """Return the display name of ``profile`` (custom when ``None``)."""
         if profile is None:
@@ -241,8 +255,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         return self.profiles.display_names().get(profile.id, profile.name)
 
     def profile_color(self, profile: ClimateProfile | None) -> str:
-        """Return the colour of ``profile`` (neutral when custom)."""
-        return DEFAULT_CUSTOM_COLOR if profile is None else profile.color
+        """Return the colour of ``profile`` (the custom one's when custom)."""
+        return self.custom_color if profile is None else profile.color
 
     # -- reading the world --------------------------------------------------
 

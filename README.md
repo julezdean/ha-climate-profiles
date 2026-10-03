@@ -68,18 +68,17 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 One form: a name and the `climate` entity. No profiles are invented for you -
 a starter set shaped like an air conditioner is of little use on a radiator
 thermostat, and everybody ends up rewriting it anyway. Add yours under
-**Configure → Manage profiles → Add profile**, and give the ones you rely on
-write protection.
+**Configure → Manage profiles**, and give the ones you rely on write
+protection.
 
 Everything your device has beyond the climate entity is added afterwards, under
-**Configure → Manage values → Add a value**: pick the entity, and it is there.
-If your climate entity sits on a Home Assistant device, **Add values from this
-device** lists
-its siblings to tick off instead - a fan speed, a display switch and a silent
-mode switch in three ticks rather than three searches. Supported are
-`number`, `input_number`, `switch`, `input_boolean`, `select` and
-`input_select` - the domains whose state is a single value, which is what a
-profile can compare and write.
+**Configure → Manage values**: add a row, pick the entity, done. If your
+climate entity sits on a Home Assistant device, the same form offers its
+siblings to tick off instead - a fan speed, a display switch and a silent mode
+switch in three ticks rather than three searches. Supported are `number`,
+`input_number`, `switch`, `input_boolean`, `select` and `input_select` - the
+domains whose state is a single value, which is what a profile can compare and
+write.
 
 Each config entry creates one device with two entities:
 
@@ -92,24 +91,34 @@ Each config entry creates one device with two entities:
 
 **Settings → Devices & services → Climate Profiles → Configure**
 
-The menu has two groups - **Manage values** and **Manage profiles** - and the
-entry for renaming "custom" beside them. An entry only appears when there is
-something for it to do: no profiles, no "Edit profile".
+Two lists, and everything about an entry happens in one of them.
 
-| Menu entry | What it does |
-| --- | --- |
-| *Manage values* | |
-| Add a value | an additional value, backed by an entity you pick |
-| Add values from this device | everything on the same device that could carry one, as a list to tick off |
-| Edit a value | point it at a different entity, rename it, give it an icon |
-| Order of the values | the order values are written in - and the card shows them in |
-| Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
-| *Manage profiles* | |
-| Add profile | name, colour, icon and the values it should set |
-| Edit profile | change everything; **clear a field to remove that value from the profile** |
-| Change order | the order profiles are matched and shown in |
-| Delete profiles | remove one or several |
-| Rename "custom" | the name shown when nothing matches |
+| List | One row is | The row holds |
+| --- | --- | --- |
+| **Manage values** | an additional value | name, the entity behind it, an icon |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, what a change by hand does, and every value it sets |
+
+A row is dragged to move it, the pencil opens it, the bin removes it, and the
+button below the list adds one. The order of the rows is the order profiles are
+matched and shown in, and the order values appear on the card.
+
+Two things that are not rows:
+
+* **Add values from this device** sits under the value list: everything on the
+  same device that could carry a value, minus what you already have, as a list
+  to tick off. They land at the end of the list.
+* **The order values are written in** sits there too, over the climate values
+  and yours mixed - a silent mode that sets its own fan speed wins or loses by
+  its place. `hvac_mode` always goes first.
+
+Under the profile list are the three fields of **"custom"** - name, colour and
+icon. It has no values; it is what the card shows when nothing matches.
+
+Clearing a value in a row removes it from that profile: an empty field means
+the profile does not touch that value. Deleting a value from the value list
+leaves what profiles stored for it alone - it is simply skipped from then on.
+To point a value at a different entity, edit its row; adding it anew creates a
+new value with a new id, and every profile loses it.
 
 Each profile form asks what a **change by hand** should do while that profile
 is active, and the three answers are the whole story:
@@ -117,7 +126,7 @@ is active, and the three answers are the whole story:
 | | |
 | --- | --- |
 | Ask before storing | the card offers to capture it - the default |
-| Store automatically | it is written straight into the profile |
+| Store automatically | it is written straight into the profile, without an offer |
 | Write protected | nothing is ever stored over the quick path |
 
 The form itself always stays editable, whatever is chosen there.
@@ -126,15 +135,11 @@ Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
 is not touched when the profile is applied.
 
-### Why "change order" is not drag & drop
+### What the order decides
 
-Home Assistant renders config flows as plain forms; there is no sortable list
-widget available to a custom integration. The closest native equivalent is
-what this integration does: pick the profiles one after another in the order
-you want. Anything you leave out keeps its relative position at the end.
-
-The order matters: **the first profile that matches the current state wins.**
-So put specific profiles above broad ones.
+Several profiles can match at once. **The most specific one wins** - the one
+defining the most values - and the order of the rows decides between profiles
+that are equally specific. The card shows them in that order too.
 
 ## The card
 
@@ -194,9 +199,11 @@ The offer also appears while a *partial* profile is still active. A profile
 that says nothing about the fan keeps matching when you change the fan - and
 that is exactly a change worth offering to capture.
 
-Nothing is ever captured automatically. That is deliberate: a profile that
-rewrites itself silently is the most unpleasant kind of surprise, and it would
-mean the profile could never report "custom" again.
+Nothing is captured automatically unless that profile says so. **Store
+automatically** writes the change into the profile a few seconds after the
+state goes quiet, wherever it was made - and then the card asks nothing: no
+offer appears, not even the "new profile" route, because the question would
+answer itself while it stood there.
 
 **Write protection** is set per profile in the options. A protected profile
 refuses to be captured into - the card then only offers the "new profile"

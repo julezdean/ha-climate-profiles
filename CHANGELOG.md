@@ -41,11 +41,18 @@ versioning [Semantic Versioning](https://semver.org/).
 - The integration declares `CONFIG_SCHEMA` as config-entry-only, so a stray
   `climate_profiles:` block in `configuration.yaml` is an error rather than
   something silently ignored.
-- **Configure opens two groups**, *Manage values* and *Manage profiles*, with
-  renaming "custom" beside them. A device with a few values and a few profiles
-  filled the dialog with ten entries, nine of which were not what you came
-  for. Which entries a group has still depends on what is there: no profiles,
-  no "Edit profile".
+- **Configure is two lists instead of eleven menu entries.** *Manage values*
+  and *Manage profiles* each open a sortable list: one row per entry, with a
+  drag handle, a pencil and a bin, and a button to add one. Adding, editing,
+  reordering and deleting used to be four menu entries each, every one of them
+  a separate walk through the dialog. A profile's row holds everything it is -
+  name, colour, icon, how it becomes active, what a change by hand does, and
+  every value it sets; its id travels with the row, read only, because that is
+  what the stored values hang off. The order of the rows is the order profiles
+  are matched and shown in. Underneath the value list sit the two things that
+  are not rows: the tick-off list of the device's own entities, and the order
+  values are written in. Underneath the profile list sit the three fields of
+  "custom".
 
 ### Added
 
@@ -73,6 +80,11 @@ versioning [Semantic Versioning](https://semver.org/).
   the half degree somebody meant. The ring can also be moved with the arrow
   keys. The default is unchanged, so no dashboard looks different until you
   ask for it.
+- **"Custom" is editable like a profile**: name, colour and icon, under
+  *Manage profiles*. It still has no values of its own - it is what the card
+  shows when none of the stored profiles match - but it is a button next to
+  them, and it looked like the one thing nobody was allowed to style. The
+  sensor's `active_profile_color` follows the colour while nothing matches.
 - **The humidity the device reports is shown** next to the current
   temperature, where a thermostat card shows it. `current_humidity` was in the
   climate entity's attributes all along and the card simply did not read it;
@@ -124,6 +136,12 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A profile that stores automatically no longer asks first.** The offer to
+  capture went up the moment the state deviated and vanished again when the
+  write happened three seconds later - a question that answered itself, with
+  a "save as a new profile" button nobody wanted there. A profile set to store
+  automatically now shows no offer at all. The README's claim that nothing is
+  ever captured automatically was left over from 1.x and is corrected with it.
 - **A value the profile does not define is stored too.** Both the offer to
   capture and automatic capture compare the state against the moment the
   profile was applied. Writing a single value - through `set_value` or the

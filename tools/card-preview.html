@@ -124,7 +124,7 @@
       /* --- a fake Home Assistant --- */
       const PROFILES = [
         { id: "p1", name: "Off", color: "#64748b", icon: "mdi:power", order: 0,
-          protected: true, values: { hvac_mode: "off" } },
+          protected: true, capture: "never", values: { hvac_mode: "off" } },
         { id: "p2", name: "Away", color: "#3b82f6", icon: null, order: 1,
           protected: false,
           values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
@@ -133,6 +133,7 @@
           values: { hvac_mode: "cool", temperature: 24, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
         { id: "p4", name: "Comfort+", color: "#10b981", icon: null, order: 3,
+          capture: "auto",
           values: { hvac_mode: "cool", temperature: 22, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
         { id: "p5", name: "Night", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,

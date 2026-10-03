@@ -28,133 +28,33 @@
         "title": "Climate Profiles",
         "menu_options": {
           "values": "Manage values",
-          "profiles": "Manage profiles",
-          "custom_name": "Rename \"custom\""
+          "profiles": "Manage profiles"
         }
       },
       "values": {
         "title": "Manage values",
-        "menu_options": {
-          "add_value": "Add a value",
-          "add_from_device": "Add values from this device",
-          "edit_value": "Edit a value",
-          "reorder_values": "Order of the values",
-          "delete_value": "Delete values"
+        "description": "One row per value, with the entity behind it. Drag a row to move it, the pencil edits it, the bin removes it - profiles keep what they stored for a deleted value, it is simply skipped from then on. To point a value at a different entity, edit the row: adding it anew would create a new value and lose it from every profile.",
+        "data": {
+          "additional_values": "Values",
+          "selected": "Add values from this device",
+          "order": "Order they are written in"
+        },
+        "data_description": {
+          "selected": "Everything on the same device that could carry a value, minus what you already have. They are added at the end of the list.",
+          "order": "Decides which value wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The mode always goes first; anything you leave out keeps its place at the end."
         }
       },
       "profiles": {
         "title": "Manage profiles",
-        "menu_options": {
-          "add_profile": "Add profile",
-          "edit_profile": "Edit profile",
-          "reorder": "Change order",
-          "delete_profile": "Delete profiles"
-        }
-      },
-      "add_profile": {
-        "title": "New profile",
-        "description": "Only fill in what this profile should change. Empty fields are left untouched when the profile is applied.",
+        "description": "One row per profile, with everything it is: name, colour, icon, how it becomes active, what a change by hand does, and the values it sets. The order of the rows is the order they are matched and shown in. Clear a value to remove it from the profile - an empty field means the profile does not touch it.",
         "data": {
-          "name": "Name",
-          "color": "Colour",
-          "icon": "Icon",
-          "hvac_mode": "Mode",
-          "temperature": "Temperature",
-          "fan_mode": "Fan mode",
-          "swing_mode": "Swing mode",
-          "detect": "Recognise this profile automatically",
-          "capture": "Changes by hand"
+          "profiles": "Profiles",
+          "custom_profile_name": "Name of \"custom\"",
+          "custom_profile_color": "Colour of \"custom\"",
+          "custom_profile_icon": "Icon of \"custom\""
         },
         "data_description": {
-          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
-        }
-      },
-      "edit_profile": {
-        "title": "Edit profile",
-        "data": {
-          "id": "Profile"
-        }
-      },
-      "edit_values": {
-        "title": "Edit {profile}",
-        "description": "Clear a field to remove that value from the profile.",
-        "data": {
-          "name": "Name",
-          "color": "Colour",
-          "icon": "Icon",
-          "hvac_mode": "Mode",
-          "temperature": "Temperature",
-          "fan_mode": "Fan mode",
-          "swing_mode": "Swing mode",
-          "detect": "Recognise this profile automatically",
-          "capture": "Changes by hand"
-        },
-        "data_description": {
-          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
-        }
-      },
-      "delete_profile": {
-        "title": "Delete profiles",
-        "data": {
-          "selected": "Profiles"
-        }
-      },
-      "reorder": {
-        "title": "Change order",
-        "description": "Pick the profiles one after another in the order you want. The first profile that matches the current state wins. Profiles you leave out keep their position at the end.",
-        "data": {
-          "order": "Order"
-        }
-      },
-      "custom_name": {
-        "title": "Rename \"custom\"",
-        "description": "Shown whenever the current state matches none of your profiles.",
-        "data": {
-          "custom_profile_name": "Name"
-        }
-      },
-      "add_value": {
-        "title": "Add a value",
-        "description": "Pick the entity that carries it. The name is taken from the entity unless you give one.",
-        "data": {
-          "entity": "Entity",
-          "name": "Name",
-          "icon": "Icon"
-        }
-      },
-      "edit_value": {
-        "title": "Edit a value",
-        "data": {
-          "id": "Value"
-        }
-      },
-      "edit_value_form": {
-        "title": "Edit “{value}”",
-        "data": {
-          "entity": "Entity",
-          "name": "Name",
-          "icon": "Icon"
-        }
-      },
-      "delete_value": {
-        "title": "Delete values",
-        "description": "What your profiles stored for them stays, but is skipped from then on. Adding the entity again creates a new value - to point a value at a different entity, edit it instead.",
-        "data": {
-          "id": "Values"
-        }
-      },
-      "reorder_values": {
-        "title": "Order of the values",
-        "description": "Pick the values in the order they should be written. It decides which one wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The card shows the additional values in the same order. The mode always goes first; anything you leave out keeps its place at the end.",
-        "data": {
-          "order": "Order"
-        }
-      },
-      "add_from_device": {
-        "title": "Add values from this device",
-        "description": "Everything on the same device that could carry a value, minus what you already have. Names come from the entities and can be changed afterwards.",
-        "data": {
-          "selected": "Values"
+          "custom_profile_name": "Shown whenever the current state matches none of your profiles. It has no values of its own."
         }
       }
     },

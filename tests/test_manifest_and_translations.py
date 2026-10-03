@@ -109,24 +109,9 @@ def test_config_and_options_steps_are_translated():
     config_steps = {"user"}
     assert config_steps <= set(strings["config"]["step"])
 
-    options_steps = {
-        "init",
-        "values",
-        "profiles",
-        "add_value",
-        "add_from_device",
-        "edit_value",
-        "edit_value_form",
-        "reorder_values",
-        "delete_value",
-        "add_profile",
-        "edit_profile",
-        "edit_values",
-        "delete_profile",
-        "reorder",
-        "custom_name",
-    }
-    assert options_steps <= set(strings["options"]["step"])
+    # Two lists and the menu that leads to them - nothing else is a step.
+    options_steps = {"init", "values", "profiles"}
+    assert options_steps == set(strings["options"]["step"])
     # Every menu offers only steps that exist - the two group menus too.
     for step in strings["options"]["step"].values():
         assert set(step.get("menu_options", {})) <= options_steps

@@ -15,6 +15,8 @@ from custom_components.climate_profiles.const import (
     ATTR_CAPABILITIES,
     CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
+    CONF_CUSTOM_COLOR,
+    CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
     CUSTOM_PROFILE_ID,
@@ -379,6 +381,30 @@ async def test_renaming_custom_changes_the_state(hass, entry_data):
     set_device_state(hass, temperature=23)
     await setup_entry(hass, entry_data, options={CONF_CUSTOM_NAME: "Manuell"})
     assert hass.states.get(SENSOR).state == "Manuell"
+
+
+async def test_custom_carries_its_colour_and_icon(hass, entry_data):
+    """The card draws it as a button like any other, so it needs both."""
+    set_device_state(hass, temperature=23)
+    await setup_entry(
+        hass,
+        entry_data,
+        options={
+            CONF_CUSTOM_NAME: "Manuell",
+            CONF_CUSTOM_COLOR: "#8b5cf6",
+            CONF_CUSTOM_ICON: "mdi:hand-back-right",
+        },
+    )
+
+    state = hass.states.get(SENSOR)
+    assert state.attributes["custom_profile"] == {
+        "id": "__custom__",
+        "name": "Manuell",
+        "color": "#8b5cf6",
+        "icon": "mdi:hand-back-right",
+    }
+    # The sensor's own colour follows it while nothing matches.
+    assert state.attributes["active_profile_color"] == "#8b5cf6"
 
 
 async def test_unload_removes_the_entities(hass, entry_data):

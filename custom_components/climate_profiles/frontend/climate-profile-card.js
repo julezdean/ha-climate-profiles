@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.9";
+const CARD_VERSION = "2.0.0-beta.10";
 
 /* eslint-disable no-console */
 console.info(
@@ -1009,7 +1009,12 @@ class ClimateProfileCard extends HTMLElement {
   _paintCapture(model) {
     const el = this._el;
     const changed = model.changed || [];
-    const show = changed.length > 0 && !model.unavailable;
+    const target = model.lastMatched;
+    // A profile that stores changes by itself asks nothing. The write is a
+    // few seconds away, so an offer here would be a question that answers
+    // itself - and "save as a new profile" is not what was asked for either.
+    const storesItself = Boolean(target && target.capture === "auto");
+    const show = changed.length > 0 && !model.unavailable && !storesItself;
     el.capture.hidden = !show;
     if (!show) {
       if (this._naming) this._closeNameField();
@@ -1030,7 +1035,6 @@ class ClimateProfileCard extends HTMLElement {
       })
       .join(" · ");
 
-    const target = model.lastMatched;
     const protectedTarget = Boolean(target && target.protected);
     el.captureInto.hidden = !target || protectedTarget;
     if (target && !protectedTarget) {

@@ -37,6 +37,8 @@ CONF_VALUE_ORDER: Final = "value_order"
 
 CONF_PROFILES: Final = "profiles"
 CONF_CUSTOM_NAME: Final = "custom_profile_name"
+CONF_CUSTOM_COLOR: Final = "custom_profile_color"
+CONF_CUSTOM_ICON: Final = "custom_profile_icon"
 
 CONF_PROFILE_ID: Final = "id"
 CONF_PROFILE_NAME: Final = "name"

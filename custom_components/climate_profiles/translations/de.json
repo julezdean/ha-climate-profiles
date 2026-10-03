@@ -28,133 +28,33 @@
         "title": "Climate Profiles",
         "menu_options": {
           "values": "Werte verwalten",
-          "profiles": "Profile verwalten",
-          "custom_name": "„benutzerdefiniert“ umbenennen"
+          "profiles": "Profile verwalten"
         }
       },
       "values": {
         "title": "Werte verwalten",
-        "menu_options": {
-          "add_value": "Wert hinzufügen",
-          "add_from_device": "Werte dieses Geräts hinzufügen",
-          "edit_value": "Wert bearbeiten",
-          "reorder_values": "Reihenfolge der Werte",
-          "delete_value": "Werte löschen"
+        "description": "Eine Zeile je Wert, mit der Entität dahinter. Ziehen verschiebt, der Stift bearbeitet, der Mülleimer löscht - was Profile für einen gelöschten Wert gespeichert haben, bleibt stehen und wird von da an übersprungen. Für eine andere Entität die Zeile bearbeiten: neu hinzugefügt entsteht ein neuer Wert, und jedes Profil verliert ihn.",
+        "data": {
+          "additional_values": "Werte",
+          "selected": "Werte dieses Geräts hinzufügen",
+          "order": "Reihenfolge beim Schreiben"
+        },
+        "data_description": {
+          "selected": "Alles auf demselben Gerät, was einen Wert tragen könnte, ohne das bereits Vorhandene. Es landet am Ende der Liste.",
+          "order": "Entscheidet, welcher Wert gewinnt, wenn sich zwei auf deinem Gerät widersprechen - etwa ein Flüstermodus, der die Lüfterstufe selbst setzt. Der Modus steht immer vorn; was du auslässt, behält seinen Platz am Ende."
         }
       },
       "profiles": {
         "title": "Profile verwalten",
-        "menu_options": {
-          "add_profile": "Profil hinzufügen",
-          "edit_profile": "Profil bearbeiten",
-          "reorder": "Reihenfolge ändern",
-          "delete_profile": "Profile löschen"
-        }
-      },
-      "add_profile": {
-        "title": "Neues Profil",
-        "description": "Trag nur ein, was dieses Profil ändern soll. Leere Felder bleiben beim Anwenden unangetastet.",
+        "description": "Eine Zeile je Profil, mit allem, was es ausmacht: Name, Farbe, Symbol, wie es aktiv wird, was eine Änderung von Hand bewirkt, und die Werte, die es setzt. Die Reihenfolge der Zeilen ist die Reihenfolge, in der verglichen und angezeigt wird. Ein geleertes Feld nimmt den Wert aus dem Profil - leer heißt: nicht anfassen.",
         "data": {
-          "name": "Name",
-          "color": "Farbe",
-          "icon": "Icon",
-          "hvac_mode": "Modus",
-          "temperature": "Temperatur",
-          "fan_mode": "Lüftermodus",
-          "swing_mode": "Swing-Modus",
-          "detect": "Dieses Profil automatisch erkennen",
-          "capture": "Änderungen von Hand"
+          "profiles": "Profile",
+          "custom_profile_name": "Name von „benutzerdefiniert“",
+          "custom_profile_color": "Farbe von „benutzerdefiniert“",
+          "custom_profile_icon": "Symbol von „benutzerdefiniert“"
         },
         "data_description": {
-          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
-        }
-      },
-      "edit_profile": {
-        "title": "Profil bearbeiten",
-        "data": {
-          "id": "Profil"
-        }
-      },
-      "edit_values": {
-        "title": "{profile} bearbeiten",
-        "description": "Ein Feld leeren entfernt diesen Wert aus dem Profil.",
-        "data": {
-          "name": "Name",
-          "color": "Farbe",
-          "icon": "Icon",
-          "hvac_mode": "Modus",
-          "temperature": "Temperatur",
-          "fan_mode": "Lüftermodus",
-          "swing_mode": "Swing-Modus",
-          "detect": "Dieses Profil automatisch erkennen",
-          "capture": "Änderungen von Hand"
-        },
-        "data_description": {
-          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
-        }
-      },
-      "delete_profile": {
-        "title": "Profile löschen",
-        "data": {
-          "selected": "Profile"
-        }
-      },
-      "reorder": {
-        "title": "Reihenfolge ändern",
-        "description": "Wähle die Profile nacheinander in der gewünschten Reihenfolge aus. Das erste Profil, das zum aktuellen Zustand passt, gewinnt. Nicht gewählte Profile bleiben hinten stehen.",
-        "data": {
-          "order": "Reihenfolge"
-        }
-      },
-      "custom_name": {
-        "title": "„benutzerdefiniert“ umbenennen",
-        "description": "Wird angezeigt, sobald der aktuelle Zustand zu keinem deiner Profile passt.",
-        "data": {
-          "custom_profile_name": "Name"
-        }
-      },
-      "add_value": {
-        "title": "Wert hinzufügen",
-        "description": "Wähle die Entity, die ihn trägt. Der Name kommt aus der Entity, wenn du keinen angibst.",
-        "data": {
-          "entity": "Entity",
-          "name": "Name",
-          "icon": "Symbol"
-        }
-      },
-      "edit_value": {
-        "title": "Wert bearbeiten",
-        "data": {
-          "id": "Wert"
-        }
-      },
-      "edit_value_form": {
-        "title": "„{value}“ bearbeiten",
-        "data": {
-          "entity": "Entity",
-          "name": "Name",
-          "icon": "Symbol"
-        }
-      },
-      "delete_value": {
-        "title": "Werte löschen",
-        "description": "Was deine Profile dafür gespeichert haben, bleibt stehen, wird aber übersprungen. Die Entity erneut hinzuzufügen legt einen neuen Wert an - um einen Wert auf eine andere Entity zu richten, bearbeite ihn stattdessen.",
-        "data": {
-          "id": "Werte"
-        }
-      },
-      "reorder_values": {
-        "title": "Reihenfolge der Werte",
-        "description": "Wähle die Werte in der Reihenfolge, in der sie geschrieben werden sollen. Sie entscheidet, welcher gewinnt, wenn sich zwei an deinem Gerät widersprechen - etwa ein Flüstermodus, der seine eigene Lüfterstufe setzt. Die Karte zeigt die zusätzlichen Werte in derselben Reihenfolge. Der Modus kommt immer zuerst; was du wegglässt, behält seinen Platz am Ende.",
-        "data": {
-          "order": "Reihenfolge"
-        }
-      },
-      "add_from_device": {
-        "title": "Werte dieses Geräts hinzufügen",
-        "description": "Alles am selben Gerät, das einen Wert tragen kann, ohne das, was du schon hast. Die Namen kommen aus den Entities und lassen sich danach ändern.",
-        "data": {
-          "selected": "Werte"
+          "custom_profile_name": "Wird angezeigt, sobald der aktuelle Zustand zu keinem deiner Profile passt. Es hat keine eigenen Werte."
         }
       }
     },

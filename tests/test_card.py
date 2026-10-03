@@ -202,6 +202,22 @@ async def test_a_protected_profile_offers_only_the_new_profile_route(open_card):
     assert "write protected" in await capture.locator(".capture-title").inner_text()
 
 
+async def test_a_profile_that_stores_by_itself_asks_nothing(open_card):
+    """The "Comfort+" profile captures automatically in the preview fixture."""
+    page = await open_card(
+        {
+            **CHANGED,
+            "temperature": 23,
+            "last_matched_profile_id": "p4",
+            "changed_values": ["temperature"],
+        }
+    )
+
+    # Not the bar without its buttons: nothing at all, the way it looks once
+    # the write has happened a few seconds later.
+    assert await page.locator("climate-profile-card .capture").is_hidden()
+
+
 # --- regressions -----------------------------------------------------------
 
 

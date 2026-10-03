@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_NAME
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.climate_profiles.const import (
     CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
+    CONF_CUSTOM_COLOR,
+    CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
+    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
+    CONF_PROFILE_DETECT,
+    CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_VALUES,
@@ -23,7 +29,7 @@ from .conftest import (
     CLIMATE,
     FAN,
     additional_option,
-    open_option,
+    open_step,
     set_device_state,
 )
 
@@ -121,23 +127,60 @@ async def setup_options(hass, profiles=None, *, additional=True):
     return entry
 
 
-async def test_adding_a_profile(hass):
+# --- the profile list ------------------------------------------------------
+
+
+def custom_fields() -> dict:
+    """Return the three "custom" fields, which the profile form always carries."""
+    return {
+        CONF_CUSTOM_NAME: "Custom",
+        CONF_CUSTOM_COLOR: [120, 144, 156],
+    }
+
+
+async def submit_profiles(hass, entry, rows, **extra):
+    """Submit the profile list as the form hands it back."""
+    result = await open_step(hass, entry, "profiles")
+    assert result["type"] is FlowResultType.FORM
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_PROFILES: rows, **custom_fields(), **extra}
+    )
+
+
+async def submit_values(hass, entry, rows, **extra):
+    """Submit the value list as the form hands it back."""
+    result = await open_step(hass, entry, "values")
+    assert result["type"] is FlowResultType.FORM
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_ADDITIONAL: rows, **extra}
+    )
+
+
+async def test_the_menu_has_the_two_lists(hass):
     entry = await setup_options(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.MENU
-    assert set(result["menu_options"]) == {"values", "profiles", "custom_name"}
 
-    result = await open_option(hass, entry, "add_profile")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {
-            CONF_PROFILE_NAME: "Nacht",
-            CONF_PROFILE_COLOR: [139, 92, 246],
-            "hvac_mode": "cool",
-            "temperature": 26,
-            "silent": "on",
-        },
+    assert result["type"] is FlowResultType.MENU
+    assert set(result["menu_options"]) == {"values", "profiles"}
+
+
+async def test_adding_a_profile(hass):
+    """A row without an id is a new profile - that is what the + button adds."""
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_NAME: "Nacht",
+                CONF_PROFILE_COLOR: [139, 92, 246],
+                "hvac_mode": "cool",
+                "temperature": 26,
+                "silent": "on",
+            }
+        ],
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
@@ -145,12 +188,51 @@ async def test_adding_a_profile(hass):
     assert len(profiles) == 1
     assert profiles[0][CONF_PROFILE_NAME] == "Nacht"
     assert profiles[0][CONF_PROFILE_COLOR] == "#8b5cf6"
+    assert profiles[0][CONF_PROFILE_ID]
     # Only what was filled in is stored - no implicit defaults.
     assert profiles[0][CONF_PROFILE_VALUES] == {
         "hvac_mode": "cool",
         "temperature": 26,
         "silent": "on",
     }
+
+
+async def test_the_list_shows_what_is_stored(hass):
+    """Every profile is a row, with its values in it and its id read only."""
+    stored = [
+        {
+            "id": "keep-me",
+            "name": "Komfort",
+            "color": "#22c55e",
+            "icon": "mdi:sofa",
+            "values": {"hvac_mode": "cool", "temperature": 24},
+        }
+    ]
+    entry = await setup_options(hass, stored)
+
+    result = await open_step(hass, entry, "profiles")
+
+    schema = result["data_schema"].schema
+    rows = next(
+        key.description["suggested_value"] for key in schema if key == CONF_PROFILES
+    )
+    assert rows == [
+        {
+            CONF_PROFILE_NAME: "Komfort",
+            CONF_PROFILE_COLOR: [34, 197, 94],
+            CONF_PROFILE_ICON: "mdi:sofa",
+            CONF_PROFILE_DETECT: True,
+            CONF_PROFILE_CAPTURE: "ask",
+            CONF_PROFILE_ID: "keep-me",
+            "hvac_mode": "cool",
+            "temperature": 24,
+        }
+    ]
+    # One field per value the entry knows, the additional ones included.
+    fields = schema[CONF_PROFILES].config["fields"]
+    assert "fan" in fields
+    assert fields["hvac_mode"]["required"] is True
+    assert fields[CONF_PROFILE_ID]["selector"]["text"]["read_only"] is True
 
 
 async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
@@ -164,21 +246,19 @@ async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
     ]
     entry = await setup_options(hass, stored)
 
-    result = await open_option(hass, entry, "edit_profile")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_PROFILE_ID: "keep-me"}
-    )
-    assert result["step_id"] == "edit_values"
-
-    # Renamed, and fan_mode left empty -> the value is dropped.
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {
-            CONF_PROFILE_NAME: "Wohlfuehlen",
-            CONF_PROFILE_COLOR: [34, 197, 94],
-            "hvac_mode": "cool",
-            "temperature": 24,
-        },
+    # Renamed, and fan_mode cleared -> the value is dropped.
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_ID: "keep-me",
+                CONF_PROFILE_NAME: "Wohlfuehlen",
+                CONF_PROFILE_COLOR: [34, 197, 94],
+                "hvac_mode": "cool",
+                "temperature": 24,
+            }
+        ],
     )
     profile = result["data"][CONF_PROFILES][0]
     assert profile[CONF_PROFILE_ID] == "keep-me"
@@ -186,21 +266,29 @@ async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
     assert profile[CONF_PROFILE_VALUES] == {"hvac_mode": "cool", "temperature": 24}
 
 
-async def test_deleting_profiles(hass):
+async def test_deleting_a_profile_is_a_row_that_is_gone(hass):
     stored = [
         {"id": "a", "name": "A", "color": "#111111", "values": {"hvac_mode": "off"}},
         {"id": "b", "name": "B", "color": "#222222", "values": {"hvac_mode": "cool"}},
     ]
     entry = await setup_options(hass, stored)
 
-    result = await open_option(hass, entry, "delete_profile")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"selected": ["a"]}
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_ID: "b",
+                CONF_PROFILE_NAME: "B",
+                CONF_PROFILE_COLOR: [34, 34, 34],
+                "hvac_mode": "cool",
+            }
+        ],
     )
     assert [p[CONF_PROFILE_ID] for p in result["data"][CONF_PROFILES]] == ["b"]
 
 
-async def test_reordering_profiles(hass):
+async def test_the_order_of_the_rows_is_the_order(hass):
     stored = [
         {"id": "a", "name": "A", "color": "#111111", "values": {"hvac_mode": "off"}},
         {"id": "b", "name": "B", "color": "#222222", "values": {"hvac_mode": "cool"}},
@@ -208,10 +296,18 @@ async def test_reordering_profiles(hass):
     ]
     entry = await setup_options(hass, stored)
 
-    result = await open_option(hass, entry, "reorder")
-    # Only two of three picked: the rest keeps its relative position at the end.
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"order": ["c", "b"]}
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_ID: pid,
+                CONF_PROFILE_NAME: pid.upper(),
+                CONF_PROFILE_COLOR: [17, 17, 17],
+                "hvac_mode": mode,
+            }
+            for pid, mode in (("c", "dry"), ("b", "cool"), ("a", "off"))
+        ],
     )
     assert [p[CONF_PROFILE_ID] for p in result["data"][CONF_PROFILES]] == [
         "c",
@@ -220,13 +316,48 @@ async def test_reordering_profiles(hass):
     ]
 
 
+async def test_a_row_without_a_mode_is_refused(hass):
+    """`hvac_mode` is the one value a profile has to name.
+
+    The selector enforces it, so the row never reaches the flow - which is
+    why this asserts on the refusal rather than on an error message.
+    """
+    entry = await setup_options(hass)
+
+    with pytest.raises(InvalidData):
+        await submit_profiles(
+            hass,
+            entry,
+            [{CONF_PROFILE_NAME: "Leer", CONF_PROFILE_COLOR: [1, 2, 3]}],
+        )
+
+
+async def test_editing_the_custom_profile(hass):
+    """It has no values, but it is a button on the card like any other."""
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [],
+        **{
+            CONF_CUSTOM_NAME: "Manuell",
+            CONF_CUSTOM_COLOR: [139, 92, 246],
+            CONF_CUSTOM_ICON: "mdi:hand-back-right",
+        },
+    )
+    assert result["data"][CONF_CUSTOM_NAME] == "Manuell"
+    assert result["data"][CONF_CUSTOM_COLOR] == "#8b5cf6"
+    assert result["data"][CONF_CUSTOM_ICON] == "mdi:hand-back-right"
+
+
+# --- the value list --------------------------------------------------------
+
+
 async def test_adding_an_additional_value(hass):
     entry = await setup_options(hass, additional=False)
 
-    result = await open_option(hass, entry, "add_value")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"entity": FAN}
-    )
+    await submit_values(hass, entry, [{"entity": FAN}])
     await hass.async_block_till_done()
 
     added = entry.options[CONF_ADDITIONAL]
@@ -243,22 +374,19 @@ async def test_a_pre_filled_name_that_is_taken_gets_a_counter(hass):
     hass.states.async_set("switch.one", "off", {"friendly_name": "Silent"})
     hass.states.async_set("switch.two", "off", {"friendly_name": "Silent"})
 
-    for entity_id in ("switch.one", "switch.two"):
-        result = await open_option(hass, entry, "add_value")
-        await hass.config_entries.options.async_configure(
-            result["flow_id"], {"entity": entity_id}
-        )
-        await hass.async_block_till_done()
+    await submit_values(
+        hass, entry, [{"entity": "switch.one"}, {"entity": "switch.two"}]
+    )
+    await hass.async_block_till_done()
 
     names = [value["name"] for value in entry.options[CONF_ADDITIONAL]]
     assert names == ["Silent", "Silent (2)"]
 
 
-async def test_renaming_the_custom_profile(hass):
-    entry = await setup_options(hass)
+async def test_a_value_pointing_at_nothing_is_refused(hass):
+    entry = await setup_options(hass, additional=False)
 
-    result = await open_option(hass, entry, "custom_name")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_CUSTOM_NAME: "Manuell"}
-    )
-    assert result["data"][CONF_CUSTOM_NAME] == "Manuell"
+    result = await submit_values(hass, entry, [{"entity": "number.gibt_es_nicht"}])
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_ADDITIONAL: "entity_not_found"}

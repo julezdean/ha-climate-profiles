@@ -30,7 +30,6 @@ from .const import (
     ATTR_UNREACHED,
     ATTR_VALUES,
     CUSTOM_PROFILE_ID,
-    DEFAULT_CUSTOM_COLOR,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
     SERVICE_DISMISS_CHANGE,
@@ -179,7 +178,8 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             "custom_profile": {
                 "id": CUSTOM_PROFILE_ID,
                 "name": coordinator.custom_name,
-                "color": DEFAULT_CUSTOM_COLOR,
+                "color": coordinator.custom_color,
+                "icon": coordinator.custom_icon,
             },
             ATTR_CURRENT_VALUES: (
                 normalise_values(data.vocabulary, data.values) if data else {}
