@@ -62,11 +62,16 @@ Three rules, each of them deliberate:
 - **It stores what the button would have stored.** Values the profile defines
   are updated, and a value adjusted on top is taken into it - the profile grows
   by what was deliberately changed, exactly like the manual capture.
-- **Only changes made through the integration** - the card, `set_value`, the
-  select entity. Not what the device does on its own. Otherwise exactly the
-  contradiction we decided not to paper over would end up stored: a device that
-  overrides a value would write its override into the profile, and a profile
-  called "Off" would quietly come to mean "heating".
+- **Every change counts, wherever it was made** - this card, another card, a
+  script, the thermostat's own buttons. The first attempt counted only changes
+  through this integration, which looked principled and was useless: a value
+  set on another card never reached the profile, and that is the normal way to
+  use Home Assistant. Home Assistant cannot tell a hand on the device from the
+  device changing a value by itself, so the line is drawn by time instead: the
+  window right after a profile was applied belongs to that profile, and what
+  happens in it is the device's answer rather than somebody's decision. A value
+  the device drops much later is stored like any other change - visible in the
+  profile, and correctable there.
 - **Never into a write protected profile.** Protection already means "not over
   the quick path", and this is the quickest path there is.
 

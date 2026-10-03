@@ -51,6 +51,15 @@ versioning [Semantic Versioning](https://semver.org/).
   whether it took. If not, the sensor carries `unreached` with the values the
   device did not keep, the log says so, and the card shows it - as a report,
   not an offer, because only the user knows which of the two values was meant.
+- **Add values from this device.** When the climate entity sits on a Home
+  Assistant device, its siblings are offered as a list to tick off: everything
+  in the domains whose state is a single value, minus what is already
+  configured, minus diagnostic entities - a battery level is not something a
+  profile sets, while a calibration offset stays on offer. Nothing is added by
+  itself: a device that gains entities with a firmware update must not quietly
+  gain profile values. The climate entity remains what identifies an entry, so
+  a template or helper climate entity without a device loses nothing; for those
+  the menu entry simply does not appear.
 - **The order of the values** can be set under Configure: one list over the
   climate values and the additional ones, mixed, so a silent mode can be
   written before or after the fan mode - whichever should win. `hvac_mode`
@@ -88,9 +97,11 @@ versioning [Semantic Versioning](https://semver.org/).
   protected. One question, one place - a device-wide switch next to a per
   profile checkbox could contradict itself. Storing automatically means what
   the "save into" button stores: values the profile defines are updated and a
-  value adjusted on top is taken into it. It never applies to what the device
-  did on its own, because a device overriding a value would otherwise write its
-  override into the profile.
+  value adjusted on top is taken into it. It applies wherever the change was
+  made - this card, another one, a script, or the thermostat's own buttons -
+  because Home Assistant cannot tell a hand on the device from the device
+  changing a value by itself. The one exception is the window right after a
+  profile was applied, which is where a device's overrides happen.
 - Profiles stored by 1.x and the earlier 2.0 betas are read as before:
   `protected: true` becomes "write protected", everything else "ask".
 

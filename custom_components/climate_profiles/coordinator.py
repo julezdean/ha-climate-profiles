@@ -506,6 +506,14 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # reach check depends on, and it differs per device. Logged for every
         # change, not only while a profile is pending: a value the device drops
         # on its own happens exactly when nothing is pending.
+        if self._target is None:
+            # Something moved that is not an answer to a profile we just
+            # applied: another card, a script, or a hand on the thermostat.
+            # Home Assistant cannot tell those apart from a device changing a
+            # value by itself, so they are treated alike - deliberate. What a
+            # device does right after an apply is excluded by the window
+            # above, which is where overrides happen.
+            self._schedule_auto_capture()
         new_state = event.data.get("new_state")
         _LOGGER.debug(
             "%s: %s is %s, %.2f s after the last call",
@@ -701,9 +709,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # device's answer. A change made on the device itself cannot be told
         # apart from the device overriding a value, and is not covered.
         self._clear_target()
-        # Only a change through the integration counts - never what the device
-        # does on its own, which would store its overrides. Whether it is kept
-        # is the profile's own setting, read when the timer fires.
+        # Whether the change is kept is the profile's own setting, read when
+        # the timer fires.
         self._schedule_auto_capture()
         await self._async_run_apply(values, optimistic=None)
 
@@ -744,11 +751,17 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
         The same thing the "save into" button does, without asking: values the
         profile defines are updated, and a value you adjusted on top is taken
-        into it - so the profile grows by what you deliberately changed, which
-        is exactly what the button would have stored.
+        into it - so the profile grows by what was changed, which is exactly
+        what the button would have stored.
 
-        Whether that happens is the profile's own setting. A profile that asks,
-        or one that is write protected, is never touched here.
+        Every change counts, wherever it was made: this card, another one, a
+        script, or the thermostat's own buttons. Home Assistant cannot tell a
+        hand on the device from the device changing a value by itself, so the
+        one exception is the window right after a profile was applied, which is
+        where a device's overrides happen.
+
+        Whether anything is stored at all is the profile's own setting. A
+        profile that asks, or one that is write protected, is never touched.
         """
         # Read the world first: the recalculation is debounced, so what the
         # coordinator holds right now may predate the change this was

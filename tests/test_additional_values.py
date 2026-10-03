@@ -226,3 +226,120 @@ async def test_a_catch_all_profile_is_pointed_out(hass: HomeAssistant, caplog):
     await hass.async_block_till_done()
 
     assert "Profile Cooling is a catch-all for Comfort" in caplog.text
+
+
+# --- the shortcut over the device -------------------------------------------
+
+
+async def _device_with_siblings(hass: HomeAssistant):
+    """Register a climate entity and its siblings on one device.
+
+    Returns ``{name: entity_id}`` - the registry makes the ids itself, so they
+    have to be read back rather than guessed.
+    """
+    from homeassistant.const import EntityCategory
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    host = MockConfigEntry(domain="demo")
+    host.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=host.entry_id,
+        identifiers={("demo", "portasplit")},
+        name="PortaSplit",
+    )
+    registry = er.async_get(hass)
+    ids: dict[str, str] = {}
+    for domain, object_id, name, category in (
+        ("climate", "portasplit", "PortaSplit", None),
+        ("number", "portasplit_fan", "Fan speed", None),
+        ("switch", "portasplit_display", "Display", None),
+        ("select", "portasplit_preset", "Preset", None),
+        ("number", "portasplit_calibration", "Calibration", EntityCategory.CONFIG),
+        ("sensor", "portasplit_battery", "Battery", EntityCategory.DIAGNOSTIC),
+        ("sensor", "portasplit_rssi", "Link quality", EntityCategory.DIAGNOSTIC),
+        ("number", "portasplit_hidden", "Hidden one", EntityCategory.DIAGNOSTIC),
+    ):
+        entry = registry.async_get_or_create(
+            domain, "demo", object_id, device_id=device.id, original_name=name
+        )
+        if category is not None:
+            registry.async_update_entity(entry.entity_id, entity_category=category)
+        hass.states.async_set(entry.entity_id, "off", {"friendly_name": name})
+        ids[name] = entry.entity_id
+    return ids
+
+
+async def test_the_device_offers_its_siblings(hass: HomeAssistant):
+    """Three clicks instead of three searches - and nothing that cannot work."""
+    ids = await _device_with_siblings(hass)
+    entry = await setup_entry(
+        hass,
+        {CONF_CLIMATE_ENTITY: ids["PortaSplit"]},
+        profiles=[],
+        options={CONF_ADDITIONAL: []},
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "add_from_device" in result["menu_options"]
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_from_device"}
+    )
+    offered = {
+        option["label"]
+        for option in result["data_schema"].schema["selected"].config["options"]
+    }
+
+    # The climate entity itself is not a value, a sensor cannot be set, and a
+    # diagnostic entity is not something a profile holds.
+    assert offered == {"Fan speed", "Display", "Preset", "Calibration"}
+
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"selected": [ids["Fan speed"], ids["Display"]]},
+    )
+    await hass.async_block_till_done()
+
+    added = entry.options[CONF_ADDITIONAL]
+    assert [value["name"] for value in added] == ["Fan speed", "Display"]
+    assert all(len(value["id"]) == 32 for value in added)
+
+
+async def test_what_is_already_configured_is_not_offered_again(hass: HomeAssistant):
+    ids = await _device_with_siblings(hass)
+    entry = await setup_entry(
+        hass,
+        {CONF_CLIMATE_ENTITY: ids["PortaSplit"]},
+        profiles=[],
+        options={
+            CONF_ADDITIONAL: [
+                {"id": "f", "name": "Fan speed", "entity": ids["Fan speed"], "order": 0}
+            ]
+        },
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_from_device"}
+    )
+    offered = {
+        option["label"]
+        for option in result["data_schema"].schema["selected"].config["options"]
+    }
+
+    assert "Fan speed" not in offered
+
+
+async def test_a_climate_entity_without_a_device_does_not_offer_the_step(
+    hass: HomeAssistant,
+):
+    """Template and helper entities have no device - the menu stays honest."""
+    set_device_state(hass)
+    entry = await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert "add_from_device" not in result["menu_options"]

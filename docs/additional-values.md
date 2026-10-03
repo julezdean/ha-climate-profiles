@@ -171,6 +171,19 @@ The waiting times are provisional (`REACH_QUIET_SECONDS`,
 device, and the debug log of the coordinator records exactly that, so they can
 be set from a real one.
 
+### Picking them off the device
+
+Added later: when the climate entity sits on a device, its siblings are offered
+as a list to tick off. A shortcut, not a second way of configuring - the entry
+is still about the climate entity.
+
+Choosing the **device** instead was the obvious alternative and was rejected: a
+climate entity from a template, a group or a helper has no device at all, the
+entry's identity would have to move from the entity to the device, and a device
+knows nothing about which of its entities belong in a profile. A Zigbee
+thermostat brings a battery level, a link quality and a firmware update along
+with the two values anybody actually wants.
+
 Still open:
 
 - Whether `capture_profile` should offer additional values in the same list as

@@ -28,6 +28,7 @@
         "title": "Climate Profiles",
         "menu_options": {
           "add_value": "Add a value",
+          "add_from_device": "Add values from this device",
           "edit_value": "Edit a value",
           "reorder_values": "Order of the values",
           "delete_value": "Delete values",
@@ -135,6 +136,13 @@
         "description": "Pick the values in the order they should be written. It decides which one wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The card shows the additional values in the same order. The mode always goes first; anything you leave out keeps its place at the end.",
         "data": {
           "order": "Order"
+        }
+      },
+      "add_from_device": {
+        "title": "Add values from this device",
+        "description": "Everything on the same device that could carry a value, minus what you already have. Names come from the entities and can be changed afterwards.",
+        "data": {
+          "selected": "Values"
         }
       }
     },

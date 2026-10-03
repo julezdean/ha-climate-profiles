@@ -71,7 +71,10 @@ thermostat, and everybody ends up rewriting it anyway. Add yours under
 **Configure → Add profile**, and give the ones you rely on write protection.
 
 Everything your device has beyond the climate entity is added afterwards, under
-**Configure → Add a value**: pick the entity, and it is there. Supported are
+**Configure → Add a value**: pick the entity, and it is there. If your climate
+entity sits on a Home Assistant device, **Add values from this device** lists
+its siblings to tick off instead - a fan speed, a display switch and a silent
+mode switch in three ticks rather than three searches. Supported are
 `number`, `input_number`, `switch`, `input_boolean`, `select` and
 `input_select` - the domains whose state is a single value, which is what a
 profile can compare and write.
@@ -90,6 +93,7 @@ Each config entry creates one device with two entities:
 | Menu entry | What it does |
 | --- | --- |
 | Add a value | an additional value, backed by an entity you pick |
+| Add values from this device | everything on the same device that could carry one, as a list to tick off |
 | Edit a value | point it at a different entity, rename it, give it an icon |
 | Order of the values | the order values are written in - and the card shows them in |
 | Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
@@ -234,11 +238,15 @@ so a device that moved in the meantime leaves the card on custom rather than
 claiming a profile that stopped applying hours ago.
 
 Storing a change without asking is the profile's other setting, "Changes by
-hand". It never applies to what the **device** did on its own, only to what you
-changed through this integration - a device that overrides a value would
-otherwise write its override into your profile, and a profile called "Off"
-would quietly come to mean "heating". Writing waits until the state has been
-quiet for a moment, so moving a slider in steps does not store every step.
+hand". It applies wherever the change was made: this card, another one, a
+script, or the thermostat's own buttons. Home Assistant cannot tell a hand on
+the device from the device changing a value by itself, so there is one
+exception - the moments right after a profile was applied, which is where a
+device's overrides happen. A value the device drops much later is stored like
+any other change; it stands in the profile and can be corrected there.
+
+Writing waits until the state has been quiet for a moment, so moving a slider
+in steps does not store every step.
 
 ### When a profile does not take
 

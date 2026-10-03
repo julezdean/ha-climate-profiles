@@ -112,6 +112,7 @@ def test_config_and_options_steps_are_translated():
     options_steps = {
         "init",
         "add_value",
+        "add_from_device",
         "edit_value",
         "edit_value_form",
         "reorder_values",

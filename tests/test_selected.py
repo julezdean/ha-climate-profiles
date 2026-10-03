@@ -225,10 +225,14 @@ async def test_a_protected_profile_is_never_written_to(
     assert hass.states.get(SENSOR).state == "Custom"
 
 
-async def test_what_the_device_does_on_its_own_is_not_written(
+async def test_an_override_right_after_applying_is_not_written(
     hass: HomeAssistant, entry_data, calls
 ):
-    """Otherwise a device overriding a value would store its override."""
+    """A device overriding a value does it straight after the apply.
+
+    That window belongs to the profile that was just applied, so what happens
+    in it is the device's answer, not somebody's decision.
+    """
     set_device_state(hass)
     entry = await setup_entry(
         hass,
@@ -289,3 +293,27 @@ async def test_dismissing_drops_the_offer(hass: HomeAssistant, entry_data, calls
     assert attributes["last_matched_profile_id"] is None
     # The state itself is untouched - only the offer is gone.
     assert hass.states.get(SENSOR).state == "Custom"
+
+
+async def test_a_change_made_elsewhere_is_written_too(
+    hass: HomeAssistant, entry_data, calls, monkeypatch
+):
+    """Another card, a script, a hand on the thermostat - all the same here."""
+    monkeypatch.setattr(coordinator_module, "REACH_QUIET_SECONDS", 0.2)
+    monkeypatch.setattr(coordinator_module, "REACH_MAX_SECONDS", 0.4)
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data, profiles=TWINS)
+    await apply(hass, "Emica")
+    # Let the window after the apply pass - what follows is nobody's answer.
+    await asyncio.sleep(0.8)
+    await hass.async_block_till_done()
+
+    # Nothing of ours is involved: the state simply moves.
+    set_device_state(hass, temperature=21)
+    await settle(hass)
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Emica")["values"]["temperature"] == 21
+    assert hass.states.get(SENSOR).state == "Emica"

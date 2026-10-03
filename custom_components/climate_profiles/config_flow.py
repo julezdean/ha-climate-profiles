@@ -18,8 +18,9 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     BooleanSelector,
     ColorRGBSelector,
@@ -138,6 +139,45 @@ def _log_catch_alls(profiles: ProfileSet) -> None:
                 broad.name,
                 ", ".join(covered),
             )
+
+
+def device_candidates(
+    hass: HomeAssistant, entities: EntityMap
+) -> list[SelectOptionDict]:
+    """Return the siblings of the climate entity that could carry a value.
+
+    Everything that sits on the same Home Assistant device, in the domains
+    whose state is a single value, minus what is already configured. Diagnostic
+    entities are left out - a battery level or a link quality is not something
+    a profile sets - while configuration entities stay: a calibration offset is
+    a plausible thing to put into one.
+
+    Nothing is added automatically from this. A device that gains three
+    entities with a firmware update must not quietly gain three profile values.
+    """
+    registry = er.async_get(hass)
+    climate = registry.async_get(entities.climate)
+    if climate is None or climate.device_id is None:
+        return []
+
+    taken = set(entities.additional.entity_ids())
+    options: list[SelectOptionDict] = []
+    for entry in er.async_entries_for_device(registry, climate.device_id):
+        if entry.entity_id in taken or entry.disabled or entry.hidden:
+            continue
+        if entry.domain not in ADDITIONAL_DOMAINS:
+            continue
+        if entry.entity_category == EntityCategory.DIAGNOSTIC:
+            continue
+        state = hass.states.get(entry.entity_id)
+        label = (
+            (state.attributes.get("friendly_name") if state else None)
+            or entry.name
+            or entry.original_name
+            or entry.entity_id
+        )
+        options.append(SelectOptionDict(value=entry.entity_id, label=str(label)))
+    return sorted(options, key=lambda option: option["label"])
 
 
 def _float(raw: Any) -> float | None:
@@ -548,6 +588,8 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show what can be changed."""
         options = ["add_value"]
+        if device_candidates(self.hass, self._entities):
+            options.append("add_from_device")
         if self._additional:
             options += ["edit_value", "reorder_values", "delete_value"]
         options.append("add_profile")
@@ -595,6 +637,53 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             step_id="add_value",
             data_schema=_additional_value_schema(),
             errors=errors,
+        )
+
+    async def async_step_add_from_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add several values at once, from the device the climate entity is on.
+
+        A shortcut, not a different way of configuring: the entry is still
+        about the climate entity. Picking the device instead would leave out
+        every climate entity that has none - a template, a group, a helper -
+        and would change what identifies an entry.
+        """
+        candidates = device_candidates(self.hass, self._entities)
+        if not candidates:
+            return await self.async_step_init()
+
+        if user_input is not None:
+            values = self._additional
+            for entity_id in user_input.get(CONF_SELECTED, []):
+                state = self.hass.states.get(entity_id)
+                name = str(
+                    (state.attributes.get("friendly_name") if state else None)
+                    or entity_id
+                ).strip()
+                values = values.appended(
+                    AdditionalValue(
+                        id=new_value_id(),
+                        name=values.unique_name(name),
+                        entity=entity_id,
+                        order=values.next_order(),
+                    )
+                )
+            return self._save_additional(values)
+
+        return self.async_show_form(
+            step_id="add_from_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_SELECTED, default=[]): SelectSelector(
+                        SelectSelectorConfig(
+                            options=candidates,
+                            mode=SelectSelectorMode.LIST,
+                            multiple=True,
+                        )
+                    )
+                }
+            ),
         )
 
     async def async_step_edit_value(

@@ -28,6 +28,7 @@
         "title": "Climate Profiles",
         "menu_options": {
           "add_value": "Wert hinzufügen",
+          "add_from_device": "Werte dieses Geräts hinzufügen",
           "edit_value": "Wert bearbeiten",
           "reorder_values": "Reihenfolge der Werte",
           "delete_value": "Werte löschen",
@@ -135,6 +136,13 @@
         "description": "Wähle die Werte in der Reihenfolge, in der sie geschrieben werden sollen. Sie entscheidet, welcher gewinnt, wenn sich zwei an deinem Gerät widersprechen - etwa ein Flüstermodus, der seine eigene Lüfterstufe setzt. Die Karte zeigt die zusätzlichen Werte in derselben Reihenfolge. Der Modus kommt immer zuerst; was du wegglässt, behält seinen Platz am Ende.",
         "data": {
           "order": "Reihenfolge"
+        }
+      },
+      "add_from_device": {
+        "title": "Werte dieses Geräts hinzufügen",
+        "description": "Alles am selben Gerät, das einen Wert tragen kann, ohne das, was du schon hast. Die Namen kommen aus den Entities und lassen sich danach ändern.",
+        "data": {
+          "selected": "Werte"
         }
       }
     },
