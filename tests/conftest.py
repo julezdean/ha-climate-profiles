@@ -247,3 +247,34 @@ def calls(hass) -> dict:
         "turn_on": async_mock_service(hass, "switch", "turn_on"),
         "turn_off": async_mock_service(hass, "switch", "turn_off"),
     }
+
+
+VALUE_STEPS = (
+    "add_value",
+    "add_from_device",
+    "edit_value",
+    "reorder_values",
+    "delete_value",
+)
+PROFILE_STEPS = ("add_profile", "edit_profile", "reorder", "delete_profile")
+
+
+async def open_menu(hass, entry, group: str) -> dict:
+    """Open one of the two group menus of the options flow."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": group}
+    )
+
+
+async def open_option(hass, entry, step: str) -> dict:
+    """Walk the options menu to ``step``, through its group menu on the way."""
+    for group, steps in (("values", VALUE_STEPS), ("profiles", PROFILE_STEPS)):
+        if step in steps:
+            result = await open_menu(hass, entry, group)
+            break
+    else:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": step}
+    )

@@ -312,3 +312,156 @@ async def test_the_offer_can_be_dismissed(open_card):
     await card.locator(".capture-dismiss").click()
 
     assert [call["service"] for call in await calls(page)] == ["dismiss_change"]
+
+
+# --- what the room reports --------------------------------------------------
+
+
+async def test_the_humidity_is_shown_next_to_the_temperature(open_card):
+    """A thermostat card shows it, and the attribute was there all along."""
+    page = await open_card()
+
+    ambient = await page.locator("climate-profile-card .ambient").inner_text()
+    assert "25.4 °C" in ambient
+    assert "54 %" in ambient
+
+
+async def test_a_device_without_a_humidity_sensor_shows_no_percent(open_card):
+    page = await open_card(device="heating")
+
+    ambient = await page.locator("climate-profile-card .ambient").inner_text()
+    assert "%" not in ambient
+    assert "20.2 °C" in ambient
+
+
+# --- the visual editor ------------------------------------------------------
+
+EDITOR_VALUES = """
+const card = document.querySelector('climate-profile-card');
+const editor = document.createElement('climate-profile-card-editor');
+editor.hass = card._hass;
+editor.setConfig({ type: 'custom:climate-profile-card', entity: card._config.entity });
+return editor._values().map(([key]) => key);
+"""
+
+
+async def test_the_editor_offers_what_the_device_has(open_card):
+    page = await open_card()
+
+    keys = await page.evaluate(f"(() => {{{EDITOR_VALUES}}})()")
+    assert keys == [
+        "temperature",
+        "hvac_mode",
+        "fan_mode",
+        "swing_mode",
+        "fan",
+        "display",
+        "silent",
+        "preset",
+    ]
+
+
+async def test_the_editor_leaves_out_what_the_device_cannot_do(open_card):
+    """A radiator has no fan and no swing - a switch for them hides nothing."""
+    page = await open_card(device="heating")
+
+    keys = await page.evaluate(f"(() => {{{EDITOR_VALUES}}})()")
+    assert keys == ["temperature", "hvac_mode"]
+
+
+async def test_hiding_the_temperature_takes_it_out(open_card):
+    """It kept its own `show_temperature`, so the editor's switch did nothing."""
+    page = await open_card(card={"hide": ["temperature"]})
+
+    assert await page.locator("climate-profile-card .temp").is_hidden()
+
+
+KEEPS_HIDDEN = """
+const card = document.querySelector('climate-profile-card');
+const editor = document.createElement('climate-profile-card-editor');
+editor.hass = card._hass;
+editor.setConfig({
+  type: 'custom:climate-profile-card',
+  entity: card._config.entity,
+  hide: ['fan_mode'],
+});
+let out = null;
+editor.addEventListener('config-changed', (event) => { out = event.detail.config; });
+editor._form.dispatchEvent(
+  new CustomEvent('value-changed', { detail: { value: editor._data() } })
+);
+return out.hide || [];
+"""
+
+
+async def test_the_editor_keeps_a_decision_about_a_value_it_cannot_show(open_card):
+    """A radiator shows no fan switch - and must not drop what was set for it."""
+    page = await open_card(device="heating")
+
+    assert await page.evaluate(f"(() => {{{KEEPS_HIDDEN}}})()") == ["fan_mode"]
+
+
+# --- the temperature control ------------------------------------------------
+
+
+async def test_the_bar_is_what_a_card_gets_without_asking(open_card):
+    page = await open_card()
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".meter").count() == 1
+    assert await card.locator(".ring").count() == 0
+
+
+async def test_the_dial_replaces_the_bar_and_keeps_the_steps(open_card):
+    page = await open_card(card={"temperature_style": "dial"})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".meter").count() == 0
+    assert await card.locator(".arc").is_visible()
+    # Dragging a ring rarely lands on the half degree somebody meant.
+    assert await card.locator(".ring-steps .step").count() == 2
+    # The readings sit in the middle, the way a thermostat card shows them.
+    assert "25.4 °C" in await card.locator(".ring-current").inner_text()
+    assert "54 %" in await card.locator(".ring-humidity").inner_text()
+    assert await card.locator(".ring-action").inner_text() == "Cooling"
+
+
+async def test_a_reading_the_device_does_not_have_leaves_no_empty_row(open_card):
+    page = await open_card(device="heating", card={"temperature_style": "dial"})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".ring-current").is_visible()
+    assert await card.locator(".ring-humidity").is_hidden()
+
+
+async def test_turning_the_dial_sets_the_temperature(open_card):
+    """The top of the arc is the middle of the range: 16 to 30 makes 23."""
+    page = await open_card(card={"temperature_style": "dial"})
+    arc = page.locator("climate-profile-card .arc")
+    box = await arc.bounding_box()
+
+    await page.mouse.click(box["x"] + box["width"] / 2, box["y"] + 4)
+    # The card coalesces a drag into one call after 600 ms.
+    await page.wait_for_timeout(800)
+
+    assert await calls(page) == [
+        {
+            "domain": "climate_profiles",
+            "service": "set_value",
+            "data": {
+                "entity_id": "sensor.living_room_climate_profile",
+                "temperature": 23,
+            },
+        }
+    ]
+
+
+async def test_the_dial_can_be_moved_from_the_keyboard(open_card):
+    page = await open_card(card={"temperature_style": "dial"})
+    arc = page.locator("climate-profile-card .arc")
+
+    await arc.focus()
+    await arc.press("ArrowUp")
+    await page.wait_for_timeout(800)
+
+    assert (await calls(page))[0]["data"]["temperature"] == 25

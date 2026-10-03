@@ -41,6 +41,11 @@ versioning [Semantic Versioning](https://semver.org/).
 - The integration declares `CONFIG_SCHEMA` as config-entry-only, so a stray
   `climate_profiles:` block in `configuration.yaml` is an error rather than
   something silently ignored.
+- **Configure opens two groups**, *Manage values* and *Manage profiles*, with
+  renaming "custom" beside them. A device with a few values and a few profiles
+  filled the dialog with ten entries, nine of which were not what you came
+  for. Which entries a group has still depends on what is there: no profiles,
+  no "Edit profile".
 
 ### Added
 
@@ -60,6 +65,18 @@ versioning [Semantic Versioning](https://semver.org/).
   gain profile values. The climate entity remains what identifies an entry, so
   a template or helper climate entity without a device loses nothing; for those
   the menu entry simply does not appear.
+- **The temperature can be a dial** instead of the bar: `temperature_style:
+  dial` in the card, or the dropdown in its editor. A 270° arc in the active
+  profile's colour, the room's own temperature as a dot on the same scale, and
+  what the device reports in the middle. The two step buttons stay, in the gap
+  at the bottom of the arc - a finger dragged around a ring rarely lands on
+  the half degree somebody meant. The ring can also be moved with the arrow
+  keys. The default is unchanged, so no dashboard looks different until you
+  ask for it.
+- **The humidity the device reports is shown** next to the current
+  temperature, where a thermostat card shows it. `current_humidity` was in the
+  climate entity's attributes all along and the card simply did not read it;
+  a device without a humidity sensor prints no stray percent sign.
 - **The order of the values** can be set under Configure: one list over the
   climate values and the additional ones, mixed, so a silent mode can be
   written before or after the fan mode - whichever should win. `hvac_mode`
@@ -116,6 +133,16 @@ versioning [Semantic Versioning](https://semver.org/).
   stop matching, and the offer appeared as it should. Only applying a profile
   makes a new reference point now. Devices that report the new state inside
   the service call - what a real one does - are where this was visible at all.
+- **The card's editor offers only values the device actually has.** The four
+  climate switches - temperature, mode, fan mode, swing - were hard coded and
+  stood in the editor of every device, so a radiator thermostat offered to
+  hide a fan mode it does not have. They are now read from the sensor's
+  attributes, the same ones the card draws from, which is how the additional
+  values always worked.
+- **Hiding the temperature takes it out of the card.** Two faults in one
+  place: the temperature block still read a `show_temperature` of its own
+  instead of the `hide` list, and its `display: grid` beat the `hidden`
+  attribute - so the switch in the editor did nothing either way.
 - **The most specific of the matching profiles is shown, not the first one.**
   Several profiles can match at once, and a profile that only says "heating"
   matches every heated state. With first-match-wins it swallowed every
@@ -142,6 +169,13 @@ versioning [Semantic Versioning](https://semver.org/).
   for good: until the applied profile matches, no other profile takes the
   reference point back, even though it keeps matching for the moment before
   the device reports. This was already the case in 1.x.
+
+### Changed (the card)
+
+- **The tinted gradient behind the header is gone.** The profile's colour is
+  on the profile buttons, the mode pill and the temperature it sets; washing
+  the title with it as well was decoration, not information. In the dial it
+  stays as a quiet glow behind the ring, where it belongs to the arc.
 
 ### Card configuration
 

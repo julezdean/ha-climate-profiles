@@ -58,6 +58,12 @@ SHOTS: dict[str, dict] = {
     },
     # A radiator thermostat: everything the device cannot do is gone.
     "card-heating": {"theme": "light", "device": "heating"},
+    # The other shape of the temperature control, on the device it suits best.
+    "card-dial": {
+        "theme": "light",
+        "device": "heating",
+        "card": {"temperature_style": "dial"},
+    },
     # A profile the device could not keep: two of its values contradict each
     # other on the device. A report, deliberately without a button.
     "card-unreached": {
@@ -134,6 +140,8 @@ def build_url(base: str, shot: dict) -> str:
         query["device"] = shot["device"]
     if shot.get("state"):
         query["state"] = json.dumps(shot["state"])
+    if shot.get("card"):
+        query["card"] = json.dumps(shot["card"])
     return f"{base}/tools/card-preview.html?{urllib.parse.urlencode(query)}"
 
 

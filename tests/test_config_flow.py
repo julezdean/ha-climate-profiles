@@ -23,6 +23,7 @@ from .conftest import (
     CLIMATE,
     FAN,
     additional_option,
+    open_option,
     set_device_state,
 )
 
@@ -125,10 +126,9 @@ async def test_adding_a_profile(hass):
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
+    assert set(result["menu_options"]) == {"values", "profiles", "custom_name"}
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_profile"}
-    )
+    result = await open_option(hass, entry, "add_profile")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -164,10 +164,7 @@ async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
     ]
     entry = await setup_options(hass, stored)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "edit_profile"}
-    )
+    result = await open_option(hass, entry, "edit_profile")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_PROFILE_ID: "keep-me"}
     )
@@ -196,10 +193,7 @@ async def test_deleting_profiles(hass):
     ]
     entry = await setup_options(hass, stored)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "delete_profile"}
-    )
+    result = await open_option(hass, entry, "delete_profile")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"selected": ["a"]}
     )
@@ -214,10 +208,7 @@ async def test_reordering_profiles(hass):
     ]
     entry = await setup_options(hass, stored)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "reorder"}
-    )
+    result = await open_option(hass, entry, "reorder")
     # Only two of three picked: the rest keeps its relative position at the end.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"order": ["c", "b"]}
@@ -232,10 +223,7 @@ async def test_reordering_profiles(hass):
 async def test_adding_an_additional_value(hass):
     entry = await setup_options(hass, additional=False)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_value"}
-    )
+    result = await open_option(hass, entry, "add_value")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"entity": FAN}
     )
@@ -256,10 +244,7 @@ async def test_a_pre_filled_name_that_is_taken_gets_a_counter(hass):
     hass.states.async_set("switch.two", "off", {"friendly_name": "Silent"})
 
     for entity_id in ("switch.one", "switch.two"):
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"next_step_id": "add_value"}
-        )
+        result = await open_option(hass, entry, "add_value")
         await hass.config_entries.options.async_configure(
             result["flow_id"], {"entity": entity_id}
         )
@@ -272,10 +257,7 @@ async def test_a_pre_filled_name_that_is_taken_gets_a_counter(hass):
 async def test_renaming_the_custom_profile(hass):
     entry = await setup_options(hass)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "custom_name"}
-    )
+    result = await open_option(hass, entry, "custom_name")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_CUSTOM_NAME: "Manuell"}
     )

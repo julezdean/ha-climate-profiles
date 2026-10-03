@@ -18,16 +18,13 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
 )
 
-from .conftest import CLIMATE, FAN, set_device_state, settle
+from .conftest import CLIMATE, FAN, open_menu, open_option, set_device_state, settle
 from .test_integration import setup_entry
 
 
 async def _add_value(hass: HomeAssistant, entry, entity_id: str) -> dict:
     """Add one additional value through the options flow and return it."""
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_value"}
-    )
+    result = await open_option(hass, entry, "add_value")
     await hass.config_entries.options.async_configure(
         result["flow_id"], {"entity": entity_id}
     )
@@ -46,10 +43,7 @@ async def test_a_value_is_stored_in_a_profile_under_its_id(hass: HomeAssistant):
     assert len(value["id"]) == 32
     assert value["entity"] == FAN
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_profile"}
-    )
+    result = await open_option(hass, entry, "add_profile")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -115,10 +109,7 @@ async def test_values_can_be_moved_before_the_climate_ones(hass: HomeAssistant):
     )
     value = await _add_value(hass, entry, FAN)
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "reorder_values"}
-    )
+    result = await open_option(hass, entry, "reorder_values")
     offered = [
         option["value"]
         for option in result["data_schema"].schema["order"].config["options"]
@@ -202,18 +193,12 @@ async def test_a_catch_all_profile_is_pointed_out(hass: HomeAssistant, caplog):
         hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
     )
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_profile"}
-    )
+    result = await open_option(hass, entry, "add_profile")
     await hass.config_entries.options.async_configure(
         result["flow_id"],
         {CONF_PROFILE_NAME: "Cooling", "color": [1, 2, 3], "hvac_mode": "cool"},
     )
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_profile"}
-    )
+    result = await open_option(hass, entry, "add_profile")
     await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
@@ -281,7 +266,7 @@ async def test_the_device_offers_its_siblings(hass: HomeAssistant):
         options={CONF_ADDITIONAL: []},
     )
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_menu(hass, entry, "values")
     assert "add_from_device" in result["menu_options"]
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "add_from_device"}
@@ -319,10 +304,7 @@ async def test_what_is_already_configured_is_not_offered_again(hass: HomeAssista
         },
     )
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "add_from_device"}
-    )
+    result = await open_option(hass, entry, "add_from_device")
     offered = {
         option["label"]
         for option in result["data_schema"].schema["selected"].config["options"]
@@ -340,6 +322,6 @@ async def test_a_climate_entity_without_a_device_does_not_offer_the_step(
         hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
     )
 
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await open_menu(hass, entry, "values")
 
     assert "add_from_device" not in result["menu_options"]

@@ -68,11 +68,13 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 One form: a name and the `climate` entity. No profiles are invented for you -
 a starter set shaped like an air conditioner is of little use on a radiator
 thermostat, and everybody ends up rewriting it anyway. Add yours under
-**Configure → Add profile**, and give the ones you rely on write protection.
+**Configure → Manage profiles → Add profile**, and give the ones you rely on
+write protection.
 
 Everything your device has beyond the climate entity is added afterwards, under
-**Configure → Add a value**: pick the entity, and it is there. If your climate
-entity sits on a Home Assistant device, **Add values from this device** lists
+**Configure → Manage values → Add a value**: pick the entity, and it is there.
+If your climate entity sits on a Home Assistant device, **Add values from this
+device** lists
 its siblings to tick off instead - a fan speed, a display switch and a silent
 mode switch in three ticks rather than three searches. Supported are
 `number`, `input_number`, `switch`, `input_boolean`, `select` and
@@ -90,13 +92,19 @@ Each config entry creates one device with two entities:
 
 **Settings → Devices & services → Climate Profiles → Configure**
 
+The menu has two groups - **Manage values** and **Manage profiles** - and the
+entry for renaming "custom" beside them. An entry only appears when there is
+something for it to do: no profiles, no "Edit profile".
+
 | Menu entry | What it does |
 | --- | --- |
+| *Manage values* | |
 | Add a value | an additional value, backed by an entity you pick |
 | Add values from this device | everything on the same device that could carry one, as a list to tick off |
 | Edit a value | point it at a different entity, rename it, give it an icon |
 | Order of the values | the order values are written in - and the card shows them in |
 | Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
+| *Manage profiles* | |
 | Add profile | name, colour, icon and the values it should set |
 | Edit profile | change everything; **clear a field to remove that value from the profile** |
 | Change order | the order profiles are matched and shown in |
@@ -142,6 +150,7 @@ range - comes from the integration. Options, all optional:
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
 | `profile_layout` | `auto` | `auto`, `grid` or `scroll` |
+| `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
 
 Everything configured is shown unless you hide it, so a value you add later
@@ -152,13 +161,18 @@ with the ids of your additional values, the same way a profile's values do:
 hide: [swing_mode, 7f3a9c1e…]
 ```
 
-The visual editor shows a switch per value and writes this list for you. A
-control whose device does not offer it is hidden regardless.
+The visual editor shows a switch per value and writes this list for you. It
+offers only the values your device actually has - a radiator thermostat has no
+fan mode to hide.
 More examples: [`examples/lovelace.yaml`](examples/lovelace.yaml).
 
-| Profile active | Nothing matches |
-| --- | --- |
-| ![](docs/images/card-light.png) | ![](docs/images/card-custom.png) |
+`temperature_style: dial` draws the temperature as a ring, with the two step
+buttons in the gap at its bottom and what the room reports in its middle - a
+drag around an arc rarely lands on the half degree you meant.
+
+| Profile active | Nothing matches | `temperature_style: dial` |
+| --- | --- | --- |
+| ![](docs/images/card-light.png) | ![](docs/images/card-custom.png) | ![](docs/images/card-dial.png) |
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer

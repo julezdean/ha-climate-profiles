@@ -586,17 +586,37 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show what can be changed."""
+        """Show what can be changed.
+
+        Two groups and a name: a device with a handful of values and a handful
+        of profiles filled the dialog with ten entries, nine of which were not
+        what you came for. The two things an entry is made of each get their
+        own menu, and which entries that menu has still depends on what is
+        there to edit.
+        """
+        return self.async_show_menu(
+            step_id="init", menu_options=["values", "profiles", "custom_name"]
+        )
+
+    async def async_step_values(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Everything about the additional values."""
         options = ["add_value"]
         if device_candidates(self.hass, self._entities):
             options.append("add_from_device")
         if self._additional:
             options += ["edit_value", "reorder_values", "delete_value"]
-        options.append("add_profile")
+        return self.async_show_menu(step_id="values", menu_options=options)
+
+    async def async_step_profiles(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Everything about the profiles."""
+        options = ["add_profile"]
         if self._profiles:
             options += ["edit_profile", "reorder", "delete_profile"]
-        options.append("custom_name")
-        return self.async_show_menu(step_id="init", menu_options=options)
+        return self.async_show_menu(step_id="profiles", menu_options=options)
 
     # -- additional values ---------------------------------------------------
 
@@ -651,7 +671,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         """
         candidates = device_candidates(self.hass, self._entities)
         if not candidates:
-            return await self.async_step_init()
+            return await self.async_step_values()
 
         if user_input is not None:
             values = self._additional
@@ -715,7 +735,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         values = self._additional
         current = values.get(self._editing or "")
         if current is None:  # pragma: no cover - defensive
-            return await self.async_step_init()
+            return await self.async_step_values()
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -865,7 +885,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         profiles = self._profiles
         current = profiles.get(self._editing or "")
         if current is None:  # pragma: no cover - only after a concurrent edit
-            return await self.async_step_init()
+            return await self.async_step_profiles()
 
         if user_input is not None:
             updated = profile_from_input(

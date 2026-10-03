@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.8";
+const CARD_VERSION = "2.0.0-beta.9";
 
 /* eslint-disable no-console */
 console.info(
@@ -40,6 +40,35 @@ const FALLBACK_ICON = "mdi:tune-variant";
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 const isNum = (value) => typeof value === "number" && Number.isFinite(value);
+
+//: The dial: a 270 degree arc with its gap at the bottom, where the two step
+//: buttons sit. Angles run clockwise from the top, so -135 is the minimum of
+//: the range and +135 its maximum. In the 100x100 user space of the svg.
+const DIAL = { cx: 50, cy: 50, r: 40, span: 135 };
+
+/** Return the point on the arc at ``fraction`` of the range, 0 to 1. */
+function dialPoint(fraction) {
+  const angle = ((2 * DIAL.span * fraction - DIAL.span) * Math.PI) / 180;
+  return [
+    DIAL.cx + DIAL.r * Math.sin(angle),
+    DIAL.cy - DIAL.r * Math.cos(angle),
+  ];
+}
+
+/** Fill one reading inside the dial, and take its row out when there is none. */
+function setReading(row, text) {
+  row.style.display = text ? "" : "none";
+  row.querySelector("span").textContent = text;
+}
+
+/** Return the ``d`` of the arc between two fractions of the range. */
+function dialPath(from, to) {
+  const [x1, y1] = dialPoint(from);
+  const [x2, y2] = dialPoint(to);
+  const large = (to - from) * 2 * DIAL.span > 180 ? 1 : 0;
+  const fixed = (value) => value.toFixed(2);
+  return `M ${fixed(x1)} ${fixed(y1)} A ${DIAL.r} ${DIAL.r} 0 ${large} 1 ${fixed(x2)} ${fixed(y2)}`;
+}
 
 function hexToRgb(hex) {
   const value = String(hex || "").trim();
@@ -142,6 +171,7 @@ class ClimateProfileCard extends HTMLElement {
       // no change here and none in the dashboard.
       hide: [],
       profile_layout: "auto",
+      temperature_style: "bar",
       ...config,
     };
     this._built = false;
@@ -224,6 +254,7 @@ class ClimateProfileCard extends HTMLElement {
       swingMode: climate ? climate.attributes.swing_mode : null,
       target: this._value("temperature", climate?.attributes.temperature),
       current: climate ? climate.attributes.current_temperature : null,
+      humidity: climate ? climate.attributes.current_humidity : null,
       action: climate ? climate.attributes.hvac_action : null,
       unit: hass.config.unit_system.temperature || "°C",
     };
@@ -298,6 +329,7 @@ class ClimateProfileCard extends HTMLElement {
         .join("|"),
       (this._config.hide || []).join(","),
       this._config.profile_layout,
+      this._config.temperature_style,
     ].join("::");
 
     if (!this._built || signature !== this._signature) {
@@ -321,6 +353,57 @@ class ClimateProfileCard extends HTMLElement {
     this.shadowRoot.querySelector(".fatal span").textContent = message;
   }
 
+  /**
+   * The temperature, in one of two shapes. The bar is the compact default; the
+   * dial is what a thermostat card looks like, and keeps the two step buttons
+   * in the gap of its arc - a finger dragged around a ring rarely lands on the
+   * half degree somebody meant. Both drive the same code underneath.
+   */
+  _tempSection() {
+    const minus = `<button class="step" data-step="down" type="button" aria-label="Cooler">
+            <ha-icon icon="mdi:minus"></ha-icon>
+          </button>`;
+    const plus = `<button class="step" data-step="up" type="button" aria-label="Warmer">
+            <ha-icon icon="mdi:plus"></ha-icon>
+          </button>`;
+
+    if (this._config.temperature_style !== "dial") {
+      return `
+        <section class="temp" hidden>
+          ${minus}
+          <div class="readout">
+            <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
+            <div class="meter"><div class="meter-fill"></div></div>
+            <div class="ambient"></div>
+          </div>
+          ${plus}
+        </section>`;
+    }
+
+    return `
+        <section class="temp dial" hidden>
+          <div class="ring">
+            <svg class="arc" viewBox="0 0 100 100" role="slider" tabindex="0">
+              <path class="arc-track" d="${dialPath(0, 1)}"></path>
+              <path class="arc-fill" d="${dialPath(0, 0)}"></path>
+              <circle class="arc-current" r="1.7"></circle>
+              <circle class="arc-handle" r="4.6"></circle>
+            </svg>
+            <div class="ring-center">
+              <div class="ring-action"></div>
+              <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
+              <div class="ring-reading ring-current">
+                <ha-icon icon="mdi:thermometer"></ha-icon><span></span>
+              </div>
+              <div class="ring-reading ring-humidity">
+                <ha-icon icon="mdi:water-percent"></ha-icon><span></span>
+              </div>
+            </div>
+            <div class="ring-steps">${minus}${plus}</div>
+          </div>
+        </section>`;
+  }
+
   _build(model) {
     const root = this.shadowRoot;
     root.innerHTML = `
@@ -339,19 +422,7 @@ class ClimateProfileCard extends HTMLElement {
           </button>
         </header>
 
-        <section class="temp" hidden>
-          <button class="step" data-step="down" type="button" aria-label="Warmer">
-            <ha-icon icon="mdi:minus"></ha-icon>
-          </button>
-          <div class="readout">
-            <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
-            <div class="meter"><div class="meter-fill"></div></div>
-            <div class="ambient"></div>
-          </div>
-          <button class="step" data-step="up" type="button" aria-label="Cooler">
-            <ha-icon icon="mdi:plus"></ha-icon>
-          </button>
-        </section>
+        ${this._tempSection()}
 
         <section class="profiles" role="group"></section>
 
@@ -413,6 +484,15 @@ class ClimateProfileCard extends HTMLElement {
       unit: root.querySelector(".unit"),
       meter: root.querySelector(".meter-fill"),
       ambient: root.querySelector(".ambient"),
+      // Only one of the two temperature sections is built, so everything
+      // below is null in the other one - every use is guarded.
+      arc: root.querySelector(".arc"),
+      arcFill: root.querySelector(".arc-fill"),
+      arcHandle: root.querySelector(".arc-handle"),
+      arcCurrent: root.querySelector(".arc-current"),
+      ringAction: root.querySelector(".ring-action"),
+      ringCurrent: root.querySelector(".ring-current"),
+      ringHumidity: root.querySelector(".ring-humidity"),
       profiles: root.querySelector(".profiles"),
       controls: root.querySelector(".controls"),
       unreached: root.querySelector(".unreached"),
@@ -437,6 +517,30 @@ class ClimateProfileCard extends HTMLElement {
         this._nudgeTemperature(button.dataset.step === "up" ? 1 : -1)
       );
     });
+
+    const arc = this._el.arc;
+    if (arc) {
+      const drag = (event) => {
+        event.preventDefault();
+        this._dialTo(event);
+      };
+      arc.addEventListener("pointerdown", (event) => {
+        arc.setPointerCapture(event.pointerId);
+        drag(event);
+      });
+      arc.addEventListener("pointermove", (event) => {
+        if (arc.hasPointerCapture(event.pointerId)) drag(event);
+      });
+      // A ring that can only be dragged is a ring half the people cannot use.
+      arc.addEventListener("keydown", (event) => {
+        const by = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[
+          event.key
+        ];
+        if (!by) return;
+        event.preventDefault();
+        this._nudgeTemperature(by);
+      });
+    }
     this._el.pill.addEventListener("click", () => this._togglePower());
 
     this._wireCapture();
@@ -766,8 +870,7 @@ class ClimateProfileCard extends HTMLElement {
     el.pill.disabled = model.unavailable || !model.hvacModes.includes("off");
 
     // temperature
-    const showTemp =
-      this._config.show_temperature !== false && isNum(model.target);
+    const showTemp = this._visible("temperature", isNum(model.target));
     el.temp.hidden = !showTemp;
     if (showTemp) {
       el.degrees.textContent = formatNumber(model.target, model.caps.target_temp_step);
@@ -775,15 +878,35 @@ class ClimateProfileCard extends HTMLElement {
       const min = isNum(model.caps.min_temp) ? model.caps.min_temp : 16;
       const max = isNum(model.caps.max_temp) ? model.caps.max_temp : 30;
       const ratio = max > min ? clamp((model.target - min) / (max - min), 0, 1) : 0;
-      el.meter.style.width = `${(ratio * 100).toFixed(1)}%`;
-      el.ambient.textContent = isNum(model.current)
-        ? `${this._t("Currently")} ${formatNumber(model.current, 0.1)} ${model.unit}${
-            model.action ? ` · ${this._localize(
-              `component.climate.entity_component._.state_attributes.hvac_action.state.${model.action}`,
-              model.action
-            )}` : ""
-          }`
+      if (el.meter) el.meter.style.width = `${(ratio * 100).toFixed(1)}%`;
+      if (el.arc) this._paintDial(model, ratio, min, max);
+      // What the device reports about the room. Each part only when there is
+      // something to show: a device without a humidity sensor must not print
+      // an empty "%". The bar puts them in one line, the dial in its middle.
+      const current = isNum(model.current)
+        ? `${formatNumber(model.current, 0.1)} ${model.unit}`
         : "";
+      const humidity = isNum(model.humidity)
+        ? `${formatNumber(model.humidity, 1)} %`
+        : "";
+      const action = model.action
+        ? this._localize(
+            `component.climate.entity_component._.state_attributes.hvac_action.state.${model.action}`,
+            model.action
+          )
+        : "";
+      if (el.ambient) {
+        const ambient = [];
+        if (current) ambient.push(`${this._t("Currently")} ${current}`);
+        if (humidity) ambient.push(humidity);
+        if (action) ambient.push(action);
+        el.ambient.textContent = ambient.join(" · ");
+      }
+      if (el.ringAction) {
+        el.ringAction.textContent = action;
+        setReading(el.ringCurrent, current);
+        setReading(el.ringHumidity, humidity);
+      }
       this.shadowRoot.querySelectorAll(".step").forEach((button) => {
         button.disabled = model.unavailable;
       });
@@ -967,7 +1090,59 @@ class ClimateProfileCard extends HTMLElement {
     );
   }
 
+  /** Move the arc, its handle and the dot marking the room's temperature. */
+  _paintDial(model, ratio, min, max) {
+    const el = this._el;
+    el.arcFill.setAttribute("d", dialPath(0, ratio));
+    const [hx, hy] = dialPoint(ratio);
+    el.arcHandle.setAttribute("cx", hx.toFixed(2));
+    el.arcHandle.setAttribute("cy", hy.toFixed(2));
+
+    const showsCurrent = isNum(model.current) && max > min;
+    el.arcCurrent.style.display = showsCurrent ? "" : "none";
+    if (showsCurrent) {
+      const [cx, cy] = dialPoint(clamp((model.current - min) / (max - min), 0, 1));
+      el.arcCurrent.setAttribute("cx", cx.toFixed(2));
+      el.arcCurrent.setAttribute("cy", cy.toFixed(2));
+    }
+
+    el.arc.setAttribute("aria-valuemin", String(min));
+    el.arc.setAttribute("aria-valuemax", String(max));
+    el.arc.setAttribute("aria-valuenow", String(model.target));
+    el.arc.setAttribute("aria-valuetext", `${model.target} ${model.unit}`);
+    el.arc.setAttribute("aria-disabled", model.unavailable ? "true" : "false");
+  }
+
   /* ---- actions ---- */
+
+  /** Where on the ring the pointer is, as a temperature. */
+  _dialTo(event) {
+    const model = this._model();
+    if (model.error || model.unavailable || !isNum(model.target)) return;
+
+    const box = this._el.arc.getBoundingClientRect();
+    const dx = event.clientX - (box.left + box.width / 2);
+    const dy = event.clientY - (box.top + box.height / 2);
+    // Clockwise from the top. The gap at the bottom is dead ground: a touch
+    // there belongs to whichever end of the range it is nearer to.
+    const degrees = clamp(
+      (Math.atan2(dx, -dy) * 180) / Math.PI,
+      -DIAL.span,
+      DIAL.span
+    );
+    const fraction = (degrees + DIAL.span) / (2 * DIAL.span);
+
+    const step = isNum(model.caps.target_temp_step) ? model.caps.target_temp_step : 0.5;
+    const min = isNum(model.caps.min_temp) ? model.caps.min_temp : 5;
+    const max = isNum(model.caps.max_temp) ? model.caps.max_temp : 35;
+    const next = clamp(
+      roundToStep(min + fraction * (max - min), step, min),
+      min,
+      max
+    );
+    if (next === model.target) return;
+    this._commitTemperature(next);
+  }
 
   _nudgeTemperature(direction) {
     const model = this._model();
@@ -981,11 +1156,15 @@ class ClimateProfileCard extends HTMLElement {
       max
     );
     if (next === model.target) return;
+    this._commitTemperature(next);
+  }
 
+  /** Show the new value at once and tell the device about it in a moment. */
+  _commitTemperature(next) {
     this._setPending("temperature", next);
     this._update();
 
-    // Coalesce rapid taps into one service call.
+    // Coalesce rapid taps - and every step of a drag - into one service call.
     clearTimeout(this._tempTimer);
     this._tempTimer = setTimeout(() => this._setValue({ temperature: next }), 600);
   }
@@ -1101,6 +1280,26 @@ const CLIMATE_LABELS = {
   fan_mode: "Fan mode",
 };
 
+/**
+ * The climate values this device actually has, read from the sensor's own
+ * attributes - the same ones the card draws from, so the editor cannot offer
+ * a switch for a control that never appears. A radiator thermostat has no fan
+ * and no swing; the additional values were always read this way, these four
+ * were not.
+ */
+function climateKeys(attrs, hass) {
+  const caps = attrs.capabilities || {};
+  const entities = attrs.entities || {};
+  const climate =
+    hass && entities.climate ? hass.states[entities.climate] : null;
+  const keys = [];
+  if (climate && isNum(climate.attributes.temperature)) keys.push("temperature");
+  if ((caps.hvac_modes || []).length) keys.push("hvac_mode");
+  if ((caps.fan_modes || []).length) keys.push("fan_mode");
+  if ((caps.swing_modes || []).length) keys.push("swing_mode");
+  return keys;
+}
+
 const CARD_DE = {
   Profiles: "Profile",
   Mode: "Modus",
@@ -1156,16 +1355,6 @@ ha-card {
   gap: var(--cp-gap);
   border-radius: var(--cp-radius);
   color: var(--cp-text);
-}
-
-ha-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 140px;
-  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16), transparent 85%);
-  pointer-events: none;
-  transition: background 320ms ease;
 }
 
 ha-card > * { position: relative; }
@@ -1284,6 +1473,7 @@ ha-card.unavailable { opacity: 0.6; }
 .pill.on .dot { opacity: 1; }
 
 /* temperature */
+.temp[hidden] { display: none; }
 .temp {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1334,6 +1524,86 @@ ha-card.unavailable { opacity: 0.6; }
   transition: width 260ms ease, background 260ms ease;
 }
 .ambient { font-size: 0.78rem; color: var(--cp-muted); min-height: 1.1em; }
+
+/* the dial */
+.temp.dial { display: block; padding: 8px 4px 0; }
+.ring {
+  position: relative;
+  width: min(268px, 86%);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  background: radial-gradient(
+    circle at 50% 48%,
+    rgba(var(--accent-rgb), 0.1),
+    transparent 62%
+  );
+}
+.arc {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Without this the browser scrolls the dashboard instead of turning the
+     dial - the one line that decides whether it works on a phone. */
+  touch-action: none;
+  cursor: pointer;
+  outline: none;
+}
+.arc-track {
+  fill: none;
+  stroke: var(--cp-fill);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.arc-fill {
+  fill: none;
+  stroke: var(--accent-color);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke 260ms ease;
+}
+.arc-current { fill: var(--cp-muted); }
+.arc-handle {
+  fill: var(--cp-surface);
+  stroke: var(--accent-color);
+  stroke-width: 2.4;
+}
+.arc:focus-visible .arc-handle { stroke-width: 4; }
+.ring-center {
+  position: absolute;
+  inset: 24% 20% 28%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+}
+.ring-center .value { font-size: 2.6rem; }
+.ring-action {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--cp-muted);
+  min-height: 1.1em;
+}
+.ring-reading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--cp-muted);
+}
+.ring-reading:first-of-type { margin-top: 6px; }
+.ring-reading ha-icon { --mdc-icon-size: 15px; width: 15px; height: 15px; }
+.ring-steps {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+}
+.dial .step { width: 46px; height: 46px; border-radius: 16px; }
 
 /* profiles */
 .profiles { display: grid; gap: 8px; }
@@ -1766,12 +2036,10 @@ class ClimateProfileCardEditor extends HTMLElement {
     const entity = this._config && this._config.entity;
     const state = entity && this._hass ? this._hass.states[entity] : null;
     const attrs = state ? state.attributes || {} : {};
-    const climate = [
-      ["temperature", "Temperature"],
-      ["hvac_mode", "Mode"],
-      ["fan_mode", "Fan mode"],
-      ["swing_mode", "Swing"],
-    ];
+    const climate = climateKeys(attrs, this._hass).map((key) => [
+      key,
+      CLIMATE_LABELS[key],
+    ]);
     const additional = (attrs.additional_values || [])
       .slice()
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
@@ -1814,8 +2082,13 @@ class ClimateProfileCardEditor extends HTMLElement {
       };
       this._form.addEventListener("value-changed", (event) => {
         const value = { ...event.detail.value };
-        const hide = [];
-        for (const [key] of this._values()) {
+        const offered = this._values().map(([key]) => key);
+        // What is not on offer keeps whatever was decided about it. An entity
+        // that is away for a moment takes its switch with it, and editing the
+        // name must not quietly unhide the value along with it.
+        const hide = (Array.isArray(this._config.hide) ? this._config.hide : [])
+          .filter((key) => !offered.includes(key));
+        for (const key of offered) {
           if (value[`show_${key}`] === false) hide.push(key);
           delete value[`show_${key}`];
         }
@@ -1844,6 +2117,18 @@ const SCHEMA = [
   },
   { name: "name", selector: { text: {} } },
   {
+    name: "temperature_style",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "bar", label: "Bar" },
+          { value: "dial", label: "Dial" },
+        ],
+      },
+    },
+  },
+  {
     name: "profile_layout",
     selector: {
       select: {
@@ -1862,6 +2147,7 @@ const EDITOR_LABELS = {
   entity: "Climate profile sensor",
   name: "Name (optional)",
   profile_layout: "Profile layout",
+  temperature_style: "Temperature control",
 };
 
 /* -------------------------------------------------------------------------

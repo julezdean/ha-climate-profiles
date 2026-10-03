@@ -27,16 +27,28 @@
       "init": {
         "title": "Climate Profiles",
         "menu_options": {
+          "values": "Manage values",
+          "profiles": "Manage profiles",
+          "custom_name": "Rename \"custom\""
+        }
+      },
+      "values": {
+        "title": "Manage values",
+        "menu_options": {
           "add_value": "Add a value",
           "add_from_device": "Add values from this device",
           "edit_value": "Edit a value",
           "reorder_values": "Order of the values",
-          "delete_value": "Delete values",
+          "delete_value": "Delete values"
+        }
+      },
+      "profiles": {
+        "title": "Manage profiles",
+        "menu_options": {
           "add_profile": "Add profile",
           "edit_profile": "Edit profile",
           "reorder": "Change order",
-          "delete_profile": "Delete profiles",
-          "custom_name": "Rename \"custom\""
+          "delete_profile": "Delete profiles"
         }
       },
       "add_profile": {

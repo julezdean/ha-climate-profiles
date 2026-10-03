@@ -27,16 +27,28 @@
       "init": {
         "title": "Climate Profiles",
         "menu_options": {
+          "values": "Werte verwalten",
+          "profiles": "Profile verwalten",
+          "custom_name": "„benutzerdefiniert“ umbenennen"
+        }
+      },
+      "values": {
+        "title": "Werte verwalten",
+        "menu_options": {
           "add_value": "Wert hinzufügen",
           "add_from_device": "Werte dieses Geräts hinzufügen",
           "edit_value": "Wert bearbeiten",
           "reorder_values": "Reihenfolge der Werte",
-          "delete_value": "Werte löschen",
+          "delete_value": "Werte löschen"
+        }
+      },
+      "profiles": {
+        "title": "Profile verwalten",
+        "menu_options": {
           "add_profile": "Profil hinzufügen",
           "edit_profile": "Profil bearbeiten",
           "reorder": "Reihenfolge ändern",
-          "delete_profile": "Profile löschen",
-          "custom_name": "„benutzerdefiniert“ umbenennen"
+          "delete_profile": "Profile löschen"
         }
       },
       "add_profile": {

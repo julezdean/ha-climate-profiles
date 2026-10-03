@@ -111,6 +111,8 @@ def test_config_and_options_steps_are_translated():
 
     options_steps = {
         "init",
+        "values",
+        "profiles",
         "add_value",
         "add_from_device",
         "edit_value",
@@ -125,9 +127,9 @@ def test_config_and_options_steps_are_translated():
         "custom_name",
     }
     assert options_steps <= set(strings["options"]["step"])
-    # The menu offers exactly the steps that exist.
-    menu = set(strings["options"]["step"]["init"]["menu_options"])
-    assert menu <= options_steps
+    # Every menu offers only steps that exist - the two group menus too.
+    for step in strings["options"]["step"].values():
+        assert set(step.get("menu_options", {})) <= options_steps
 
 
 def test_the_card_is_shipped():

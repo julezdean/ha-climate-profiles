@@ -11,6 +11,7 @@ type: custom:climate-profile-card
 entity: sensor.living_room_climate_profile
 name: Living room           # overrides the entity's friendly name
 profile_layout: auto        # auto | grid | scroll
+temperature_style: bar      # bar | dial
 # Everything is shown unless it is hidden. The list mixes the four climate
 # keys with the ids of your additional values - the editor writes it for you.
 hide: []
@@ -20,6 +21,12 @@ hide: []
 type: custom:climate-profile-card
 entity: sensor.bedroom_climate_profile
 hide: [hvac_mode, fan_mode, swing_mode]
+
+---
+# --- the thermostat shape: a dial, with the step buttons in its gap ----------
+type: custom:climate-profile-card
+entity: sensor.bedroom_climate_profile
+temperature_style: dial
 
 ---
 # --- several devices next to each other --------------------------------------
