@@ -135,3 +135,20 @@ def test_the_card_is_shipped():
     source = card.read_text(encoding="utf-8")
     assert 'customElements.define("climate-profile-card"' in source
     assert f'"{DOMAIN}"' in source, "the card must call this integration's services"
+
+
+def test_every_described_field_exists():
+    """Hassfest refuses a description for a field a step does not have.
+
+    It only says so in CI, and it took a red run to notice - so the same check
+    runs here, where it costs nothing.
+    """
+    for name in ("strings.json", "translations/en.json", "translations/de.json"):
+        data = load_json(name)
+        for section in ("config", "options"):
+            for step, content in data.get(section, {}).get("step", {}).items():
+                described = set(content.get("data_description", {}))
+                fields = set(content.get("data", {}))
+                assert described <= fields, (
+                    f"{name}: {section}.{step} describes {described - fields}"
+                )

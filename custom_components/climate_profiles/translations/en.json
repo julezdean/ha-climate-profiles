@@ -49,9 +49,6 @@
           "temperature": "Temperature",
           "fan_mode": "Fan mode",
           "swing_mode": "Swing mode",
-          "fan": "Fan speed",
-          "display": "Display",
-          "silent": "Silent mode",
           "detect": "Recognise this profile automatically",
           "capture": "Changes by hand"
         },
@@ -63,9 +60,6 @@
         "title": "Edit profile",
         "data": {
           "id": "Profile"
-        },
-        "data_description": {
-          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
         }
       },
       "edit_values": {
@@ -79,10 +73,11 @@
           "temperature": "Temperature",
           "fan_mode": "Fan mode",
           "swing_mode": "Swing mode",
-          "fan": "Fan speed",
-          "display": "Display",
-          "silent": "Silent mode",
-          "protected": "Write protected"
+          "detect": "Recognise this profile automatically",
+          "capture": "Changes by hand"
+        },
+        "data_description": {
+          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
         }
       },
       "delete_profile": {

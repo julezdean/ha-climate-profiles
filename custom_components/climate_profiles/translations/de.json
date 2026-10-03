@@ -49,9 +49,6 @@
           "temperature": "Temperatur",
           "fan_mode": "Lüftermodus",
           "swing_mode": "Swing-Modus",
-          "fan": "Lüftergeschwindigkeit",
-          "display": "Geräteanzeige",
-          "silent": "Flüstermodus",
           "detect": "Dieses Profil automatisch erkennen",
           "capture": "Änderungen von Hand"
         },
@@ -63,9 +60,6 @@
         "title": "Profil bearbeiten",
         "data": {
           "id": "Profil"
-        },
-        "data_description": {
-          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
         }
       },
       "edit_values": {
@@ -79,10 +73,11 @@
           "temperature": "Temperatur",
           "fan_mode": "Lüftermodus",
           "swing_mode": "Swing-Modus",
-          "fan": "Lüftergeschwindigkeit",
-          "display": "Geräteanzeige",
-          "silent": "Flüstermodus",
-          "protected": "Schreibgeschützt"
+          "detect": "Dieses Profil automatisch erkennen",
+          "capture": "Änderungen von Hand"
+        },
+        "data_description": {
+          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
         }
       },
       "delete_profile": {
