@@ -30,6 +30,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CAPTURE_TIMEOUT_SECONDS,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
@@ -168,6 +169,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._last_change = 0.0
         self._reached = False
         self._reach_timer: Any = None
+        #: When the manual change the capture offer is about was last made,
+        #: and the timer that lets the offer expire on its own.
+        self._changed_at = 0.0
+        self._changed_keys: tuple[str, ...] = ()
+        self._expiry_timer: Any = None
         self._unreached: Unreached | None = None
 
     # -- configuration ------------------------------------------------------
@@ -355,9 +361,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             if self._target is not None and self._target.id == active.id:
                 self._reached = True
 
-        last_matched = (
-            profiles.get(self._baseline[0]) if self._baseline is not None else None
-        )
         # Also reported while a profile is still active: a partial profile
         # keeps matching while you adjust a value it does not define, and that
         # is precisely a change worth offering to capture.
@@ -365,6 +368,12 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             changed_keys(self._baseline[1], values, vocabulary, unavailable)
             if self._baseline is not None
             else ()
+        )
+        # Expiring drops the reference point, so what it would capture into
+        # has to be read afterwards.
+        changed = self._expire_offer(changed)
+        last_matched = (
+            profiles.get(self._baseline[0]) if self._baseline is not None else None
         )
         return ProfileState(
             active,
@@ -378,6 +387,61 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             changed,
             self._unreached,
         )
+
+    @callback
+    def _expire_offer(self, changed: tuple[str, ...]) -> tuple[str, ...]:
+        """Let the capture offer run out, and say what is left of it.
+
+        An offer that never expires keeps claiming hours later that something
+        was just changed. Once it is gone the state is plainly custom - the
+        same place a restart leaves it - and capturing still works by naming
+        the profile.
+        """
+        now = self.hass.loop.time()
+        if not changed:
+            self._changed_keys = ()
+            self._cancel_expiry()
+            return changed
+
+        if changed != self._changed_keys:
+            # A new change, or another one on top: start the clock over.
+            self._changed_keys = changed
+            self._changed_at = now
+
+        if now - self._changed_at >= CAPTURE_TIMEOUT_SECONDS:
+            _LOGGER.debug(
+                "%s: the offer to capture %s expired", self.name, ", ".join(changed)
+            )
+            self._baseline = None
+            self._changed_keys = ()
+            self._cancel_expiry()
+            return ()
+
+        # Nothing else may happen for a while, so the expiry has to come from
+        # a timer rather than from the next state change.
+        self._schedule_expiry(CAPTURE_TIMEOUT_SECONDS - (now - self._changed_at))
+        return changed
+
+    @callback
+    def _cancel_expiry(self) -> None:
+        """Stop the timer that lets the capture offer run out."""
+        if self._expiry_timer is not None:
+            self._expiry_timer()
+            self._expiry_timer = None
+
+    @callback
+    def _schedule_expiry(self, delay: float) -> None:
+        """Recalculate once the offer is due to expire."""
+        self._cancel_expiry()
+        self._expiry_timer = async_call_later(
+            self.hass, max(delay, 0.0), self._expiry_timer_fired
+        )
+
+    @callback
+    def _expiry_timer_fired(self, _now: Any) -> None:
+        """Ask for a recalculation on the event loop."""
+        self._expiry_timer = None
+        self.hass.async_create_task(self.async_refresh())
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -416,6 +480,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         if self._apply_task is not None and not self._apply_task.done():
             self._apply_task.cancel()
         self._clear_target()
+        self._cancel_expiry()
 
     # -- did the profile take? ----------------------------------------------
 

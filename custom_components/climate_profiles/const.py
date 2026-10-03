@@ -152,3 +152,9 @@ REACH_QUIET_SECONDS: Final = 3.0
 #: ... but never longer than this after the last call, so a device that keeps
 #: reporting does not postpone the verdict forever. PROVISIONAL as well.
 REACH_MAX_SECONDS: Final = 30.0
+
+#: How long the offer to capture a manual change stays up, counted from the
+#: last change. After that the reference point is dropped: the state is simply
+#: custom, the way it is after a restart. Every further change starts it over,
+#: so adjusting something in several steps keeps the offer alive.
+CAPTURE_TIMEOUT_SECONDS: Final = 60.0

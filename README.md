@@ -177,6 +177,12 @@ refuses to be captured into - the card then only offers the "new profile"
 route. It can still be edited deliberately in the options; protection guards
 the quick path, not the deliberate one.
 
+**The offer runs out.** A minute after the last manual change the reference
+point is dropped: the card stops offering to capture, and the state is plainly
+custom. Every further change starts that minute over, so adjusting something in
+several steps does not lose the offer halfway. Capturing into a profile you
+name explicitly keeps working.
+
 **After a restart** nothing is assumed. The reference point for "what did you
 change" only exists while Home Assistant runs, so a fresh start with a
 deviating state stays custom and offers no target until a profile matches

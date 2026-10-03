@@ -53,6 +53,15 @@ versioning [Semantic Versioning](https://semver.org/).
   always goes first, because most devices ignore everything else while they
   are off. The card shows the additional values in the same order.
 
+### Added
+
+- **The offer to capture a manual change expires.** It used to stay up for as
+  long as the deviation lasted, still claiming hours later that something had
+  just been changed. A minute after the last change the reference point is
+  dropped and the state is plainly custom, the way a restart leaves it. Every
+  further change starts that minute over, and capturing into a profile named
+  explicitly is unaffected.
+
 ### Fixed
 
 - **The most specific of the matching profiles is shown, not the first one.**
