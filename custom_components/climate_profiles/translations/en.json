@@ -13,13 +13,6 @@
           "name": "Used for the device and the entity names, e.g. \"Living room\".",
           "climate_entity": "Supported modes, temperature range and step width are read from this entity."
         }
-      },
-      "profiles": {
-        "title": "Profiles",
-        "description": "A starter set is built from what your device actually supports. You can rename, change, reorder and delete everything afterwards.",
-        "data": {
-          "create_default_profiles": "Create starter profiles"
-        }
       }
     },
     "error": {
@@ -42,6 +35,7 @@
           "edit_profile": "Edit profile",
           "reorder": "Change order",
           "delete_profile": "Delete profiles",
+          "behaviour": "Behaviour",
           "custom_name": "Rename \"custom\""
         }
       },
@@ -140,6 +134,17 @@
         "description": "Pick the values in the order they should be written. It decides which one wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The card shows the additional values in the same order. The mode always goes first; anything you leave out keeps its place at the end.",
         "data": {
           "order": "Order"
+        }
+      },
+      "behaviour": {
+        "title": "Behaviour",
+        "data": {
+          "detect_profiles": "Detect profiles automatically",
+          "auto_capture": "Capture changes automatically"
+        },
+        "data_description": {
+          "detect_profiles": "Off: only what you select counts as active. If the state deviates from it, it is custom - even when the values match another profile exactly. This is what lets two profiles hold the same values.",
+          "auto_capture": "On: a change you make through this integration is written into the active profile instead of being offered for confirmation. Only values the profile already defines, and never into a write protected one."
         }
       }
     },

@@ -43,8 +43,10 @@ from .const import (
     CONF_ADDITIONAL_ICON,
     CONF_ADDITIONAL_ID,
     CONF_ADDITIONAL_NAME,
+    CONF_AUTO_CAPTURE,
     CONF_CLIMATE_ENTITY,
     CONF_CUSTOM_NAME,
+    CONF_DETECT,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
@@ -63,7 +65,6 @@ from .const import (
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
-from .matching import canonical_option
 from .models import (
     AdditionalValue,
     AdditionalValueSet,
@@ -81,7 +82,6 @@ from .models import (
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_CREATE_DEFAULTS = "create_default_profiles"
 CONF_ORDER = "order"
 CONF_CONFIRM = "confirm"
 CONF_SELECTED = "selected"
@@ -383,84 +383,6 @@ def profile_from_input(
 # ---------------------------------------------------------------------------
 
 
-def build_default_profiles(caps: Capabilities) -> list[ClimateProfile]:
-    """Build a starter set from what the device actually supports.
-
-    Anything the device does not advertise is left out instead of guessed, so
-    the generated profiles can really be matched and applied.
-    """
-    blueprint: list[tuple[str, str, dict[str, Any]]] = [
-        ("Off", "#64748b", {VALUE_HVAC_MODE: "off"}),
-        (
-            "Away",
-            "#3b82f6",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 26,
-                VALUE_SWING_MODE: "off",
-                VALUE_FAN_MODE: "auto",
-            },
-        ),
-        (
-            "Comfort",
-            "#22c55e",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 24,
-                VALUE_SWING_MODE: "off",
-                VALUE_FAN_MODE: "auto",
-            },
-        ),
-        (
-            "Night",
-            "#8b5cf6",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 26,
-                VALUE_SWING_MODE: "off",
-            },
-        ),
-        (
-            "Max",
-            "#ef4444",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 16,
-                VALUE_SWING_MODE: "vertical",
-            },
-        ),
-    ]
-
-    profiles: list[ClimateProfile] = []
-    for name, color, raw_values in blueprint:
-        values: dict[str, Any] = {}
-        for key, value in raw_values.items():
-            if key in (VALUE_HVAC_MODE, VALUE_FAN_MODE, VALUE_SWING_MODE):
-                option = canonical_option(str(value), caps.options_for(key))
-                if option is None:
-                    continue
-                values[key] = option
-            elif key == VALUE_TEMPERATURE:
-                values[key] = _clamp(float(value), caps.min_temp, caps.max_temp)
-            else:
-                values[key] = value
-
-        if VALUE_HVAC_MODE not in values:
-            continue
-        profiles.append(
-            ClimateProfile(id=new_profile_id(), name=name, color=color, values=values)
-        )
-    return profiles
-
-
-def _clamp(value: float, low: float | None, high: float | None) -> float:
-    if low is not None:
-        value = max(value, low)
-    if high is not None:
-        value = min(value, high)
-    return value
-
-
 # ---------------------------------------------------------------------------
 # config flow
 # ---------------------------------------------------------------------------
@@ -488,42 +410,22 @@ class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(entity_id)
                 self._abort_if_unique_id_configured()
                 self._data = dict(user_input)
-                return await self.async_step_profiles()
+                name = self._data.pop(CONF_NAME)
+                # No starter profiles: the blueprint was shaped like an air
+                # conditioner, and on a radiator thermostat it produced
+                # profiles that had to be fixed before they were any use.
+                # Adding one under Configure is a form away.
+                return self.async_create_entry(
+                    title=name,
+                    data=self._data,
+                    options={
+                        CONF_PROFILES: [],
+                        CONF_CUSTOM_NAME: DEFAULT_CUSTOM_NAME,
+                    },
+                )
 
         return self.async_show_form(
             step_id="user", data_schema=_device_schema(user_input), errors=errors
-        )
-
-    async def async_step_profiles(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Step 2: optionally seed a starter set of profiles.
-
-        Only climate values are seeded - additional values are added after
-        setup, so at this point there are none to put into a profile.
-        """
-        if user_input is not None:
-            entities = EntityMap.from_config(self._data)
-            profiles: list[ClimateProfile] = []
-            if user_input.get(CONF_CREATE_DEFAULTS, True):
-                caps = read_capabilities(self.hass, entities)
-                profiles = build_default_profiles(caps)
-
-            name = self._data.pop(CONF_NAME)
-            return self.async_create_entry(
-                title=name,
-                data=self._data,
-                options={
-                    CONF_PROFILES: [profile.as_dict() for profile in profiles],
-                    CONF_CUSTOM_NAME: DEFAULT_CUSTOM_NAME,
-                },
-            )
-
-        return self.async_show_form(
-            step_id="profiles",
-            data_schema=vol.Schema(
-                {vol.Required(CONF_CREATE_DEFAULTS, default=True): bool}
-            ),
         )
 
     @staticmethod
@@ -639,7 +541,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         options.append("add_profile")
         if self._profiles:
             options += ["edit_profile", "reorder", "delete_profile"]
-        options.append("custom_name")
+        options += ["behaviour", "custom_name"]
         return self.async_show_menu(step_id="init", menu_options=options)
 
     # -- additional values ---------------------------------------------------
@@ -936,6 +838,41 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                             sort=False,
                         )
                     )
+                }
+            ),
+        )
+
+    async def async_step_behaviour(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change how a profile becomes active, and what a change does.
+
+        Two switches, deliberately separate: one decides whether a profile may
+        become active without being chosen, the other whether a change by hand
+        is written into it. Their combination is what makes profiles work as
+        named targets of an automation, but each is useful on its own.
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.config_entry.options,
+                    CONF_DETECT: bool(user_input.get(CONF_DETECT, True)),
+                    CONF_AUTO_CAPTURE: bool(user_input.get(CONF_AUTO_CAPTURE, False)),
+                }
+            )
+
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="behaviour",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_DETECT, default=bool(options.get(CONF_DETECT, True))
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_AUTO_CAPTURE,
+                        default=bool(options.get(CONF_AUTO_CAPTURE, False)),
+                    ): BooleanSelector(),
                 }
             ),
         )

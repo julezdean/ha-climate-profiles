@@ -8,13 +8,11 @@ from __future__ import annotations
 
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from custom_components.climate_profiles.config_flow import build_default_profiles
 from custom_components.climate_profiles.const import (
     CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
     DOMAIN,
 )
-from custom_components.climate_profiles.models import Capabilities
 
 from .conftest import settle
 from .test_integration import setup_entry
@@ -145,15 +143,6 @@ async def test_a_mode_the_thermostat_lacks_is_refused(hass):
 
     assert not mode, "cool is not in hvac_modes, so it must not be sent"
     assert temp[0].data["temperature"] == 20, "the rest of the profile still applies"
-
-
-def test_starter_profiles_for_a_heating_only_device():
-    """The blueprint is cooling shaped - a heater gets what fits, not nonsense."""
-    caps = Capabilities(
-        hvac_modes=("off", "heat", "auto"), min_temp=5, max_temp=35, temp_step=0.5
-    )
-    profiles = build_default_profiles(caps)
-    assert [p.name for p in profiles] == ["Off"]
 
 
 # --- known limitations -----------------------------------------------------

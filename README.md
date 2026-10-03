@@ -65,10 +65,10 @@ What changed in each version is in the [changelog](CHANGELOG.md).
 
 **Settings → Devices & services → Add integration → Climate Profiles**
 
-1. **Climate device** - a name and the `climate` entity.
-2. **Profiles** - a starter set is offered, built from what your device
-   actually supports. Modes it does not advertise are left out, temperatures
-   are clamped into its range.
+One form: a name and the `climate` entity. No profiles are invented for you -
+a starter set shaped like an air conditioner is of little use on a radiator
+thermostat, and everybody ends up rewriting it anyway. Add yours under
+**Configure → Add profile**, and give the ones you rely on write protection.
 
 Everything your device has beyond the climate entity is added afterwards, under
 **Configure → Add a value**: pick the entity, and it is there. Supported are
@@ -92,6 +92,7 @@ Each config entry creates one device with two entities:
 | Add a value | an additional value, backed by an entity you pick |
 | Edit a value | point it at a different entity, rename it, give it an icon |
 | Order of the values | the order values are written in - and the card shows them in |
+| Behaviour | how a profile becomes active, and what a change by hand does |
 | Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
 | Add profile | name, colour, icon and the values it should set |
 | Edit profile | change everything; **clear a field to remove that value from the profile** |
@@ -188,6 +189,43 @@ change" only exists while Home Assistant runs, so a fresh start with a
 deviating state stays custom and offers no target until a profile matches
 again. Name the profile explicitly in the service call if you need it anyway.
 
+### Chosen or detected
+
+Two switches under **Configure → Behaviour** decide how profiles behave.
+
+**Detect profiles automatically** is on by default and is what the sections
+above describe: the active profile is read off the device state. Turn the air
+conditioner off with its remote and the card says "Off" - nobody had to press
+anything.
+
+Switched **off**, a profile is active only while it is the one you selected,
+through the card, the select entity or `apply_profile`. Everything else is
+custom, even when the values match a profile exactly. Two consequences, and
+both are the point:
+
+* **Two profiles may hold the same values.** "Comfort" and "Emica" can both be
+  21 °C today and differ again tomorrow; the choice tells them apart, which
+  nothing in the device state could.
+* **Nothing becomes active by accident.** An automation writing 21 °C directly
+  to the climate entity no longer makes the card claim a profile.
+
+The selection survives a restart. It counts only while its values still hold,
+so a device that moved in the meantime leaves the card on custom rather than
+claiming a profile that stopped applying hours ago.
+
+**Capture changes automatically** is off by default. Switched on, a change you
+make through this integration is written into the active profile instead of
+being offered for confirmation - the same thing the "save into" button stores:
+values the profile defines are updated, and a value you adjusted on top is
+taken into it. Two things it never does: write into a **write protected**
+profile, and store what the **device** did on its own. The second matters more
+than it sounds - a device that overrides a value would otherwise write its
+override into your profile, and a profile called "Off" would quietly come to
+mean "heating".
+
+Writing waits until the state has been quiet for a moment, so moving a slider
+in steps does not store every step on the way.
+
 ### When a profile does not take
 
 Two values of one profile can contradict each other on a real device. A silent
@@ -223,9 +261,8 @@ out - of the card as well:
 
 ![A radiator thermostat](docs/images/card-heating.png)
 
-The starter profiles are cooling shaped, so a heating only device gets just
-the "Aus" profile offered and you add your own. Modes the device does not
-advertise are never sent.
+Modes the device does not advertise are never sent, and a value it refuses is
+reported rather than silently dropped.
 
 ### Known limitations
 

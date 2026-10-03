@@ -103,7 +103,8 @@ def test_translations_cover_the_same_keys():
 
 def test_config_and_options_steps_are_translated():
     strings = load_json("strings.json")
-    config_steps = {"user", "profiles"}
+    # Setup is a single form; there is no starter-profile step any more.
+    config_steps = {"user"}
     assert config_steps <= set(strings["config"]["step"])
 
     options_steps = {
@@ -118,6 +119,7 @@ def test_config_and_options_steps_are_translated():
         "edit_values",
         "delete_profile",
         "reorder",
+        "behaviour",
         "custom_name",
     }
     assert options_steps <= set(strings["options"]["step"])

@@ -13,13 +13,6 @@
           "name": "Wird für das Device und die Entity-Namen verwendet, z. B. „Wohnzimmer“.",
           "climate_entity": "Unterstützte Modi, Temperaturbereich und Schrittweite werden aus dieser Entity gelesen."
         }
-      },
-      "profiles": {
-        "title": "Profile",
-        "description": "Ein Startsatz wird aus dem gebaut, was dein Gerät tatsächlich unterstützt. Umbenennen, ändern, sortieren und löschen kannst du danach jederzeit.",
-        "data": {
-          "create_default_profiles": "Startprofile anlegen"
-        }
       }
     },
     "error": {
@@ -42,6 +35,7 @@
           "edit_profile": "Profil bearbeiten",
           "reorder": "Reihenfolge ändern",
           "delete_profile": "Profile löschen",
+          "behaviour": "Verhalten",
           "custom_name": "„benutzerdefiniert“ umbenennen"
         }
       },
@@ -140,6 +134,17 @@
         "description": "Wähle die Werte in der Reihenfolge, in der sie geschrieben werden sollen. Sie entscheidet, welcher gewinnt, wenn sich zwei an deinem Gerät widersprechen - etwa ein Flüstermodus, der seine eigene Lüfterstufe setzt. Die Karte zeigt die zusätzlichen Werte in derselben Reihenfolge. Der Modus kommt immer zuerst; was du wegglässt, behält seinen Platz am Ende.",
         "data": {
           "order": "Reihenfolge"
+        }
+      },
+      "behaviour": {
+        "title": "Verhalten",
+        "data": {
+          "detect_profiles": "Profile automatisch erkennen",
+          "auto_capture": "Änderungen automatisch übernehmen"
+        },
+        "data_description": {
+          "detect_profiles": "Aus: Aktiv ist nur, was du auswählst. Weicht der Zustand davon ab, ist es Custom - auch wenn die Werte genau zu einem anderen Profil passen. Erst dadurch können zwei Profile dieselben Werte haben.",
+          "auto_capture": "An: Eine Änderung über diese Integration wird in das aktive Profil geschrieben, statt zur Bestätigung angeboten zu werden. Nur Werte, die das Profil schon festlegt, und nie in ein schreibgeschütztes."
         }
       }
     },

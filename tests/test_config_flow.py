@@ -7,7 +7,6 @@ from homeassistant.const import CONF_NAME
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.climate_profiles.config_flow import build_default_profiles
 from custom_components.climate_profiles.const import (
     CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
@@ -19,7 +18,6 @@ from custom_components.climate_profiles.const import (
     CONF_PROFILES,
     DOMAIN,
 )
-from custom_components.climate_profiles.models import Capabilities
 
 from .conftest import (
     CLIMATE,
@@ -29,50 +27,29 @@ from .conftest import (
 )
 
 
-async def run_config_flow(hass, *, optional=True, defaults=True):
-    """Walk through the whole config flow."""
+async def run_config_flow(hass):
+    """Walk through the whole config flow - one step, and it is done."""
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
 
-    result = await hass.config_entries.flow.async_configure(
+    return await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_NAME: "Wohnzimmer", CONF_CLIMATE_ENTITY: CLIMATE}
     )
-    assert result["step_id"] == "profiles"
-
-    return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"create_default_profiles": defaults}
-    )
 
 
-async def test_full_flow_creates_an_entry_with_starter_profiles(hass):
+async def test_the_flow_creates_an_entry_without_profiles(hass):
+    """Setup is one form: no starter set is invented for the device."""
     set_device_state(hass)
     result = await run_config_flow(hass)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Wohnzimmer"
     assert result["data"] == {CONF_CLIMATE_ENTITY: CLIMATE}
-    names = [p[CONF_PROFILE_NAME] for p in result["options"][CONF_PROFILES]]
-    assert names == ["Off", "Away", "Comfort", "Night", "Max"]
-    assert result["options"][CONF_CUSTOM_NAME] == "Custom"
-
-
-async def test_optional_entities_may_be_skipped(hass):
-    set_device_state(hass)
-    result = await run_config_flow(hass, optional=False)
-
-    assert result["data"] == {CONF_CLIMATE_ENTITY: CLIMATE}
-    # No fan/display/silent entity -> no profile defines those values.
-    for profile in result["options"][CONF_PROFILES]:
-        assert not {"fan", "display", "silent"} & set(profile[CONF_PROFILE_VALUES])
-
-
-async def test_starting_without_profiles(hass):
-    set_device_state(hass)
-    result = await run_config_flow(hass, defaults=False)
     assert result["options"][CONF_PROFILES] == []
+    assert result["options"][CONF_CUSTOM_NAME] == "Custom"
 
 
 async def test_unknown_entity_is_rejected(hass):
@@ -101,34 +78,6 @@ async def test_the_same_climate_entity_cannot_be_added_twice(hass):
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
-
-
-# --- default profiles ------------------------------------------------------
-
-
-def test_default_profiles_skip_what_the_device_cannot_do():
-    caps = Capabilities(
-        hvac_modes=("off", "heat"),  # no cool at all
-        min_temp=17,
-        max_temp=30,
-        temp_step=0.5,
-    )
-    profiles = build_default_profiles(caps)
-    # Only the "off" profile survives, everything else needs cooling.
-    assert [p.name for p in profiles] == ["Off"]
-
-
-def test_default_profiles_clamp_to_the_devices_range():
-    caps = Capabilities(
-        hvac_modes=("off", "cool"),
-        swing_modes=("off", "vertical"),
-        min_temp=18,
-        max_temp=30,
-        temp_step=1,
-    )
-    profiles = build_default_profiles(caps)
-    maximum = next(p for p in profiles if p.name == "Max")
-    assert maximum.values["temperature"] == 18  # blueprint says 16
 
 
 # --- options flow ----------------------------------------------------------

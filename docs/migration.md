@@ -37,7 +37,7 @@ This integration does the same thing, with the same rules.
 ## Steps
 
 1. Set up the integration (Settings → Devices & services → Add integration →
-   Climate Profiles) and let it create the starter profiles, or add your own.
+   Climate Profiles) and add your profiles under Configure.
 2. Compare: with the package still active, both the old sensor and
    `sensor.<name>_climate_profile` should show the same profile. If they do not,
    the profile values differ - fix them in the options flow.

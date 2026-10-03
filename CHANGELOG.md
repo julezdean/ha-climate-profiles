@@ -32,8 +32,12 @@ versioning [Semantic Versioning](https://semver.org/).
   unreadable - its stored value is simply skipped. To swap the entity behind
   a value without losing what profiles set for it, edit the value rather than
   deleting it: a value added anew gets a new id.
-- Setup asks for the climate entity and the starter profiles only; additional
-  values are added afterwards under **Configure**.
+- **Setup is a single form** - a name and the climate entity. No starter
+  profiles are created any more: the blueprint was shaped like an air
+  conditioner, so a radiator thermostat got a single "Off" profile whose mode
+  many such devices do not even accept, and everything else had to be rewritten
+  by hand. Profiles and additional values are added afterwards under
+  **Configure**.
 - The integration declares `CONFIG_SCHEMA` as config-entry-only, so a stray
   `climate_profiles:` block in `configuration.yaml` is an error rather than
   something silently ignored.
@@ -61,6 +65,24 @@ versioning [Semantic Versioning](https://semver.org/).
   dropped and the state is plainly custom, the way a restart leaves it. Every
   further change starts that minute over, and capturing into a profile named
   explicitly is unaffected.
+
+### Added
+
+- **Two switches under Configure → Behaviour.** *Detect profiles automatically*
+  is on by default and is what the integration always did: the active profile
+  is read off the device state. Switched off, a profile is active only while it
+  is the one that was selected - through the card, the select entity or
+  `apply_profile` - and everything else is custom, even when the values match a
+  profile exactly. That is what lets two profiles hold the same values, and it
+  stops an automation writing to the climate entity from making the card claim
+  a profile nobody chose. The selection survives a restart and counts only
+  while its values still hold.
+- *Capture changes automatically* is off by default. Switched on, a change made
+  through the integration is written into the active profile instead of being
+  offered for confirmation - the same thing the "save into" button stores. It
+  never writes into a write protected profile, and never stores what the device
+  did on its own: otherwise a device overriding a value would write its
+  override into the profile.
 
 ### Fixed
 

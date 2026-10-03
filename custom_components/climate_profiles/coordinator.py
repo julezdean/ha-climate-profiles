@@ -27,14 +27,18 @@ from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    AUTO_CAPTURE_QUIET_SECONDS,
     CAPTURE_TIMEOUT_SECONDS,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
+    CONF_AUTO_CAPTURE,
     CONF_CUSTOM_NAME,
+    CONF_DETECT,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     CUSTOM_PROFILE_ID,
@@ -44,6 +48,8 @@ from .const import (
     REACH_MAX_SECONDS,
     REACH_QUIET_SECONDS,
     RECALC_DEBOUNCE_SECONDS,
+    SELECTION_STORAGE_KEY,
+    SELECTION_STORAGE_VERSION,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
     VALUE_SWING_MODE,
@@ -55,6 +61,7 @@ from .matching import (
     capture_values,
     changed_keys,
     normalise_values,
+    profile_matches,
     resolve_active_profile,
     storage_value,
     values_equal,
@@ -174,6 +181,14 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._changed_at = 0.0
         self._changed_keys: tuple[str, ...] = ()
         self._expiry_timer: Any = None
+        #: The profile that was chosen - by the card, the select entity or the
+        #: service. Remembered across restarts, but only counted while its
+        #: values still hold.
+        self._selected: str | None = None
+        self._selection_store: Store[dict[str, Any]] = Store(
+            hass, SELECTION_STORAGE_VERSION, SELECTION_STORAGE_KEY
+        )
+        self._auto_capture_timer: Any = None
         self._unreached: Unreached | None = None
 
     # -- configuration ------------------------------------------------------
@@ -194,6 +209,16 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 "Invalid additional values for %s: %s", self.config_entry.title, err
             )
             return AdditionalValueSet()
+
+    @property
+    def detect_profiles(self) -> bool:
+        """Return whether a profile may become active without being selected."""
+        return bool(self.config_entry.options.get(CONF_DETECT, True))
+
+    @property
+    def auto_capture(self) -> bool:
+        """Return whether a manual change is written into the active profile."""
+        return bool(self.config_entry.options.get(CONF_AUTO_CAPTURE, False))
 
     @property
     def value_order(self) -> list[str]:
@@ -324,7 +349,19 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             order=self.value_order,
         )
         profiles = self.profiles
-        active = resolve_active_profile(profiles, values, vocabulary, unavailable)
+        if self.detect_profiles:
+            active = resolve_active_profile(profiles, values, vocabulary, unavailable)
+        else:
+            # Only what was chosen counts, and only while it still holds. Two
+            # profiles with the same values are told apart by the choice, which
+            # is the only thing that can tell them apart.
+            chosen = profiles.get(self._selected or "")
+            active = (
+                chosen
+                if chosen is not None
+                and profile_matches(chosen, values, vocabulary, unavailable)
+                else None
+            )
         applying = self._apply_task is not None and not self._apply_task.done()
 
         # While an applied profile is still on its way, only that one may take
@@ -447,12 +484,29 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
     async def async_setup(self) -> None:
         """Start listening to the configured entities."""
+        stored = await self._selection_store.async_load() or {}
+        self._selected = stored.get(self.config_entry.entry_id)
+
         self.config_entry.async_on_unload(
             async_track_state_change_event(
                 self.hass, self.entities.all_entities(), self._handle_state_change
             )
         )
         self.config_entry.async_on_unload(self._cancel_running_apply)
+
+    async def _async_remember_selection(self, profile_id: str | None) -> None:
+        """Keep the selection across restarts.
+
+        One store for the whole integration, keyed by entry: a device without a
+        selection simply has no key.
+        """
+        self._selected = profile_id
+        stored = await self._selection_store.async_load() or {}
+        if profile_id is None:
+            stored.pop(self.config_entry.entry_id, None)
+        else:
+            stored[self.config_entry.entry_id] = profile_id
+        await self._selection_store.async_save(stored)
 
     @callback
     def _handle_state_change(self, event: Event[EventStateChangedData]) -> None:
@@ -481,6 +535,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self._apply_task.cancel()
         self._clear_target()
         self._cancel_expiry()
+        if self._auto_capture_timer is not None:
+            self._auto_capture_timer()
+            self._auto_capture_timer = None
 
     # -- did the profile take? ----------------------------------------------
 
@@ -610,6 +667,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._unreached = None
         self._clear_target()
         self._target = profile
+        # Applying is choosing: with detection off this is the only thing that
+        # makes a profile active, and it has to survive a restart.
+        await self._async_remember_selection(profile.id)
         await self._async_run_apply(profile.values, optimistic=profile)
 
     @callback
@@ -653,7 +713,81 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # device's answer. A change made on the device itself cannot be told
         # apart from the device overriding a value, and is not covered.
         self._clear_target()
+        if self.auto_capture:
+            # Only a change through the integration counts - never what the
+            # device does on its own, which would store its overrides.
+            self._schedule_auto_capture()
         await self._async_run_apply(values, optimistic=None)
+
+    # -- capturing automatically ---------------------------------------------
+
+    @callback
+    def _schedule_auto_capture(self) -> None:
+        """Write the change into the active profile once the state is quiet."""
+        if self._auto_capture_timer is not None:
+            self._auto_capture_timer()
+        self._auto_capture_timer = async_call_later(
+            self.hass, AUTO_CAPTURE_QUIET_SECONDS, self._auto_capture_fired
+        )
+
+    @callback
+    def _auto_capture_fired(self, _now: Any) -> None:
+        """Start the write on the event loop."""
+        self._auto_capture_timer = None
+        self.hass.async_create_task(self._async_auto_capture())
+
+    async def _async_auto_capture(self) -> None:
+        """Store the manual change in the profile it belongs to.
+
+        The same thing the "save into" button does, without asking: values the
+        profile defines are updated, and a value you adjusted on top is taken
+        into it - so the profile grows by what you deliberately changed, which
+        is exactly what the button would have stored.
+
+        A write protected profile is never touched: protection means "not over
+        the quick path", and this is the quickest path there is.
+        """
+        # Read the world first: the recalculation is debounced, so what the
+        # coordinator holds right now may predate the change this was
+        # scheduled for.
+        await self.async_refresh()
+        state = self.data
+        if state is None:
+            return
+        target = state.last_matched or self.profiles.get(self._selected or "")
+        _LOGGER.debug(
+            "%s: automatic capture - target %s, changed %s",
+            self.name,
+            target.name if target else None,
+            ", ".join(state.changed) or "-",
+        )
+        if target is None or target.protected:
+            if target is not None:
+                _LOGGER.debug(
+                    "%s: not capturing into %s automatically - it is write protected",
+                    self.name,
+                    target.name,
+                )
+            return
+
+        if not state.changed:
+            return
+
+        baseline = (
+            self._baseline[1]
+            if self._baseline is not None and self._baseline[0] == target.id
+            else None
+        )
+        values = capture_values(
+            target.values, state.values, state.vocabulary, baseline=baseline
+        )
+        if values == target.values:
+            return
+        _LOGGER.debug(
+            "%s: captured %s into %s", self.name, ", ".join(state.changed), target.name
+        )
+        self._renew_baseline = True
+        self._store(self.profiles.replaced(target.with_values(values)))
 
     # -- capturing ----------------------------------------------------------
 

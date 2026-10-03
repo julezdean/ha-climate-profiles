@@ -32,6 +32,14 @@ CONF_ADDITIONAL_ORDER: Final = "order"
 #: first, because most devices ignore everything else while they are off.
 CONF_VALUE_ORDER: Final = "value_order"
 
+#: Whether a profile may become active just because the state fits it. Off,
+#: only what was selected counts - which is what makes two profiles with the
+#: same values usable.
+CONF_DETECT: Final = "detect_profiles"
+#: Whether a manual change is written into the active profile instead of being
+#: offered for confirmation.
+CONF_AUTO_CAPTURE: Final = "auto_capture"
+
 # --- config entry options --------------------------------------------------
 
 CONF_PROFILES: Final = "profiles"
@@ -158,3 +166,13 @@ REACH_MAX_SECONDS: Final = 30.0
 #: custom, the way it is after a restart. Every further change starts it over,
 #: so adjusting something in several steps keeps the offer alive.
 CAPTURE_TIMEOUT_SECONDS: Final = 60.0
+
+#: Where the selected profile is remembered across restarts. Not the config
+#: entry's options: writing those on every selection would run the options
+#: listener each time.
+SELECTION_STORAGE_VERSION: Final = 1
+SELECTION_STORAGE_KEY: Final = f"{DOMAIN}.selection"
+
+#: How long the state has to be quiet before a manual change is written into
+#: the active profile - otherwise every step of a slider lands in it.
+AUTO_CAPTURE_QUIET_SECONDS: Final = 3.0
