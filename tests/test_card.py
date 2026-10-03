@@ -302,3 +302,13 @@ async def test_an_unreached_profile_is_reported_not_offered(open_card):
         == "Fan mode: Silent instead of Full"
     )
     assert await hint.locator("button").count() == 0
+
+
+async def test_the_offer_can_be_dismissed(open_card):
+    """A minute is long: the x says "not this time" right away."""
+    page = await open_card(CHANGED)
+    card = page.locator("climate-profile-card")
+
+    await card.locator(".capture-dismiss").click()
+
+    assert [call["service"] for call in await calls(page)] == ["dismiss_change"]

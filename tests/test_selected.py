@@ -15,8 +15,6 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.climate_profiles import coordinator as coordinator_module
 from custom_components.climate_profiles.const import (
-    CONF_AUTO_CAPTURE,
-    CONF_DETECT,
     CONF_PROFILES,
     DOMAIN,
 )
@@ -26,18 +24,25 @@ from .test_integration import SENSOR, setup_entry
 
 #: Two profiles that say exactly the same thing. Only a choice can tell them
 #: apart - with detection on, the second one is unreachable.
+#: Two profiles that say exactly the same thing. Neither wants to be
+#: recognised from the state - only the choice tells them apart - and both take
+#: a change in without asking.
 TWINS = [
     {
         "id": "komfort",
         "name": "Komfort",
         "color": "#22c55e",
         "values": {"hvac_mode": "cool", "temperature": 24},
+        "detect": False,
+        "capture": "auto",
     },
     {
         "id": "emica",
         "name": "Emica",
         "color": "#8b5cf6",
         "values": {"hvac_mode": "cool", "temperature": 24},
+        "detect": False,
+        "capture": "auto",
     },
 ]
 
@@ -71,7 +76,7 @@ async def test_with_detection_off_only_the_chosen_profile_is_active(
     hass: HomeAssistant, entry_data, calls
 ):
     set_device_state(hass)
-    await setup_entry(hass, entry_data, profiles=TWINS, options={CONF_DETECT: False})
+    await setup_entry(hass, entry_data, profiles=TWINS)
 
     # The values fit both profiles, but nobody chose one.
     assert hass.states.get(SENSOR).state == "Custom"
@@ -84,16 +89,21 @@ async def test_with_detection_off_only_the_chosen_profile_is_active(
     assert hass.states.get(SENSOR).state == "Komfort"
 
 
-async def test_with_detection_on_the_twin_is_unreachable(
+async def test_without_a_choice_recognisable_twins_cannot_be_told_apart(
     hass: HomeAssistant, entry_data, calls
 ):
-    """What the option is there for: derived, one of the two always wins."""
+    """What the setting is there for: from the state alone, one always wins."""
     set_device_state(hass)
-    await setup_entry(hass, entry_data, profiles=TWINS)
+    detectable = [{**profile, "detect": True} for profile in TWINS]
+    await setup_entry(hass, entry_data, profiles=detectable)
 
-    await apply(hass, "Emica")
-
+    # Nothing was chosen, and the state fits both - the order decides.
     assert hass.states.get(SENSOR).state == "Komfort"
+
+    # Choosing one is the only thing that can tell them apart, and it does so
+    # even while both may be recognised.
+    await apply(hass, "Emica")
+    assert hass.states.get(SENSOR).state == "Emica"
 
 
 async def test_a_deviation_is_custom_even_if_another_profile_fits(
@@ -105,10 +115,9 @@ async def test_a_deviation_is_custom_even_if_another_profile_fits(
         "name": "Kuehl",
         "color": "#111111",
         "values": {"hvac_mode": "cool", "temperature": 26},
+        "detect": False,
     }
-    await setup_entry(
-        hass, entry_data, profiles=[*TWINS, other], options={CONF_DETECT: False}
-    )
+    await setup_entry(hass, entry_data, profiles=[*TWINS, other])
     await apply(hass, "Komfort")
 
     set_device_state(hass, temperature=26)
@@ -119,9 +128,7 @@ async def test_a_deviation_is_custom_even_if_another_profile_fits(
 
 async def test_the_choice_survives_a_restart(hass: HomeAssistant, entry_data, calls):
     set_device_state(hass)
-    entry = await setup_entry(
-        hass, entry_data, profiles=TWINS, options={CONF_DETECT: False}
-    )
+    entry = await setup_entry(hass, entry_data, profiles=TWINS)
     await apply(hass, "Emica")
 
     await hass.config_entries.async_reload(entry.entry_id)
@@ -135,9 +142,7 @@ async def test_a_restored_choice_counts_only_while_it_holds(
 ):
     """A device that moved in the meantime must not be claimed for a profile."""
     set_device_state(hass)
-    entry = await setup_entry(
-        hass, entry_data, profiles=TWINS, options={CONF_DETECT: False}
-    )
+    entry = await setup_entry(hass, entry_data, profiles=TWINS)
     await apply(hass, "Emica")
 
     set_device_state(hass, temperature=26)
@@ -167,7 +172,6 @@ async def test_a_change_is_written_into_the_active_profile(
         hass,
         entry_data,
         profiles=TWINS,
-        options={CONF_DETECT: False, CONF_AUTO_CAPTURE: True},
     )
     await apply(hass, "Emica")
 
@@ -189,7 +193,6 @@ async def test_a_value_the_profile_did_not_have_is_taken_into_it(
         hass,
         entry_data,
         profiles=TWINS,
-        options={CONF_DETECT: False, CONF_AUTO_CAPTURE: True},
     )
     await apply(hass, "Emica")
 
@@ -206,12 +209,11 @@ async def test_a_protected_profile_is_never_written_to(
     hass: HomeAssistant, entry_data, calls
 ):
     set_device_state(hass)
-    protected = [{**TWINS[0], "protected": True}]
+    protected = [{**TWINS[0], "capture": "never"}]
     entry = await setup_entry(
         hass,
         entry_data,
         profiles=protected,
-        options={CONF_DETECT: False, CONF_AUTO_CAPTURE: True},
     )
     await apply(hass, "Komfort")
 
@@ -232,7 +234,6 @@ async def test_what_the_device_does_on_its_own_is_not_written(
         hass,
         entry_data,
         profiles=TWINS,
-        options={CONF_DETECT: False, CONF_AUTO_CAPTURE: True},
     )
     await apply(hass, "Emica")
 
@@ -243,4 +244,48 @@ async def test_what_the_device_does_on_its_own_is_not_written(
     await hass.async_block_till_done()
 
     assert stored(entry, "Emica")["values"]["temperature"] == 24
+    assert hass.states.get(SENSOR).state == "Custom"
+
+
+async def test_a_recognisable_profile_still_shows_without_a_choice(
+    hass: HomeAssistant, entry_data, calls
+):
+    """Detection off for the twins, on for "Off" - the mixed case."""
+    off = {
+        "id": "off",
+        "name": "Off",
+        "color": "#64748b",
+        "values": {"hvac_mode": "off"},
+    }
+    set_device_state(hass)
+    await setup_entry(hass, entry_data, profiles=[*TWINS, off])
+    await apply(hass, "Emica")
+    assert hass.states.get(SENSOR).state == "Emica"
+
+    # Somebody switches the device off by hand - that one is recognised.
+    set_device_state(hass, hvac_mode="off")
+    await settle(hass)
+
+    assert hass.states.get(SENSOR).state == "Off"
+
+
+async def test_dismissing_drops_the_offer(hass: HomeAssistant, entry_data, calls):
+    """The same thing the timeout does, only now and on purpose."""
+    set_device_state(hass)
+    await setup_entry(hass, entry_data, profiles=TWINS)
+    await apply(hass, "Komfort")
+
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+    assert hass.states.get(SENSOR).attributes["changed_values"] == ["temperature"]
+
+    await hass.services.async_call(
+        DOMAIN, "dismiss_change", {"entity_id": SENSOR}, blocking=True
+    )
+    await settle(hass)
+
+    attributes = hass.states.get(SENSOR).attributes
+    assert attributes["changed_values"] == []
+    assert attributes["last_matched_profile_id"] is None
+    # The state itself is untouched - only the offer is gone.
     assert hass.states.get(SENSOR).state == "Custom"

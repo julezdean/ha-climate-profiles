@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.5";
+const CARD_VERSION = "2.0.0-beta.6";
 
 /* eslint-disable no-console */
 console.info(
@@ -366,6 +366,9 @@ class ClimateProfileCard extends HTMLElement {
         </section>
 
         <section class="capture" hidden>
+          <button class="capture-dismiss" type="button" title="">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
           <div class="capture-main">
             <ha-icon icon="mdi:pencil-outline"></ha-icon>
             <div class="capture-text">
@@ -421,6 +424,7 @@ class ClimateProfileCard extends HTMLElement {
       captureTitle: root.querySelector(".capture .capture-title"),
       captureValues: root.querySelector(".capture .capture-values"),
       captureActions: root.querySelector(".capture-actions"),
+      captureDismiss: root.querySelector(".capture-dismiss"),
       captureInto: root.querySelector(".capture-into"),
       captureNew: root.querySelector(".capture-new"),
       captureForm: root.querySelector(".capture-form"),
@@ -485,6 +489,7 @@ class ClimateProfileCard extends HTMLElement {
   _wireCapture() {
     const el = this._el;
     el.captureInto.addEventListener("click", () => this._captureIntoProfile());
+    el.captureDismiss.addEventListener("click", () => this._dismissChange());
     el.captureNew.addEventListener("click", () => this._openNameField());
     el.captureCancel.addEventListener("click", () => this._closeNameField());
     el.captureForm.addEventListener("submit", (event) => {
@@ -889,6 +894,9 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     el.captureTitle.textContent = this._t("Changed by hand");
+    const dismiss = this._t("Do not store");
+    el.captureDismiss.title = dismiss;
+    el.captureDismiss.setAttribute("aria-label", dismiss);
     // Changed values arrive as keys: four are the climate ones, the rest are
     // ids only the definitions can name.
     el.captureValues.textContent = changed
@@ -1000,6 +1008,11 @@ class ClimateProfileCard extends HTMLElement {
     await this._call("capture_profile", {});
   }
 
+  /** Drop the offer without storing anything - what the timeout also does. */
+  async _dismissChange() {
+    await this._call("dismiss_change", {});
+  }
+
   async _saveAsNewProfile(name) {
     const trimmed = String(name || "").trim();
     if (!trimmed) {
@@ -1101,6 +1114,7 @@ const CARD_DE = {
   "Turn off": "Ausschalten",
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
   "Changed by hand": "Von Hand geändert",
+  "Do not store": "Nicht speichern",
   "not reached": "nicht erreicht",
   "instead of": "statt",
   "Save into": "Übernehmen in",
@@ -1425,6 +1439,7 @@ ha-card.unavailable { opacity: 0.6; }
 .capture-into[hidden] { display: none; }
 
 .capture {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1445,6 +1460,24 @@ ha-card.unavailable { opacity: 0.6; }
   background: rgba(var(--cp-warning-rgb), 0.08);
 }
 .unreached .capture-main > ha-icon { color: var(--warning-color, #ffa600); }
+.capture-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--cp-muted);
+  cursor: pointer;
+}
+.capture-dismiss:hover { background: rgba(var(--accent-rgb), 0.12); }
+.capture-dismiss ha-icon { --mdc-icon-size: 16px; }
 .capture-main {
   display: flex;
   align-items: center;

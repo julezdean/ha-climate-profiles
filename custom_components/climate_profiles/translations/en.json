@@ -35,7 +35,6 @@
           "edit_profile": "Edit profile",
           "reorder": "Change order",
           "delete_profile": "Delete profiles",
-          "behaviour": "Behaviour",
           "custom_name": "Rename \"custom\""
         }
       },
@@ -53,13 +52,20 @@
           "fan": "Fan speed",
           "display": "Display",
           "silent": "Silent mode",
-          "protected": "Write protected"
+          "detect": "Recognise this profile automatically",
+          "capture": "Changes by hand"
+        },
+        "data_description": {
+          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
         }
       },
       "edit_profile": {
         "title": "Edit profile",
         "data": {
           "id": "Profile"
+        },
+        "data_description": {
+          "detect": "Off: this profile is active only while it is the one you selected - not because the values happen to fit it. That is what lets two profiles hold the same values."
         }
       },
       "edit_values": {
@@ -135,17 +141,6 @@
         "data": {
           "order": "Order"
         }
-      },
-      "behaviour": {
-        "title": "Behaviour",
-        "data": {
-          "detect_profiles": "Detect profiles automatically",
-          "auto_capture": "Capture changes automatically"
-        },
-        "data_description": {
-          "detect_profiles": "Off: only what you select counts as active. If the state deviates from it, it is custom - even when the values match another profile exactly. This is what lets two profiles hold the same values.",
-          "auto_capture": "On: a change you make through this integration is written into the active profile instead of being offered for confirmation. Only values the profile already defines, and never into a write protected one."
-        }
       }
     },
     "error": {
@@ -170,6 +165,13 @@
         "fan": "Fan speed",
         "display": "Display",
         "silent": "Silent mode"
+      }
+    },
+    "capture": {
+      "options": {
+        "ask": "Ask before storing",
+        "auto": "Store automatically",
+        "never": "Write protected"
       }
     }
   },
@@ -253,6 +255,11 @@
           "description": "Store only these values instead of the whole state."
         }
       }
+    },
+    "dismiss_change": {
+      "name": "Dismiss change",
+      "description": "Drop the offer to store the current manual change. The state stays as it is.",
+      "fields": {}
     }
   },
   "exceptions": {

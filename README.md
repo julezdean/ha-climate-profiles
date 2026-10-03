@@ -92,7 +92,6 @@ Each config entry creates one device with two entities:
 | Add a value | an additional value, backed by an entity you pick |
 | Edit a value | point it at a different entity, rename it, give it an icon |
 | Order of the values | the order values are written in - and the card shows them in |
-| Behaviour | how a profile becomes active, and what a change by hand does |
 | Delete values | profiles keep what they stored, but it is skipped from then on; adding the entity again creates a new value, so to swap an entity, edit instead |
 | Add profile | name, colour, icon and the values it should set |
 | Edit profile | change everything; **clear a field to remove that value from the profile** |
@@ -100,8 +99,16 @@ Each config entry creates one device with two entities:
 | Delete profiles | remove one or several |
 | Rename "custom" | the name shown when nothing matches |
 
-Each profile form has a **write protection** checkbox. It only blocks the
-quick "capture" path - this form always stays editable.
+Each profile form asks what a **change by hand** should do while that profile
+is active, and the three answers are the whole story:
+
+| | |
+| --- | --- |
+| Ask before storing | the card offers to capture it - the default |
+| Store automatically | it is written straight into the profile |
+| Write protected | nothing is ever stored over the quick path |
+
+The form itself always stays editable, whatever is chosen there.
 
 Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
@@ -178,6 +185,10 @@ refuses to be captured into - the card then only offers the "new profile"
 route. It can still be edited deliberately in the options; protection guards
 the quick path, not the deliberate one.
 
+**The offer can be dismissed** with the × in its corner: the state stays as it
+is, it is simply no longer presented as something you just changed. The service
+behind it is `climate_profiles.dismiss_change`.
+
 **The offer runs out.** A minute after the last manual change the reference
 point is dropped: the card stops offering to capture, and the state is plainly
 custom. Every further change starts that minute over, so adjusting something in
@@ -189,42 +200,45 @@ change" only exists while Home Assistant runs, so a fresh start with a
 deviating state stays custom and offers no target until a profile matches
 again. Name the profile explicitly in the service call if you need it anyway.
 
-### Chosen or detected
+### Chosen or recognised
 
-Two switches under **Configure → Behaviour** decide how profiles behave.
-
-**Detect profiles automatically** is on by default and is what the sections
-above describe: the active profile is read off the device state. Turn the air
+Each profile says for itself whether it may be **recognised** from the device
+state. On by default, which is what the sections above describe: turn the air
 conditioner off with its remote and the card says "Off" - nobody had to press
 anything.
 
-Switched **off**, a profile is active only while it is the one you selected,
-through the card, the select entity or `apply_profile`. Everything else is
-custom, even when the values match a profile exactly. Two consequences, and
+Switched off for a profile, it is active only while it is the one you selected,
+through the card, the select entity or `apply_profile`. Two consequences, and
 both are the point:
 
 * **Two profiles may hold the same values.** "Comfort" and "Emica" can both be
   21 °C today and differ again tomorrow; the choice tells them apart, which
   nothing in the device state could.
 * **Nothing becomes active by accident.** An automation writing 21 °C directly
-  to the climate entity no longer makes the card claim a profile.
+  to the climate entity no longer makes the card claim that profile.
+
+Mixing the two is the point of settling it per profile: switch recognition off
+for your named targets and leave it on for "Off", and the card follows the
+remote control for the one case where you want it to.
+
+Which one wins, when both could:
+
+1. A profile you **selected** stays active while its values hold - also one
+   that does not want to be recognised, since choosing it is the only way it
+   can become active at all.
+2. Otherwise the most specific of the profiles that may be **recognised**.
+3. Otherwise custom.
 
 The selection survives a restart. It counts only while its values still hold,
 so a device that moved in the meantime leaves the card on custom rather than
 claiming a profile that stopped applying hours ago.
 
-**Capture changes automatically** is off by default. Switched on, a change you
-make through this integration is written into the active profile instead of
-being offered for confirmation - the same thing the "save into" button stores:
-values the profile defines are updated, and a value you adjusted on top is
-taken into it. Two things it never does: write into a **write protected**
-profile, and store what the **device** did on its own. The second matters more
-than it sounds - a device that overrides a value would otherwise write its
-override into your profile, and a profile called "Off" would quietly come to
-mean "heating".
-
-Writing waits until the state has been quiet for a moment, so moving a slider
-in steps does not store every step on the way.
+Storing a change without asking is the profile's other setting, "Changes by
+hand". It never applies to what the **device** did on its own, only to what you
+changed through this integration - a device that overrides a value would
+otherwise write its override into your profile, and a profile called "Off"
+would quietly come to mean "heating". Writing waits until the state has been
+quiet for a moment, so moving a slider in steps does not store every step.
 
 ### When a profile does not take
 
@@ -336,6 +350,18 @@ data:
   values: [temperature]   # optional - defaults to the whole state
 ```
 
+### `climate_profiles.dismiss_change`
+
+```yaml
+action: climate_profiles.dismiss_change
+target:
+  entity_id: sensor.living_room_climate_profile
+```
+
+Drops the offer to store the current manual change - what the × on the card
+calls, and what the offer's own timeout does after a minute. The state itself
+is untouched.
+
 More: [`examples/automations.yaml`](examples/automations.yaml).
 
 ## Sensor attributes
@@ -344,7 +370,7 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, protected, values}, …]
+profiles: [{id, name, color, icon, order, detect, capture, protected, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c"}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}

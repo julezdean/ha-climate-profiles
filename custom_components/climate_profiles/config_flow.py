@@ -38,20 +38,21 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     ADDITIONAL_DOMAINS,
+    CAPTURE_ASK,
+    CAPTURE_MODES,
     CONF_ADDITIONAL,
     CONF_ADDITIONAL_ENTITY,
     CONF_ADDITIONAL_ICON,
     CONF_ADDITIONAL_ID,
     CONF_ADDITIONAL_NAME,
-    CONF_AUTO_CAPTURE,
     CONF_CLIMATE_ENTITY,
     CONF_CUSTOM_NAME,
-    CONF_DETECT,
+    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
+    CONF_PROFILE_DETECT,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
-    CONF_PROFILE_PROTECTED,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_NAME,
@@ -303,9 +304,19 @@ def profile_schema(
             description={"suggested_value": profile.icon if profile else None},
         ): IconSelector(),
         vol.Required(
-            CONF_PROFILE_PROTECTED,
-            default=bool(profile.protected) if profile else False,
+            CONF_PROFILE_DETECT,
+            default=profile.detect if profile else True,
         ): BooleanSelector(),
+        vol.Required(
+            CONF_PROFILE_CAPTURE,
+            default=profile.capture if profile else CAPTURE_ASK,
+        ): SelectSelector(
+            SelectSelectorConfig(
+                options=list(CAPTURE_MODES),
+                mode=SelectSelectorMode.DROPDOWN,
+                translation_key="capture",
+            )
+        ),
     }
 
     for spec in vocab:
@@ -374,7 +385,8 @@ def profile_from_input(
         color=normalise_color(user_input.get(CONF_PROFILE_COLOR)),
         values=values,
         icon=user_input.get(CONF_PROFILE_ICON) or None,
-        protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
+        detect=bool(user_input.get(CONF_PROFILE_DETECT, True)),
+        capture=str(user_input.get(CONF_PROFILE_CAPTURE) or CAPTURE_ASK),
     )
 
 
@@ -541,7 +553,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         options.append("add_profile")
         if self._profiles:
             options += ["edit_profile", "reorder", "delete_profile"]
-        options += ["behaviour", "custom_name"]
+        options.append("custom_name")
         return self.async_show_menu(step_id="init", menu_options=options)
 
     # -- additional values ---------------------------------------------------
@@ -838,41 +850,6 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                             sort=False,
                         )
                     )
-                }
-            ),
-        )
-
-    async def async_step_behaviour(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Change how a profile becomes active, and what a change does.
-
-        Two switches, deliberately separate: one decides whether a profile may
-        become active without being chosen, the other whether a change by hand
-        is written into it. Their combination is what makes profiles work as
-        named targets of an automation, but each is useful on its own.
-        """
-        if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    CONF_DETECT: bool(user_input.get(CONF_DETECT, True)),
-                    CONF_AUTO_CAPTURE: bool(user_input.get(CONF_AUTO_CAPTURE, False)),
-                }
-            )
-
-        options = self.config_entry.options
-        return self.async_show_form(
-            step_id="behaviour",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_DETECT, default=bool(options.get(CONF_DETECT, True))
-                    ): BooleanSelector(),
-                    vol.Required(
-                        CONF_AUTO_CAPTURE,
-                        default=bool(options.get(CONF_AUTO_CAPTURE, False)),
-                    ): BooleanSelector(),
                 }
             ),
         )

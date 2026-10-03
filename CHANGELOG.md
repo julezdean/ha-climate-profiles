@@ -59,6 +59,9 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **The offer to capture a manual change can be dismissed** with the × in its
+  corner, through the new service `climate_profiles.dismiss_change`. The state
+  stays as it is and is simply no longer presented as a fresh change.
 - **The offer to capture a manual change expires.** It used to stay up for as
   long as the deviation lasted, still claiming hours later that something had
   just been changed. A minute after the last change the reference point is
@@ -68,21 +71,28 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Two switches under Configure → Behaviour.** *Detect profiles automatically*
-  is on by default and is what the integration always did: the active profile
-  is read off the device state. Switched off, a profile is active only while it
-  is the one that was selected - through the card, the select entity or
-  `apply_profile` - and everything else is custom, even when the values match a
-  profile exactly. That is what lets two profiles hold the same values, and it
-  stops an automation writing to the climate entity from making the card claim
-  a profile nobody chose. The selection survives a restart and counts only
-  while its values still hold.
-- *Capture changes automatically* is off by default. Switched on, a change made
-  through the integration is written into the active profile instead of being
-  offered for confirmation - the same thing the "save into" button stores. It
-  never writes into a write protected profile, and never stores what the device
-  did on its own: otherwise a device overriding a value would write its
+- **Every profile says how it becomes active.** *Recognise this profile
+  automatically* is on by default and is what the integration always did: the
+  active profile is read off the device state. Switched off for a profile, it
+  is active only while it is the one that was selected - through the card, the
+  select entity or `apply_profile`. That is what lets two profiles hold the
+  same values, and it stops an automation writing to the climate entity from
+  making the card claim a profile nobody chose. Set per profile rather than per
+  device, so recognition can be off for your named targets and on for "Off" at
+  the same time. A selected profile wins while its values hold, otherwise the
+  most specific of the recognisable ones; the selection survives a restart and
+  counts only while it still holds.
+- **What a change by hand does is set per profile.** The write protection
+  checkbox is replaced by one field with three answers: ask before storing (the
+  default, what the card has always offered), store automatically, or write
+  protected. One question, one place - a device-wide switch next to a per
+  profile checkbox could contradict itself. Storing automatically means what
+  the "save into" button stores: values the profile defines are updated and a
+  value adjusted on top is taken into it. It never applies to what the device
+  did on its own, because a device overriding a value would otherwise write its
   override into the profile.
+- Profiles stored by 1.x and the earlier 2.0 betas are read as before:
+  `protected: true` becomes "write protected", everything else "ask".
 
 ### Fixed
 

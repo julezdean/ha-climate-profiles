@@ -21,11 +21,14 @@ of an automation:
 
 ## The two options
 
-### Detect profiles automatically
+### Recognise this profile automatically
 
-Default **on**, which is today's behaviour.
+A field on every profile, default **on**, which is today's behaviour. Per
+profile rather than per device: recognition can be off for the named targets of
+an automation and on for "Off" at the same time, and a device-wide switch next
+to a per profile one would be the same question in two places.
 
-Switched **off**, a profile is active only while it is the one that was
+Switched **off** for a profile, it is active only while it is the one that was
 selected - through the card, the select entity or `apply_profile`. Anything
 else is custom, even when the values happen to match a profile exactly. The
 comparison still runs, but only against the selected profile: as soon as the
@@ -44,13 +47,15 @@ reload the entry. After a restart the selection counts only while its values
 still hold; a device that moved in the meantime leaves the card on custom
 rather than claiming a profile that stopped applying hours ago.
 
-### Capture changes automatically
+### What a change by hand does - per profile
 
-Default **off**.
+Not a device-wide switch but a field on every profile, with three answers: ask
+before storing (the default), store automatically, write protected.
 
-Switched **on**, a manual change is written into the active profile instead of
-being offered for confirmation. The profile follows what you do rather than
-losing you to custom.
+It replaces the write protection checkbox, because both answer the same
+question. As two settings in two places they could contradict each other -
+"capture automatically" on the device and "protected" on the profile - and the
+reader would have to guess which wins.
 
 Three rules, each of them deliberate:
 

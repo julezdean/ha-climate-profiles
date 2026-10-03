@@ -14,6 +14,10 @@ from uuid import uuid4
 
 from .const import (
     ADDITIONAL_DOMAINS,
+    CAPTURE_ASK,
+    CAPTURE_AUTO,
+    CAPTURE_MODES,
+    CAPTURE_NEVER,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL_ENTITY,
@@ -22,7 +26,9 @@ from .const import (
     CONF_ADDITIONAL_NAME,
     CONF_ADDITIONAL_ORDER,
     CONF_CLIMATE_ENTITY,
+    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
+    CONF_PROFILE_DETECT,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
@@ -92,7 +98,23 @@ class ClimateProfile:
     #: Protected profiles refuse to be overwritten by "capture". They can
     #: still be edited deliberately in the options flow - otherwise a
     #: protected profile would be frozen forever.
-    protected: bool = False
+    #: Whether this profile may be recognised from the device state. Off, it
+    #: is active only while it is the one that was selected.
+    detect: bool = True
+    #: What a manual change does while this profile is active: ask (the card
+    #: offers to capture it), auto (it is written straight in) or never (the
+    #: profile is write protected).
+    capture: str = CAPTURE_ASK
+
+    @property
+    def protected(self) -> bool:
+        """Return whether this profile refuses the quick path."""
+        return self.capture == CAPTURE_NEVER
+
+    @property
+    def captures_automatically(self) -> bool:
+        """Return whether a change is written in without asking."""
+        return self.capture == CAPTURE_AUTO
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ClimateProfile:
@@ -122,7 +144,8 @@ class ClimateProfile:
             color=normalise_color(raw.get(CONF_PROFILE_COLOR)),
             values=values,
             icon=str(icon) if icon else None,
-            protected=bool(raw.get(CONF_PROFILE_PROTECTED, False)),
+            detect=bool(raw.get(CONF_PROFILE_DETECT, True)),
+            capture=_capture_mode(raw),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -135,13 +158,27 @@ class ClimateProfile:
         }
         if self.icon:
             data[CONF_PROFILE_ICON] = self.icon
-        if self.protected:
-            data[CONF_PROFILE_PROTECTED] = True
+        if not self.detect:
+            data[CONF_PROFILE_DETECT] = False
+        if self.capture != CAPTURE_ASK:
+            data[CONF_PROFILE_CAPTURE] = self.capture
         return data
 
     def with_values(self, values: dict[str, Any]) -> ClimateProfile:
         """Return a copy carrying ``values``, everything else unchanged."""
         return replace(self, values=dict(values))
+
+
+def _capture_mode(raw: dict[str, Any]) -> str:
+    """Return what a change does to this profile, reading older shapes too.
+
+    1.x and the 2.0 betas stored a boolean ``protected``; it answers the same
+    question with two of the three answers.
+    """
+    mode = str(raw.get(CONF_PROFILE_CAPTURE, "") or "").strip().casefold()
+    if mode in CAPTURE_MODES:
+        return mode
+    return CAPTURE_NEVER if raw.get(CONF_PROFILE_PROTECTED) else CAPTURE_ASK
 
 
 def new_profile_id() -> str:
@@ -212,6 +249,10 @@ class ProfileSet:
             (p for p in self.profiles if p.name.casefold() == wanted),
             None,
         )
+
+    def detectable(self) -> ProfileSet:
+        """Return the profiles that may be recognised from the state alone."""
+        return ProfileSet(tuple(p for p in self.profiles if p.detect))
 
     def display_names(self) -> dict[str, str]:
         """Return ``{profile_id: unique display name}``.

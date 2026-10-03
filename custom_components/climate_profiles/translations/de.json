@@ -35,7 +35,6 @@
           "edit_profile": "Profil bearbeiten",
           "reorder": "Reihenfolge ändern",
           "delete_profile": "Profile löschen",
-          "behaviour": "Verhalten",
           "custom_name": "„benutzerdefiniert“ umbenennen"
         }
       },
@@ -53,13 +52,20 @@
           "fan": "Lüftergeschwindigkeit",
           "display": "Geräteanzeige",
           "silent": "Flüstermodus",
-          "protected": "Schreibgeschützt"
+          "detect": "Dieses Profil automatisch erkennen",
+          "capture": "Änderungen von Hand"
+        },
+        "data_description": {
+          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
         }
       },
       "edit_profile": {
         "title": "Profil bearbeiten",
         "data": {
           "id": "Profil"
+        },
+        "data_description": {
+          "detect": "Aus: Dieses Profil ist nur aktiv, solange du es ausgewählt hast - nicht, weil die Werte zufällig dazu passen. Erst dadurch können zwei Profile dieselben Werte haben."
         }
       },
       "edit_values": {
@@ -135,17 +141,6 @@
         "data": {
           "order": "Reihenfolge"
         }
-      },
-      "behaviour": {
-        "title": "Verhalten",
-        "data": {
-          "detect_profiles": "Profile automatisch erkennen",
-          "auto_capture": "Änderungen automatisch übernehmen"
-        },
-        "data_description": {
-          "detect_profiles": "Aus: Aktiv ist nur, was du auswählst. Weicht der Zustand davon ab, ist es Custom - auch wenn die Werte genau zu einem anderen Profil passen. Erst dadurch können zwei Profile dieselben Werte haben.",
-          "auto_capture": "An: Eine Änderung über diese Integration wird in das aktive Profil geschrieben, statt zur Bestätigung angeboten zu werden. Nur Werte, die das Profil schon festlegt, und nie in ein schreibgeschütztes."
-        }
       }
     },
     "error": {
@@ -170,6 +165,13 @@
         "fan": "Lüftergeschwindigkeit",
         "display": "Geräteanzeige",
         "silent": "Flüstermodus"
+      }
+    },
+    "capture": {
+      "options": {
+        "ask": "Nach Rückfrage übernehmen",
+        "auto": "Automatisch übernehmen",
+        "never": "Schreibgeschützt"
       }
     }
   },
@@ -253,6 +255,11 @@
           "description": "Nur diese Werte speichern, statt den ganzen Zustand."
         }
       }
+    },
+    "dismiss_change": {
+      "name": "Änderung verwerfen",
+      "description": "Das Angebot, die Änderung von Hand zu speichern, fallen lassen. Der Zustand bleibt, wie er ist.",
+      "fields": {}
     }
   },
   "exceptions": {

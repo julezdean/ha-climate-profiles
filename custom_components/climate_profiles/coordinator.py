@@ -36,9 +36,7 @@ from .const import (
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
-    CONF_AUTO_CAPTURE,
     CONF_CUSTOM_NAME,
-    CONF_DETECT,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     CUSTOM_PROFILE_ID,
@@ -211,16 +209,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             return AdditionalValueSet()
 
     @property
-    def detect_profiles(self) -> bool:
-        """Return whether a profile may become active without being selected."""
-        return bool(self.config_entry.options.get(CONF_DETECT, True))
-
-    @property
-    def auto_capture(self) -> bool:
-        """Return whether a manual change is written into the active profile."""
-        return bool(self.config_entry.options.get(CONF_AUTO_CAPTURE, False))
-
-    @property
     def value_order(self) -> list[str]:
         """Return the configured apply order (without ``hvac_mode``)."""
         return list(self.config_entry.options.get(CONF_VALUE_ORDER) or [])
@@ -349,18 +337,18 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             order=self.value_order,
         )
         profiles = self.profiles
-        if self.detect_profiles:
-            active = resolve_active_profile(profiles, values, vocabulary, unavailable)
+        # What was chosen wins while it still holds - also for a profile that
+        # does not want to be recognised, because choosing it is the only way
+        # it can become active at all. Otherwise the most specific of the
+        # profiles that may be recognised, and nothing if none fits.
+        chosen = profiles.get(self._selected or "")
+        if chosen is not None and profile_matches(
+            chosen, values, vocabulary, unavailable
+        ):
+            active = chosen
         else:
-            # Only what was chosen counts, and only while it still holds. Two
-            # profiles with the same values are told apart by the choice, which
-            # is the only thing that can tell them apart.
-            chosen = profiles.get(self._selected or "")
-            active = (
-                chosen
-                if chosen is not None
-                and profile_matches(chosen, values, vocabulary, unavailable)
-                else None
+            active = resolve_active_profile(
+                profiles.detectable(), values, vocabulary, unavailable
             )
         applying = self._apply_task is not None and not self._apply_task.done()
 
@@ -713,11 +701,26 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # device's answer. A change made on the device itself cannot be told
         # apart from the device overriding a value, and is not covered.
         self._clear_target()
-        if self.auto_capture:
-            # Only a change through the integration counts - never what the
-            # device does on its own, which would store its overrides.
-            self._schedule_auto_capture()
+        # Only a change through the integration counts - never what the device
+        # does on its own, which would store its overrides. Whether it is kept
+        # is the profile's own setting, read when the timer fires.
+        self._schedule_auto_capture()
         await self._async_run_apply(values, optimistic=None)
+
+    async def async_dismiss_change(self) -> None:
+        """Drop the offer to capture the current deviation.
+
+        The same thing the offer's own timeout does, only now and on purpose:
+        the state stays as it is, it is simply no longer presented as something
+        that was just changed.
+        """
+        if self._baseline is None:
+            return
+        _LOGGER.debug("%s: the offer to capture was dismissed", self.name)
+        self._baseline = None
+        self._changed_keys = ()
+        self._cancel_expiry()
+        await self.async_refresh()
 
     # -- capturing automatically ---------------------------------------------
 
@@ -744,8 +747,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         into it - so the profile grows by what you deliberately changed, which
         is exactly what the button would have stored.
 
-        A write protected profile is never touched: protection means "not over
-        the quick path", and this is the quickest path there is.
+        Whether that happens is the profile's own setting. A profile that asks,
+        or one that is write protected, is never touched here.
         """
         # Read the world first: the recalculation is debounced, so what the
         # coordinator holds right now may predate the change this was
@@ -761,13 +764,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             target.name if target else None,
             ", ".join(state.changed) or "-",
         )
-        if target is None or target.protected:
-            if target is not None:
-                _LOGGER.debug(
-                    "%s: not capturing into %s automatically - it is write protected",
-                    self.name,
-                    target.name,
-                )
+        if target is None or not target.captures_automatically:
             return
 
         if not state.changed:

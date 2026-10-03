@@ -32,13 +32,6 @@ CONF_ADDITIONAL_ORDER: Final = "order"
 #: first, because most devices ignore everything else while they are off.
 CONF_VALUE_ORDER: Final = "value_order"
 
-#: Whether a profile may become active just because the state fits it. Off,
-#: only what was selected counts - which is what makes two profiles with the
-#: same values usable.
-CONF_DETECT: Final = "detect_profiles"
-#: Whether a manual change is written into the active profile instead of being
-#: offered for confirmation.
-CONF_AUTO_CAPTURE: Final = "auto_capture"
 
 # --- config entry options --------------------------------------------------
 
@@ -50,6 +43,21 @@ CONF_PROFILE_NAME: Final = "name"
 CONF_PROFILE_COLOR: Final = "color"
 CONF_PROFILE_ICON: Final = "icon"
 CONF_PROFILE_VALUES: Final = "values"
+#: Whether this profile may become active just because the state fits it. Off,
+#: it is active only while it is the one that was selected - which is what lets
+#: two profiles hold the same values.
+CONF_PROFILE_DETECT: Final = "detect"
+
+#: What happens to a manual change while this profile is active. One question,
+#: one answer - write protection and automatic capture used to be two settings
+#: in two places that could contradict each other.
+CONF_PROFILE_CAPTURE: Final = "capture"
+CAPTURE_ASK: Final = "ask"
+CAPTURE_AUTO: Final = "auto"
+CAPTURE_NEVER: Final = "never"
+CAPTURE_MODES: Final[tuple[str, ...]] = (CAPTURE_ASK, CAPTURE_AUTO, CAPTURE_NEVER)
+
+#: Read from profiles stored by 1.x and the 2.0 betas.
 CONF_PROFILE_PROTECTED: Final = "protected"
 
 # --- profile value keys ----------------------------------------------------
@@ -139,6 +147,7 @@ ATTR_CHANGED_VALUES: Final = "changed_values"
 SERVICE_APPLY_PROFILE: Final = "apply_profile"
 SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
+SERVICE_DISMISS_CHANGE: Final = "dismiss_change"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
 
 # --- tuning ----------------------------------------------------------------

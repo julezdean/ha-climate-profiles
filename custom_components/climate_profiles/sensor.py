@@ -33,6 +33,7 @@ from .const import (
     DEFAULT_CUSTOM_COLOR,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
     VALUE_FAN_MODE,
@@ -111,6 +112,11 @@ async def async_setup_entry(
     platform.async_register_entity_service(
         SERVICE_SAVE_AS_PROFILE, SAVE_AS_PROFILE_SCHEMA, "async_save_as_profile_service"
     )
+    platform.async_register_entity_service(
+        SERVICE_DISMISS_CHANGE,
+        cv.make_entity_service_schema({}),
+        "async_dismiss_change_service",
+    )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
 
@@ -163,6 +169,8 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "color": profile.color,
                     "icon": profile.icon,
                     "order": order,
+                    "detect": profile.detect,
+                    "capture": profile.capture,
                     "protected": profile.protected,
                     "values": dict(profile.values),
                 }
@@ -209,6 +217,10 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         await self.coordinator.async_set_values(
             self.coordinator.resolve_value_keys(values)
         )
+
+    async def async_dismiss_change_service(self) -> None:
+        """Handle ``climate_profiles.dismiss_change``."""
+        await self.coordinator.async_dismiss_change()
 
     async def async_capture_profile_service(
         self, profile: str | None = None, values: list[str] | None = None

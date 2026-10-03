@@ -13,6 +13,7 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
 )
@@ -75,6 +76,7 @@ def test_services_match_the_code():
         SERVICE_SET_VALUE,
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
+        SERVICE_DISMISS_CHANGE,
     }
     # Only the climate keys are documented: an additional value is named by
     # the user, so it cannot appear in a static service definition.
@@ -119,7 +121,6 @@ def test_config_and_options_steps_are_translated():
         "edit_values",
         "delete_profile",
         "reorder",
-        "behaviour",
         "custom_name",
     }
     assert options_steps <= set(strings["options"]["step"])
