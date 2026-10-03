@@ -107,6 +107,15 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A value the profile does not define is stored too.** Both the offer to
+  capture and automatic capture compare the state against the moment the
+  profile was applied. Writing a single value - through `set_value` or the
+  card - renewed that moment as well, so the change was gone before anything
+  could be stored. It only showed on values a profile says nothing about,
+  because those leave it matching; a value the profile does define makes it
+  stop matching, and the offer appeared as it should. Only applying a profile
+  makes a new reference point now. Devices that report the new state inside
+  the service call - what a real one does - are where this was visible at all.
 - **The most specific of the matching profiles is shown, not the first one.**
   Several profiles can match at once, and a profile that only says "heating"
   matches every heated state. With first-match-wins it swallowed every

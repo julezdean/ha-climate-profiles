@@ -80,6 +80,23 @@ async def test_the_same_climate_entity_cannot_be_added_twice(hass):
     assert result["reason"] == "already_configured"
 
 
+async def test_a_new_entry_for_the_same_entity_starts_empty(hass):
+    """Deleting an entry takes its profiles with it - they live in its options."""
+    set_device_state(hass)
+    from .test_integration import PROFILES, setup_entry
+
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=PROFILES)
+    assert len(entry.options[CONF_PROFILES]) == len(PROFILES)
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await run_config_flow(hass)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"][CONF_PROFILES] == []
+
+
 # --- options flow ----------------------------------------------------------
 
 

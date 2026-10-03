@@ -976,7 +976,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             raise
         finally:
             self._apply_task = None
-            self._renew_baseline = True
+            # Only applying a profile makes a new reference point. A single
+            # value written by hand must not: a profile that does not define
+            # that value keeps matching, and renewing here would erase the very
+            # change the capture offer - and automatic capture - are about.
+            # Devices that answer within the call made this invisible until a
+            # real one did.
+            self._renew_baseline = optimistic is not None
             await self.async_refresh()
 
         if optimistic is not None and self._target is optimistic:

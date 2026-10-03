@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from custom_components.climate_profiles import coordinator as coordinator_module
 from custom_components.climate_profiles.const import (
@@ -317,3 +317,39 @@ async def test_a_change_made_elsewhere_is_written_too(
 
     assert stored(entry, "Emica")["values"]["temperature"] == 21
     assert hass.states.get(SENSOR).state == "Emica"
+
+
+async def test_a_value_the_profile_does_not_define_is_taken_in(
+    hass: HomeAssistant, entry_data, calls
+):
+    """A partial profile keeps matching - that must not erase what changed."""
+    set_device_state(hass)
+    partial = [
+        {
+            "id": "komfort",
+            "name": "Komfort",
+            "color": "#22c55e",
+            "values": {"hvac_mode": "cool", "temperature": 24},
+            "detect": False,
+            "capture": "auto",
+        }
+    ]
+    entry = await setup_entry(hass, entry_data, profiles=partial)
+    await apply(hass, "Komfort")
+    assert hass.states.get(SENSOR).state == "Komfort"
+
+    # A device that answers within the call, the way a real one does - the
+    # logs of a Midea unit show the new state arriving in the same
+    # millisecond. The fan mode is not part of the profile, so the profile
+    # keeps matching while it changes.
+    @callback
+    def _answer(call) -> None:
+        set_device_state(hass, fan_mode=call.data["fan_mode"])
+
+    hass.services.async_register("climate", "set_fan_mode", _answer)
+
+    await set_value(hass, fan_mode="high")
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Komfort")["values"]["fan_mode"] == "high"
