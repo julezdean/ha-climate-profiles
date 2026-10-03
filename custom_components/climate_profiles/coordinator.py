@@ -30,6 +30,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
     CONF_CUSTOM_NAME,
@@ -111,6 +112,9 @@ class ProfileState:
     #: What this entry knows: the four climate keys plus the additional
     #: values, with the kind and limits each one is compared against.
     vocabulary: Vocabulary
+    #: Values whose entity is unreachable right now - skipped when matching
+    #: and never written to.
+    unavailable: frozenset[str]
     available: bool
     applying: bool = False
     #: The profile that matched most recently in this session, and which of
@@ -162,6 +166,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._target: ClimateProfile | None = None
         self._last_call = 0.0
         self._last_change = 0.0
+        self._reached = False
         self._reach_timer: Any = None
         self._unreached: Unreached | None = None
 
@@ -223,14 +228,22 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     # -- reading the world --------------------------------------------------
 
     @callback
-    def _read_values(self) -> tuple[dict[str, Any], bool]:
-        """Read the current values of all configured entities."""
+    def _read_values(self) -> tuple[dict[str, Any], bool, frozenset[str]]:
+        """Read the current values, and which of them cannot be read at all.
+
+        A whole entity that is unavailable is something different from a value
+        a device stopped reporting: the first says "ask again later", the
+        second is a mismatch. Only the first is collected here.
+        """
         values: dict[str, Any] = {}
+        unavailable: set[str] = set()
         climate = self.hass.states.get(self.entities.climate)
         available = climate is not None and climate.state not in (
             STATE_UNAVAILABLE,
             STATE_UNKNOWN,
         )
+        if not available:
+            unavailable.update(CLIMATE_KEYS)
 
         if climate is not None:
             values[VALUE_HVAC_MODE] = climate.state
@@ -239,10 +252,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             values[VALUE_SWING_MODE] = climate.attributes.get("swing_mode")
 
         for value in self.entities.additional:
-            if (state := self.hass.states.get(value.entity)) is not None:
-                values[value.id] = state.state
+            state = self.hass.states.get(value.entity)
+            if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                unavailable.add(value.id)
+                continue
+            values[value.id] = state.state
 
-        return values, available
+        return values, available, frozenset(unavailable)
 
     @callback
     def _read_capabilities(self) -> Capabilities:
@@ -293,7 +309,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
     async def _async_update_data(self) -> ProfileState:
         """Recalculate the active profile from the current states."""
-        values, available = self._read_values()
+        values, available, unavailable = self._read_values()
         capabilities = self._read_capabilities()
         vocabulary = Vocabulary.build(
             self.entities,
@@ -302,7 +318,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             order=self.value_order,
         )
         profiles = self.profiles
-        active = resolve_active_profile(profiles, values, vocabulary)
+        active = resolve_active_profile(profiles, values, vocabulary, unavailable)
         applying = self._apply_task is not None and not self._apply_task.done()
 
         # While an applied profile is still on its way, only that one may take
@@ -331,10 +347,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
         if active is not None:
             # Any profile matching now makes a verdict about an earlier one
-            # stale; the applied one matching means it simply took.
+            # stale. The applied one matching is good news, but not the end of
+            # the story: a value the device only holds for a few seconds would
+            # otherwise never be noticed, so it keeps being watched until the
+            # window is over.
             self._unreached = None
             if self._target is not None and self._target.id == active.id:
-                self._clear_target()
+                self._reached = True
 
         last_matched = (
             profiles.get(self._baseline[0]) if self._baseline is not None else None
@@ -343,7 +362,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # keeps matching while you adjust a value it does not define, and that
         # is precisely a change worth offering to capture.
         changed = (
-            changed_keys(self._baseline[1], values, vocabulary)
+            changed_keys(self._baseline[1], values, vocabulary, unavailable)
             if self._baseline is not None
             else ()
         )
@@ -352,6 +371,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             values,
             capabilities,
             vocabulary,
+            unavailable,
             available,
             applying,
             last_matched,
@@ -373,20 +393,21 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     @callback
     def _handle_state_change(self, event: Event[EventStateChangedData]) -> None:
         """Schedule a debounced recalculation."""
+        now = self.hass.loop.time()
         if self._target is not None:
-            now = self.hass.loop.time()
             self._last_change = now
-            # How long a device takes to report what it did is the one number
-            # the reach check depends on, and it differs per device. This line
-            # is what the waiting times are set from.
-            new_state = event.data.get("new_state")
-            _LOGGER.debug(
-                "%s: %s is %s, %.2f s after the last call",
-                self.name,
-                event.data.get("entity_id"),
-                new_state.state if new_state is not None else None,
-                now - self._last_call,
-            )
+        # How long a device takes to report what it did is the one number the
+        # reach check depends on, and it differs per device. Logged for every
+        # change, not only while a profile is pending: a value the device drops
+        # on its own happens exactly when nothing is pending.
+        new_state = event.data.get("new_state")
+        _LOGGER.debug(
+            "%s: %s is %s, %.2f s after the last call",
+            self.name,
+            event.data.get("entity_id"),
+            new_state.state if new_state is not None else None,
+            now - self._last_call,
+        )
         self.hass.async_create_task(self.async_request_refresh(), eager_start=True)
 
     @callback
@@ -402,6 +423,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     def _clear_target(self) -> None:
         """Stop waiting for the applied profile."""
         self._target = None
+        self._reached = False
         if self._reach_timer is not None:
             self._reach_timer()
             self._reach_timer = None
@@ -450,8 +472,17 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         state = self.data
         if state is None or self._target is None:
             return
-        self._target = None
-        if state.active is not None and state.active.id == target.id:
+
+        matches = state.active is not None and state.active.id == target.id
+        window_over = now - self._last_call >= REACH_MAX_SECONDS
+        if matches and not window_over:
+            # It took - but some devices hold a value only for a few seconds
+            # (a silent mode that falls back on its own), so keep looking
+            # until the window is over rather than declaring success once.
+            self._schedule_reach_check(REACH_QUIET_SECONDS)
+            return
+        self._clear_target()
+        if matches:
             return
 
         vocab = state.vocabulary
@@ -463,17 +494,19 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 storage_value(vocab.get(key), current.get(key)),
             )
             for key, value in wanted.items()
-            if not values_equal(vocab.get(key), value, current.get(key))
+            if key not in state.unavailable
+            and not values_equal(vocab.get(key), value, current.get(key))
         }
         if not missed:
             return
 
         self._unreached = Unreached(target.id, target.name, missed)
         _LOGGER.warning(
-            "%s: profile %s was applied but did not take - %s. Two of its "
-            "values probably contradict each other on this device",
+            "%s: profile %s %s - %s. Two of its values probably contradict "
+            "each other on this device",
             self.name,
             target.name,
+            "did not hold" if self._reached else "was applied but did not take",
             ", ".join(
                 f"{key} is {actual} instead of {wanted}"
                 for key, (wanted, actual) in missed.items()
@@ -550,6 +583,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """Write individual values, then re-evaluate which profile that is."""
         if not values:
             return
+        # Changing something by hand ends the question whether the profile
+        # applied before took: from here on the state is yours, not the
+        # device's answer. A change made on the device itself cannot be told
+        # apart from the device overriding a value, and is not covered.
+        self._clear_target()
         await self._async_run_apply(values, optimistic=None)
 
     # -- capturing ----------------------------------------------------------
@@ -691,7 +729,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     ) -> None:
         """Execute the plan for ``values``."""
         state = self.data or await self._async_update_data()
-        plan = build_apply_plan(values, state.values, state.vocabulary)
+        plan = build_apply_plan(
+            values, state.values, state.vocabulary, unavailable=state.unavailable
+        )
         self._log_plan(plan)
 
         if optimistic is not None or plan.calls:
@@ -720,6 +760,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                     {ATTR_ENTITY_ID: call.entity_id, **call.data},
                     blocking=True,
                 )
+                self._last_call = self.hass.loop.time()
         except HomeAssistantError as err:
             _LOGGER.error("Applying values to %s failed: %s", self.name, err)
             self._clear_target()
@@ -734,12 +775,30 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self._schedule_reach_check(REACH_QUIET_SECONDS)
 
     def _log_plan(self, plan: ApplyPlan) -> None:
-        """Tell the user about values that could not be applied cleanly."""
+        """Tell the user about values that could not be applied cleanly.
+
+        Only the first case deserves a warning. A key the entry does not know
+        is a leftover - from an older version, or from a deleted value - and
+        saying so at every apply would train people to ignore the log. An
+        entity that is briefly unreachable is nobody's fault at all.
+        """
         if plan.unsupported:
             _LOGGER.warning(
-                "%s: skipping %s - not supported by the configured entities",
+                "%s: skipping %s - the device does not accept that value",
                 self.name,
                 ", ".join(plan.unsupported),
+            )
+        if plan.unknown:
+            _LOGGER.debug(
+                "%s: ignoring %s - this entry has no such value (any more)",
+                self.name,
+                ", ".join(plan.unknown),
+            )
+        if plan.skipped:
+            _LOGGER.debug(
+                "%s: skipping %s - its entity is unavailable right now",
+                self.name,
+                ", ".join(plan.skipped),
             )
         if plan.warnings:
             _LOGGER.warning(

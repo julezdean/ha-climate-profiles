@@ -90,18 +90,59 @@ def test_off_profile_matches_although_the_rest_is_stale(profiles, vocab):
     assert resolve_active_profile(profiles, state, vocab).name == "Aus"
 
 
-def test_first_matching_profile_wins(vocab, komfort_state):
-    """Overlapping profiles are resolved by order, not by specificity."""
+def test_the_most_specific_profile_wins(vocab, komfort_state):
+    """A catch-all must lose against a profile that says more.
+
+    "Cooling" matches every cooled state, so with first-match-wins the narrower
+    profiles were unreachable: picking one looked like it did nothing.
+    """
     broad = profile("Kuehlung", {"hvac_mode": "cool"})
     narrow = profile("Komfort", {"hvac_mode": "cool", "temperature": 24})
 
+    for order in (ProfileSet((broad, narrow)), ProfileSet((narrow, broad))):
+        assert resolve_active_profile(order, komfort_state, vocab).name == "Komfort"
+
+
+def test_order_decides_between_equally_specific_profiles(vocab, komfort_state):
+    first = profile("Eins", {"hvac_mode": "cool", "temperature": 24})
+    second = profile("Zwei", {"hvac_mode": "cool", "temperature": 24})
+
     assert (
-        resolve_active_profile(ProfileSet((broad, narrow)), komfort_state, vocab).name
-        == "Kuehlung"
+        resolve_active_profile(ProfileSet((first, second)), komfort_state, vocab).name
+        == "Eins"
     )
     assert (
-        resolve_active_profile(ProfileSet((narrow, broad)), komfort_state, vocab).name
-        == "Komfort"
+        resolve_active_profile(ProfileSet((second, first)), komfort_state, vocab).name
+        == "Zwei"
+    )
+
+
+def test_a_value_whose_entity_is_gone_is_skipped(vocab, komfort_state):
+    """A switch that disappears while the device is off must not freeze custom."""
+    partial = profile("Nacht", {"hvac_mode": "cool", "silent": "on"})
+    state = komfort_state | {"silent": "unavailable"}
+
+    assert resolve_active_profile(ProfileSet((partial,)), state, vocab) is None
+    assert (
+        resolve_active_profile(
+            ProfileSet((partial,)), state, vocab, frozenset({"silent"})
+        ).name
+        == "Nacht"
+    )
+
+
+def test_a_profile_only_made_of_unverifiable_values_does_not_match(
+    vocab, komfort_state
+):
+    only_silent = profile("Leise", {"silent": "on"})
+    assert (
+        resolve_active_profile(
+            ProfileSet((only_silent,)),
+            komfort_state | {"silent": "unavailable"},
+            vocab,
+            frozenset({"silent"}),
+        )
+        is None
     )
 
 

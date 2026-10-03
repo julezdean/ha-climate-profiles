@@ -162,38 +162,68 @@ def profile_matches(
     profile: ClimateProfile,
     current_values: Mapping[str, Any],
     vocab: Vocabulary,
+    unavailable: frozenset[str] = frozenset(),
 ) -> bool:
     """Return whether every value defined by ``profile`` is currently set.
 
     Keys the profile does not define are ignored - a profile is a partial
     description of a state, not a full one. A profile without any usable value
     never matches; it would otherwise match everything.
+
+    ``unavailable`` names values whose whole entity is unreachable right now.
+    Those are skipped rather than counted as a mismatch: a switch that
+    disappears while the device is off would otherwise keep every profile that
+    mentions it on "custom" forever. A value that is merely missing - an
+    attribute the device stopped reporting - still counts as a mismatch,
+    because nothing confirms it.
     """
     wanted = normalise_values(vocab, profile.values)
     if not wanted:
         return False
 
     current = normalise_values(vocab, current_values)
+    checked = {key: value for key, value in wanted.items() if key not in unavailable}
+    if not checked:
+        # Everything this profile says is unverifiable at the moment.
+        return False
     return all(
         values_equal(vocab.get(key), value, current.get(key))
-        for key, value in wanted.items()
+        for key, value in checked.items()
     )
+
+
+def profile_precision(profile: ClimateProfile, vocab: Vocabulary) -> int:
+    """Return how much a profile actually says - its number of usable values."""
+    return len(normalise_values(vocab, profile.values))
 
 
 def resolve_active_profile(
     profiles: ProfileSet,
     current_values: Mapping[str, Any],
     vocab: Vocabulary,
+    unavailable: frozenset[str] = frozenset(),
 ) -> ClimateProfile | None:
-    """Return the first matching profile, or ``None`` for "custom".
+    """Return the matching profile that says the most, or ``None`` for "custom".
 
     ``None`` is the virtual custom profile: it has no stored values and never
     writes anything back, it is purely a statement about the current state.
+
+    Several profiles can match at once, and then the most specific one wins -
+    the one defining the most values. A profile that only says "heating" is a
+    catch-all, and a catch-all has to lose against one that also names the
+    temperature; otherwise selecting the narrower profile looks like it did
+    nothing. Order decides between profiles that are equally specific, which is
+    what it was always for.
     """
+    best: ClimateProfile | None = None
+    best_precision = -1
     for profile in profiles:
-        if profile_matches(profile, current_values, vocab):
-            return profile
-    return None
+        if not profile_matches(profile, current_values, vocab, unavailable):
+            continue
+        precision = profile_precision(profile, vocab)
+        if precision > best_precision:
+            best, best_precision = profile, precision
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +256,15 @@ class ApplyPlan:
     """What applying a profile would do."""
 
     calls: tuple[ProfileServiceCall, ...] = ()
-    #: Keys that cannot be applied at all (unknown key, unsupported value).
+    #: Values the device refuses: a mode it does not advertise, a value that
+    #: cannot be read as what it should be. Worth saying out loud.
     unsupported: tuple[str, ...] = ()
+    #: Keys this entry does not know (any more) - an additional value that was
+    #: deleted, or a leftover from an older version. Harmless.
+    unknown: tuple[str, ...] = ()
+    #: Values whose entity is unreachable at the moment. Temporary, and not
+    #: anybody's fault.
+    skipped: tuple[str, ...] = ()
     #: Keys that are applied but look wrong (e.g. outside the entity's range).
     warnings: tuple[str, ...] = ()
 
@@ -241,6 +278,7 @@ def build_apply_plan(
     current_values: Mapping[str, Any],
     vocab: Vocabulary,
     *,
+    unavailable: frozenset[str] = frozenset(),
     force: bool = False,
 ) -> ApplyPlan:
     """Turn a (partial) set of values into the service calls needed for it.
@@ -258,14 +296,21 @@ def build_apply_plan(
 
     wanted: dict[str, Any] = {}
     unsupported: list[str] = []
+    unknown: list[str] = []
+    skipped: list[str] = []
     warnings: list[str] = []
 
     for key in values:
+        if key in unavailable:
+            # Writing to an entity that is not there does nothing and makes
+            # Home Assistant log a warning of its own.
+            skipped.append(key)
+            continue
         spec = vocab.get(key)
         if spec is None:
             # Either an additional value that is gone, or one whose entity is
             # of a domain that carries no single value.
-            unsupported.append(key)
+            unknown.append(key)
             continue
         value = normalise_value(spec, values[key])
         if value is None:
@@ -310,7 +355,13 @@ def build_apply_plan(
             continue
         calls.append(call)
 
-    return ApplyPlan(tuple(calls), tuple(unsupported), tuple(warnings))
+    return ApplyPlan(
+        tuple(calls),
+        tuple(unsupported),
+        tuple(unknown),
+        tuple(skipped),
+        tuple(warnings),
+    )
 
 
 def _build_call(spec: ValueSpec, value: Any) -> ProfileServiceCall | None:
@@ -377,6 +428,7 @@ def changed_keys(
     baseline: Mapping[str, Any] | None,
     current: Mapping[str, Any],
     vocab: Vocabulary,
+    unavailable: frozenset[str] = frozenset(),
 ) -> tuple[str, ...]:
     """Return the keys whose value differs from ``baseline``.
 
@@ -391,6 +443,7 @@ def changed_keys(
         spec.key
         for spec in vocab
         if spec.key in now
+        and spec.key not in unavailable
         and not values_equal(spec, now[spec.key], before.get(spec.key))
     )
 

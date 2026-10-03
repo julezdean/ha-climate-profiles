@@ -193,3 +193,36 @@ async def test_the_order_decides_the_calls(hass: HomeAssistant):
         "number.set_value",
         "climate.set_fan_mode",
     ]
+
+
+async def test_a_catch_all_profile_is_pointed_out(hass: HomeAssistant, caplog):
+    """Why does my narrow profile never show? Because a broader one covers it."""
+    set_device_state(hass)
+    entry = await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_profile"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_PROFILE_NAME: "Cooling", "color": [1, 2, 3], "hvac_mode": "cool"},
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_profile"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_PROFILE_NAME: "Comfort",
+            "color": [1, 2, 3],
+            "hvac_mode": "cool",
+            "temperature": 24,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert "Profile Cooling is a catch-all for Comfort" in caplog.text

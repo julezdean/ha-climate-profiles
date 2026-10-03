@@ -324,7 +324,7 @@ async def test_unavailable_climate_marks_entities_unavailable(hass, entry_data):
 # --- ordering and multiple instances ---------------------------------------
 
 
-async def test_profile_order_decides_between_overlapping_profiles(hass, entry_data):
+async def test_the_most_specific_of_the_matching_profiles_is_shown(hass, entry_data):
     broad = {
         "id": "a",
         "name": "Kuehlen",
@@ -340,13 +340,19 @@ async def test_profile_order_decides_between_overlapping_profiles(hass, entry_da
 
     set_device_state(hass)
     entry = await setup_entry(hass, entry_data, profiles=[broad, narrow])
-    assert hass.states.get(SENSOR).state == "Kuehlen"
+    # The catch-all is first in order and still loses: it says less.
+    assert hass.states.get(SENSOR).state == "Komfort"
 
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, CONF_PROFILES: [narrow, broad]}
     )
     await settle(hass)
     assert hass.states.get(SENSOR).state == "Komfort"
+
+    # Only when nothing more specific matches does the catch-all show.
+    set_device_state(hass, temperature=26)
+    await settle(hass)
+    assert hass.states.get(SENSOR).state == "Kuehlen"
 
 
 async def test_two_instances_stay_independent(hass, entry_data):

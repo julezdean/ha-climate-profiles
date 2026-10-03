@@ -89,7 +89,10 @@ def test_optional_entities_are_reported_not_crashed(bare_vocab):
         bare_vocab,
     )
     assert [call.key for call in plan.calls] == ["hvac_mode"]
-    assert set(plan.unsupported) == {"fan", "display", "silent"}
+    # Not "unsupported": the entry simply has no such values. That is a
+    # leftover, not something to warn about.
+    assert set(plan.unknown) == {"fan", "display", "silent"}
+    assert plan.unsupported == ()
 
 
 def test_unsupported_mode_is_rejected_instead_of_sent(vocab):

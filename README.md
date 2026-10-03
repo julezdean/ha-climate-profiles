@@ -195,6 +195,11 @@ which values the device did not keep:
 
 ![A profile that did not take](docs/images/card-unreached.png)
 
+The check does not look once and stop: it keeps watching until the maximum
+wait is over, so a device that accepts a value and drops it again a few seconds
+later is caught too. Changing something by hand ends the check - from then on
+the state is yours, not the device's answer.
+
 It is a report, not an offer: only you know which of the two values was meant.
 The same verdict is on the sensor as `unreached`, so an automation can react to
 it, and in the log as a warning.
@@ -332,6 +337,19 @@ Comparison is tolerant where devices are sloppy: case insensitive for modes,
 half the device's step width as tolerance for temperatures, and `on`/`off`/
 `true`/`false` all mean the same thing. A value that cannot be read (an
 unavailable entity) never counts as a match.
+
+When several profiles match at once, **the most specific one is shown** - the
+one defining the most values. A profile that only says "heating" is a catch-all
+and loses against one that also names the temperature; otherwise picking the
+narrower one would look as if nothing had happened. The order decides between
+profiles that are equally specific. The options flow writes a line to the log
+when a profile is a catch-all for others.
+
+A value whose entity is **unavailable** right now is skipped, not counted as a
+mismatch - some devices drop a switch while they are off, and a profile
+mentioning it would otherwise be stuck on custom forever. Nothing is written to
+such an entity either. A value the device simply stopped reporting does count
+as a mismatch, because nothing confirms it.
 
 If no profile matches, the state is the custom profile. It has no values, so
 it can never be "applied" - selecting it does nothing on purpose.

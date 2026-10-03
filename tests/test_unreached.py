@@ -137,3 +137,54 @@ async def test_applying_another_profile_clears_the_verdict(hass, entry_data, cal
 
     assert hass.states.get(SENSOR).state == "Komfort"
     assert hass.states.get(SENSOR).attributes["unreached"] is None
+
+
+async def test_a_value_the_device_drops_again_is_reported(hass, entry_data, calls):
+    """A silent mode that falls back on its own must not count as reached."""
+    set_device_state(hass)
+    await setup_entry(hass, entry_data, profiles=[*PROFILES, MAX])
+
+    await apply(hass, "Max")
+    # The device takes everything for a moment ...
+    set_device_state(hass, fan_mode="full", silent="on")
+    await wait(hass, QUIET * 1.5)
+    assert hass.states.get(SENSOR).attributes["unreached"] is None
+
+    # ... and then drops the silent mode by itself, inside the window.
+    set_device_state(hass, fan_mode="full", silent="off")
+    await wait(hass, QUIET * 3)
+
+    unreached = hass.states.get(SENSOR).attributes["unreached"]
+    assert unreached is not None
+    assert unreached["values"] == {"silent": {"wanted": "on", "actual": "off"}}
+
+
+async def test_a_change_by_hand_ends_the_check(hass, entry_data, calls):
+    """From the first manual change on, the state is yours, not the answer."""
+    set_device_state(hass)
+    await setup_entry(hass, entry_data, profiles=[*PROFILES, MAX])
+
+    await apply(hass, "Max")
+    await hass.services.async_call(
+        DOMAIN,
+        "set_value",
+        {"entity_id": SENSOR, "hvac_mode": "heat"},
+        blocking=True,
+    )
+    set_device_state(hass, hvac_mode="heat")
+    await wait(hass, QUIET * 3)
+
+    assert hass.states.get(SENSOR).attributes["unreached"] is None
+
+
+async def test_nothing_is_written_to_an_entity_that_is_gone(hass, entry_data, calls):
+    """Writing to an unavailable entity does nothing but log a warning."""
+    set_device_state(hass, hvac_mode="heat")
+    hass.states.async_set("switch.living_room_silent", "unavailable")
+    await setup_entry(hass, entry_data, profiles=[*PROFILES, MAX])
+
+    await apply(hass, "Max")
+    await settle(hass)
+
+    assert calls["turn_on"] == []
+    assert [c.data["fan_mode"] for c in calls["set_fan_mode"]] == ["full"]

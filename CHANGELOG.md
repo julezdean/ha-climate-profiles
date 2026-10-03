@@ -55,6 +55,26 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The most specific of the matching profiles is shown, not the first one.**
+  Several profiles can match at once, and a profile that only says "heating"
+  matches every heated state. With first-match-wins it swallowed every
+  narrower profile that came after it: tapping "Sleep" or "Boost" wrote the
+  values, but the card kept showing the catch-all, and it looked as if nothing
+  had happened. The profile defining the most values now wins; the order
+  decides between profiles that are equally specific, which is what it was
+  always for. The options flow logs which profiles are catch-alls for others.
+- **A value whose entity is unavailable is skipped instead of counted as a
+  mismatch.** Some devices drop an entity while they are off - a silent mode
+  switch that only exists while the unit runs. Every profile mentioning it was
+  stuck on "custom", and nothing was ever written to it either: the integration
+  now leaves such values out of both the comparison and the plan. A value that
+  is merely missing still counts as a mismatch, because nothing confirms it.
+- **A profile is watched until the window is over, not judged once.** A device
+  that accepts a value and drops it again seconds later used to count as
+  success, because the check looked once and stopped. It now keeps looking
+  until the maximum wait is over and reports a value that did not hold.
+- **A change by hand ends the check.** Adjusting something right after applying
+  a profile made the integration blame the profile for what the user did.
 - Applying a profile the device could not keep made the card offer the result
   as a hand edit of the profile you came from - "Changed by hand, save into
   Comfort" after tapping Max. Applying a profile now leaves the previous one

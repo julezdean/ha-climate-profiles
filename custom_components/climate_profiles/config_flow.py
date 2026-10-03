@@ -110,6 +110,35 @@ _CLIMATE_LABELS: dict[str, dict[str, str]] = {
 }
 
 
+def _log_catch_alls(profiles: ProfileSet) -> None:
+    """Say which profiles are catch-alls for others.
+
+    A profile whose values are contained in another one matches whenever that
+    other one does. The more specific one wins the display, so the broader is
+    only ever shown when nothing narrower fits. That is deliberate - a profile
+    saying "heating" should lose against one that also names the temperature -
+    but it is worth knowing when you wonder why a profile rarely shows up.
+    """
+    for broad in profiles:
+        covered = [
+            narrow.name
+            for narrow in profiles
+            if narrow.id != broad.id
+            and len(narrow.values) > len(broad.values)
+            and all(
+                key in narrow.values and narrow.values[key] == value
+                for key, value in broad.values.items()
+            )
+        ]
+        if covered:
+            _LOGGER.warning(
+                "Profile %s is a catch-all for %s: it matches whenever they do, "
+                "so it is only shown when none of them fits",
+                broad.name,
+                ", ".join(covered),
+            )
+
+
 def _float(raw: Any) -> float | None:
     try:
         return float(raw)  # type: ignore[arg-type]
@@ -590,6 +619,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
 
     def _save(self, profiles: ProfileSet) -> ConfigFlowResult:
         """Persist the profiles in the config entry's options."""
+        _log_catch_alls(profiles)
         return self.async_create_entry(
             data={
                 **self.config_entry.options,
