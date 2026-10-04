@@ -195,8 +195,10 @@ floats is cut off wherever something clips the card, and plenty of themes do.
 
 `profile_layout: icons` is the shortest form: one row, one button per profile,
 nothing but its icon - or a dot in its colour where it has none. The name is
-the button's label, so a pointer and a screen reader still get it; **Custom**
-joins the row only while it is what is on.
+the button's label, so a pointer and a screen reader still get it; the active
+profile is the filled button, without the check mark the other layouts draw -
+it would sit on top of the icon. **Custom** joins the row only while it is
+what is on.
 
 `auto` chooses neither - it is grid up to six profiles and scroll beyond.
 
@@ -514,7 +516,8 @@ wherever a logo would go. The bundled images are picked up from Home Assistant
 
 Every control is a real button with an `aria-label` and `aria-pressed`, the
 focus ring is visible, and the active profile is marked with a check mark and
-not by colour alone. The dial is a `slider` that takes the arrow keys and
+not by colour alone - except in the icons layout, where the mark would land on
+top of the icon; there the filled button and `aria-pressed` carry it. The dial is a `slider` that takes the arrow keys and
 reports its value, and its two step buttons do the same job without any
 dragging at all. The card measures both candidate text colours against
 each profile colour and picks the more readable one. Very saturated mid tone

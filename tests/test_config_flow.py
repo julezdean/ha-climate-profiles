@@ -176,6 +176,7 @@ async def test_adding_a_profile(hass):
             {
                 CONF_PROFILE_NAME: "Nacht",
                 CONF_PROFILE_COLOR: [139, 92, 246],
+                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
                 "temperature": 26,
                 "silent": "on",
@@ -232,6 +233,9 @@ async def test_the_list_shows_what_is_stored(hass):
     fields = schema[CONF_PROFILES].config["fields"]
     assert "fan" in fields
     assert fields["hvac_mode"]["required"] is True
+    # Required, so a new row opens with the first option - "ask" - picked.
+    assert fields[CONF_PROFILE_CAPTURE]["required"] is True
+    assert fields[CONF_PROFILE_CAPTURE]["selector"]["select"]["options"][0] == "ask"
     # The id rides along in the row but has no field: nothing to edit, and
     # nothing to mistype. `read_only` would not help - the frontend's text
     # selector ignores it and draws an ordinary box.
@@ -280,6 +284,7 @@ async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
                 CONF_PROFILE_ID: "keep-me",
                 CONF_PROFILE_NAME: "Wohlfuehlen",
                 CONF_PROFILE_COLOR: [34, 197, 94],
+                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
                 "temperature": 24,
             }
@@ -306,6 +311,7 @@ async def test_deleting_a_profile_is_a_row_that_is_gone(hass):
                 CONF_PROFILE_ID: "b",
                 CONF_PROFILE_NAME: "B",
                 CONF_PROFILE_COLOR: [34, 34, 34],
+                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
             }
         ],
@@ -329,6 +335,7 @@ async def test_the_order_of_the_rows_is_the_order(hass):
                 CONF_PROFILE_ID: pid,
                 CONF_PROFILE_NAME: pid.upper(),
                 CONF_PROFILE_COLOR: [17, 17, 17],
+                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": mode,
             }
             for pid, mode in (("c", "dry"), ("b", "cool"), ("a", "off"))
@@ -353,7 +360,13 @@ async def test_a_row_without_a_mode_is_refused(hass):
         await submit_profiles(
             hass,
             entry,
-            [{CONF_PROFILE_NAME: "Leer", CONF_PROFILE_COLOR: [1, 2, 3]}],
+            [
+                {
+                    CONF_PROFILE_NAME: "Leer",
+                    CONF_PROFILE_COLOR: [1, 2, 3],
+                    CONF_PROFILE_CAPTURE: "ask",
+                }
+            ],
         )
 
 

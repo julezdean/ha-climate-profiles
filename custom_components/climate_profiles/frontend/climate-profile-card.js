@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.12";
+const CARD_VERSION = "2.0.0";
 
 /* eslint-disable no-console */
 console.info(
@@ -1787,6 +1787,13 @@ ha-card.unavailable { opacity: 0.6; }
   gap: 0;
 }
 .profile.icon-only ha-icon { --mdc-icon-size: 24px; }
+/* No check mark in here: there is one icon in the button and the mark lands
+   on top of it. The filled button is what says "this one is on" - and
+   aria-pressed says it where no shape is seen at all. */
+/* ".profile.active .check" comes later and is just as specific, so this has
+   to out-weigh it rather than merely contradict it. */
+.profile.icon-only.active .check,
+.profile.icon-only .check { display: none; }
 .profile.icon-only .dot-mark { width: 14px; height: 14px; margin: 5px 0; }
 
 /* the dropdown layout */

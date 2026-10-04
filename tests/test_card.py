@@ -590,7 +590,12 @@ async def test_the_profiles_can_be_icons_only(open_card):
     assert await buttons.nth(5).get_attribute("title") == "Max"
     # A profile without an icon keeps its colour as a dot.
     assert await buttons.nth(1).locator(".dot-mark").count() == 1
-    assert await card.locator(".profile.active").get_attribute("data-id") == "p3"
+    active = card.locator(".profile.active")
+    assert await active.get_attribute("data-id") == "p3"
+    # The filled button says which one is on; a check mark would sit on top of
+    # the icon, and aria-pressed carries it where nothing is seen.
+    assert await active.locator(".check").is_hidden()
+    assert await active.get_attribute("aria-pressed") == "true"
 
 
 async def test_an_icon_button_applies_its_profile(open_card):

@@ -683,7 +683,10 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "selector": {"boolean": {}},
             },
             CONF_PROFILE_CAPTURE: {
-                "required": False,
+                # Required, so a new row opens with "ask" already picked: the
+                # frontend fills a required select with its first option, and
+                # an empty field that silently means "ask" is a riddle.
+                "required": True,
                 "label": labels["capture"],
                 "selector": {
                     "select": {

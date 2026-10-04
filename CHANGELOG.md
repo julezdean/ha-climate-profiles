@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - 2026-09-17
+## [2.0.0] - 2026-10-04
 
 ### Changed
 
@@ -48,11 +48,15 @@ versioning [Semantic Versioning](https://semver.org/).
   a separate walk through the dialog. A profile's row holds everything it is -
   name, colour, icon, how it becomes active, what a change by hand does, and
   every value it sets; its id travels with the row unseen, because that is what
-  the stored values hang off and it is nothing to type at. The order of the rows is the order profiles
-  are matched and shown in. Underneath the value list sit the two things that
-  are not rows: the tick-off list of the device's own entities, and the order
-  values are written in. Underneath the profile list sit the three fields of
-  "custom".
+  the stored values hang off and it is nothing to type at. The order of the
+  rows is the order profiles are matched and shown in. Underneath the value
+  list sit the two things that are not rows: the tick-off list of the device's
+  own entities, and the order values are written in. Underneath the profile
+  list sit the three fields of "custom".
+- **The tinted gradient behind the header is gone.** The profile's colour is
+  on the profile buttons, the mode pill and the temperature it sets; washing
+  the title with it as well was decoration, not information. In the dial it
+  stays as a quiet glow behind the ring, where it belongs to the arc.
 
 ### Added
 
@@ -85,8 +89,10 @@ versioning [Semantic Versioning](https://semver.org/).
 - **The profiles can be a row of icons**: `profile_layout: icons`. One button
   per profile with nothing but its icon - or a dot in its colour where it has
   none - and the name as the button's label, for a pointer and a screen
-  reader. "Custom" joins the row only while it is what is on: a dashed box
-  saying nothing is not worth a seat in a row that short.
+  reader. The active one is the filled button; the check mark the other
+  layouts draw would land on top of the icon. "Custom" joins the row only
+  while it is what is on: a dashed box saying nothing is not worth a seat in a
+  row that short.
 - **The temperature can be a dial** instead of the bar: `temperature_style:
   dial` in the card, or the dropdown in its editor. A 270° arc in the active
   profile's colour, the room's own temperature as a dot on the same scale, and
@@ -109,9 +115,6 @@ versioning [Semantic Versioning](https://semver.org/).
   written before or after the fan mode - whichever should win. `hvac_mode`
   always goes first, because most devices ignore everything else while they
   are off. The card shows the additional values in the same order.
-
-### Added
-
 - **The offer to capture a manual change can be dismissed** with the × in its
   corner, through the new service `climate_profiles.dismiss_change`. The state
   stays as it is and is simply no longer presented as a fresh change.
@@ -121,9 +124,6 @@ versioning [Semantic Versioning](https://semver.org/).
   dropped and the state is plainly custom, the way a restart leaves it. Every
   further change starts that minute over, and capturing into a profile named
   explicitly is unaffected.
-
-### Added
-
 - **Every profile says how it becomes active.** *Recognise this profile
   automatically* is on by default and is what the integration always did: the
   active profile is read off the device state. Switched off for a profile, it
@@ -135,19 +135,20 @@ versioning [Semantic Versioning](https://semver.org/).
   the same time. A selected profile wins while its values hold, otherwise the
   most specific of the recognisable ones; the selection survives a restart and
   counts only while it still holds.
-- **What a change by hand does is set per profile.** The write protection
-  checkbox is replaced by one field with three answers: ask before storing (the
-  default, what the card has always offered), store automatically, or write
-  protected. One question, one place - a device-wide switch next to a per
-  profile checkbox could contradict itself. Storing automatically means what
+- **What a change by hand does is set per profile**, and opens on "ask before
+  storing" for a new one. The write protection checkbox is replaced by one
+  field with three answers: ask before storing (the default, what the card has
+  always offered), store automatically, or write protected. One question, one
+  place - a device-wide switch next to a per profile checkbox could contradict
+  itself. Storing automatically means what
   the "save into" button stores: values the profile defines are updated and a
   value adjusted on top is taken into it. It applies wherever the change was
   made - this card, another one, a script, or the thermostat's own buttons -
   because Home Assistant cannot tell a hand on the device from the device
   changing a value by itself. The one exception is the window right after a
   profile was applied, which is where a device's overrides happen.
-- Profiles stored by 1.x and the earlier 2.0 betas are read as before:
-  `protected: true` becomes "write protected", everything else "ask".
+- Profiles stored by 1.x are read as before: `protected: true` becomes "write
+  protected", everything else "ask".
 
 ### Fixed
 
@@ -203,13 +204,6 @@ versioning [Semantic Versioning](https://semver.org/).
   reference point back, even though it keeps matching for the moment before
   the device reports. This was already the case in 1.x.
 
-### Changed (the card)
-
-- **The tinted gradient behind the header is gone.** The profile's colour is
-  on the profile buttons, the mode pill and the temperature it sets; washing
-  the title with it as well was decoration, not information. In the dial it
-  stays as a quiet glow behind the ring, where it belongs to the arc.
-
 ### Card configuration
 
 - The seven `show_*` options are replaced by one `hide` list, over one key
@@ -229,10 +223,12 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Migration
 
-None. Nothing was running this integration, so the old fields are dropped
-rather than converted. An entry created with 1.x keeps its climate entity and
-its profiles; the three optional entities have to be added again as additional
-values, and profiles that set them need those values filled in once more.
+Nothing is converted automatically. An entry created with 1.x keeps working
+and keeps its climate entity and its profiles; what the three fixed fields used
+to drive has to be added again under **Configure → Manage values**, and the
+profiles that set a fan speed, a display or a silent mode need those values
+filled in once more. The ids of the profiles are untouched, so automations
+triggering on `active_profile_id` keep working across the update.
 
 ## [1.0.1] - 2026-09-17
 

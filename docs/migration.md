@@ -19,8 +19,9 @@ This integration does the same thing, with the same rules.
 
 * a profile only sets what it defines; `Nacht` without `fan_mode` leaves the
   fan alone
-* `hvac_mode` is applied first, then temperature, swing, fan mode, fan,
-  display, silent - the order the script used
+* `hvac_mode` is applied first, as in the script; everything after it goes in
+  the order you set under Configure, which is where the script's fixed
+  sequence of temperature, swing, fan mode, fan, display and silent ended up
 * comparison is case insensitive for modes (the template lower-cased fan modes)
 * a second run replaces a running one (`mode: restart`)
 
