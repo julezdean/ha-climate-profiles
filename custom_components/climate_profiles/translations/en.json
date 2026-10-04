@@ -13,22 +13,6 @@
           "name": "Used for the device and the entity names, e.g. \"Living room\".",
           "climate_entity": "Supported modes, temperature range and step width are read from this entity."
         }
-      },
-      "entities": {
-        "title": "Optional entities",
-        "description": "Many air conditioners expose extra controls. Anything you leave empty is simply not offered - neither in profiles nor on the card.",
-        "data": {
-          "fan_entity": "Fan speed (number)",
-          "display_entity": "Display (switch)",
-          "silent_entity": "Silent mode (switch)"
-        }
-      },
-      "profiles": {
-        "title": "Profiles",
-        "description": "A starter set is built from what your device actually supports. You can rename, change, reorder and delete everything afterwards.",
-        "data": {
-          "create_default_profiles": "Create starter profiles"
-        }
       }
     },
     "error": {
@@ -43,86 +27,41 @@
       "init": {
         "title": "Climate Profiles",
         "menu_options": {
-          "entities": "Optional entities",
-          "add_profile": "Add profile",
-          "edit_profile": "Edit profile",
-          "reorder": "Change order",
-          "delete_profile": "Delete profiles",
-          "custom_name": "Rename \"custom\""
+          "values": "Manage values",
+          "profiles": "Manage profiles"
         }
       },
-      "entities": {
-        "title": "Optional entities",
-        "description": "Clear a field to stop using that function.",
+      "values": {
+        "title": "Manage values",
+        "description": "One row per value, with the entity behind it. Drag a row to move it, the pencil edits it, the bin removes it - profiles keep what they stored for a deleted value, it is simply skipped from then on. To point a value at a different entity, edit the row: adding it anew would create a new value and lose it from every profile.",
         "data": {
-          "fan_entity": "Fan speed (number)",
-          "display_entity": "Display (switch)",
-          "silent_entity": "Silent mode (switch)"
+          "additional_values": "Values",
+          "selected": "Add values from this device",
+          "order": "Order they are written in"
+        },
+        "data_description": {
+          "selected": "Everything on the same device that could carry a value, minus what you already have. They are added at the end of the list.",
+          "order": "Decides which value wins when two contradict each other on your device - a silent mode that sets its own fan speed, for example. The mode always goes first; anything you leave out keeps its place at the end."
         }
       },
-      "add_profile": {
-        "title": "New profile",
-        "description": "Only fill in what this profile should change. Empty fields are left untouched when the profile is applied.",
+      "profiles": {
+        "title": "Manage profiles",
+        "description": "One row per profile, with everything it is: name, colour, icon, how it becomes active, what a change by hand does, and the values it sets. The order of the rows is the order they are matched and shown in. Clear a value to remove it from the profile - an empty field means the profile does not touch it.",
         "data": {
-          "name": "Name",
-          "color": "Colour",
-          "icon": "Icon",
-          "hvac_mode": "Mode",
-          "temperature": "Temperature",
-          "fan_mode": "Fan mode",
-          "swing_mode": "Swing mode",
-          "fan": "Fan speed",
-          "display": "Display",
-          "silent": "Silent mode",
-          "protected": "Write protected"
-        }
-      },
-      "edit_profile": {
-        "title": "Edit profile",
-        "data": {
-          "id": "Profile"
-        }
-      },
-      "edit_values": {
-        "title": "Edit {profile}",
-        "description": "Clear a field to remove that value from the profile.",
-        "data": {
-          "name": "Name",
-          "color": "Colour",
-          "icon": "Icon",
-          "hvac_mode": "Mode",
-          "temperature": "Temperature",
-          "fan_mode": "Fan mode",
-          "swing_mode": "Swing mode",
-          "fan": "Fan speed",
-          "display": "Display",
-          "silent": "Silent mode",
-          "protected": "Write protected"
-        }
-      },
-      "delete_profile": {
-        "title": "Delete profiles",
-        "data": {
-          "selected": "Profiles"
-        }
-      },
-      "reorder": {
-        "title": "Change order",
-        "description": "Pick the profiles one after another in the order you want. The first profile that matches the current state wins. Profiles you leave out keep their position at the end.",
-        "data": {
-          "order": "Order"
-        }
-      },
-      "custom_name": {
-        "title": "Rename \"custom\"",
-        "description": "Shown whenever the current state matches none of your profiles.",
-        "data": {
-          "custom_profile_name": "Name"
+          "profiles": "Profiles",
+          "custom_profile_name": "Name of \"custom\"",
+          "custom_profile_color": "Colour of \"custom\"",
+          "custom_profile_icon": "Icon of \"custom\""
+        },
+        "data_description": {
+          "custom_profile_name": "Shown whenever the current state matches none of your profiles. It has no values of its own."
         }
       }
     },
     "error": {
-      "invalid_profile": "This profile could not be saved. Please check name and values."
+      "invalid_profile": "This profile could not be saved. Please check name and values.",
+      "unsupported_domain": "This kind of entity has no single value to compare, so it cannot be used.",
+      "entity_not_found": "This entity does not exist (any more)."
     }
   },
   "selector": {
@@ -141,6 +80,13 @@
         "fan": "Fan speed",
         "display": "Display",
         "silent": "Silent mode"
+      }
+    },
+    "capture": {
+      "options": {
+        "ask": "Ask before storing",
+        "auto": "Store automatically",
+        "never": "Write protected"
       }
     }
   },
@@ -186,18 +132,6 @@
         "fan_mode": {
           "name": "Fan mode",
           "description": "One of the fan modes the device supports."
-        },
-        "fan": {
-          "name": "Fan speed",
-          "description": "Value for the configured number entity."
-        },
-        "display": {
-          "name": "Display",
-          "description": "Turns the display on or off."
-        },
-        "silent": {
-          "name": "Silent mode",
-          "description": "Turns silent mode on or off."
         }
       }
     },
@@ -236,6 +170,11 @@
           "description": "Store only these values instead of the whole state."
         }
       }
+    },
+    "dismiss_change": {
+      "name": "Dismiss change",
+      "description": "Drop the offer to store the current manual change. The state stays as it is.",
+      "fields": {}
     }
   },
   "exceptions": {
@@ -253,6 +192,9 @@
     },
     "nothing_to_capture": {
       "message": "None of the configured entities currently reports a usable value."
+    },
+    "unknown_value": {
+      "message": "Unknown value: {value}. This device knows: {known}."
     }
   }
 }

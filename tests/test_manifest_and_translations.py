@@ -9,12 +9,13 @@ from pathlib import Path
 import yaml
 
 from custom_components.climate_profiles.const import (
+    CLIMATE_KEYS,
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
-    VALUE_KEYS,
 )
 
 COMPONENT = (
@@ -75,8 +76,11 @@ def test_services_match_the_code():
         SERVICE_SET_VALUE,
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
+        SERVICE_DISMISS_CHANGE,
     }
-    assert set(services[SERVICE_SET_VALUE]["fields"]) == set(VALUE_KEYS)
+    # Only the climate keys are documented: an additional value is named by
+    # the user, so it cannot appear in a static service definition.
+    assert set(services[SERVICE_SET_VALUE]["fields"]) == set(CLIMATE_KEYS)
     assert services[SERVICE_APPLY_PROFILE]["fields"]["profile"]["required"] is True
 
 
@@ -101,23 +105,16 @@ def test_translations_cover_the_same_keys():
 
 def test_config_and_options_steps_are_translated():
     strings = load_json("strings.json")
-    config_steps = {"user", "entities", "profiles"}
+    # Setup is a single form; there is no starter-profile step any more.
+    config_steps = {"user"}
     assert config_steps <= set(strings["config"]["step"])
 
-    options_steps = {
-        "init",
-        "entities",
-        "add_profile",
-        "edit_profile",
-        "edit_values",
-        "delete_profile",
-        "reorder",
-        "custom_name",
-    }
-    assert options_steps <= set(strings["options"]["step"])
-    # The menu offers exactly the steps that exist.
-    menu = set(strings["options"]["step"]["init"]["menu_options"])
-    assert menu <= options_steps
+    # Two lists and the menu that leads to them - nothing else is a step.
+    options_steps = {"init", "values", "profiles"}
+    assert options_steps == set(strings["options"]["step"])
+    # Every menu offers only steps that exist - the two group menus too.
+    for step in strings["options"]["step"].values():
+        assert set(step.get("menu_options", {})) <= options_steps
 
 
 def test_the_card_is_shipped():
@@ -126,3 +123,20 @@ def test_the_card_is_shipped():
     source = card.read_text(encoding="utf-8")
     assert 'customElements.define("climate-profile-card"' in source
     assert f'"{DOMAIN}"' in source, "the card must call this integration's services"
+
+
+def test_every_described_field_exists():
+    """Hassfest refuses a description for a field a step does not have.
+
+    It only says so in CI, and it took a red run to notice - so the same check
+    runs here, where it costs nothing.
+    """
+    for name in ("strings.json", "translations/en.json", "translations/de.json"):
+        data = load_json(name)
+        for section in ("config", "options"):
+            for step, content in data.get(section, {}).get("step", {}).items():
+                described = set(content.get("data_description", {}))
+                fields = set(content.get("data", {}))
+                assert described <= fields, (
+                    f"{name}: {section}.{step} describes {described - fields}"
+                )

@@ -19,8 +19,9 @@ This integration does the same thing, with the same rules.
 
 * a profile only sets what it defines; `Nacht` without `fan_mode` leaves the
   fan alone
-* `hvac_mode` is applied first, then temperature, swing, fan mode, fan,
-  display, silent - the order the script used
+* `hvac_mode` is applied first, as in the script; everything after it goes in
+  the order you set under Configure, which is where the script's fixed
+  sequence of temperature, swing, fan mode, fan, display and silent ended up
 * comparison is case insensitive for modes (the template lower-cased fan modes)
 * a second run replaces a running one (`mode: restart`)
 
@@ -37,7 +38,7 @@ This integration does the same thing, with the same rules.
 ## Steps
 
 1. Set up the integration (Settings → Devices & services → Add integration →
-   Climate Profiles) and let it create the starter profiles, or add your own.
+   Climate Profiles) and add your profiles under Configure.
 2. Compare: with the package still active, both the old sensor and
    `sensor.<name>_climate_profile` should show the same profile. If they do not,
    the profile values differ - fix them in the options flow.

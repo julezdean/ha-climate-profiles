@@ -58,6 +58,48 @@ SHOTS: dict[str, dict] = {
     },
     # A radiator thermostat: everything the device cannot do is gone.
     "card-heating": {"theme": "light", "device": "heating"},
+    # The profiles as a dropdown: for a dashboard where this is one card of
+    # many and six buttons are five too many - closed, and with its list open,
+    # which is where the icons and colours are.
+    "card-dropdown": {
+        "theme": "light",
+        "card": {"profile_layout": "dropdown"},
+    },
+    # The profiles as a row of icons: the name becomes the label, nothing
+    # more. On the thermostat, whose four profiles all carry one.
+    "card-icons": {
+        "theme": "light",
+        "device": "heating",
+        "card": {"profile_layout": "icons"},
+    },
+    "card-dropdown-open": {
+        "theme": "light",
+        "card": {"profile_layout": "dropdown"},
+        "click": "climate-profile-card .picker-trigger",
+    },
+    # The other shape of the temperature control, on the device it suits best.
+    "card-dial": {
+        "theme": "light",
+        "device": "heating",
+        "card": {"temperature_style": "dial"},
+    },
+    # A profile the device could not keep: two of its values contradict each
+    # other on the device. A report, deliberately without a button.
+    "card-unreached": {
+        "theme": "light",
+        "state": {
+            "fan_mode": "silent",
+            "silent": "on",
+            "active_profile": "Custom",
+            "active_profile_id": "__custom__",
+            "active_profile_color": "#78909c",
+            "unreached": {
+                "profile_id": "p6",
+                "profile": "Max",
+                "values": {"fan_mode": {"wanted": "full", "actual": "silent"}},
+            },
+        },
+    },
     # The offer to write a manual change back into the profile it came from.
     "card-capture": {
         "theme": "light",
@@ -117,6 +159,8 @@ def build_url(base: str, shot: dict) -> str:
         query["device"] = shot["device"]
     if shot.get("state"):
         query["state"] = json.dumps(shot["state"])
+    if shot.get("card"):
+        query["card"] = json.dumps(shot["card"])
     return f"{base}/tools/card-preview.html?{urllib.parse.urlencode(query)}"
 
 
@@ -132,6 +176,10 @@ def main() -> int:
         for name, shot in SHOTS.items():
             page.goto(build_url(base, shot), wait_until="networkidle")
             page.wait_for_timeout(250)
+            # Some states only exist after a click - an open dropdown, say.
+            if selector := shot.get("click"):
+                page.locator(selector).click()
+                page.wait_for_timeout(250)
             target = page.locator("#stage")
             box = target.bounding_box()
             if box is None:  # pragma: no cover - defensive

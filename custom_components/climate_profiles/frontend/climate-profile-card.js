@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "2.0.0";
 
 /* eslint-disable no-console */
 console.info(
@@ -19,6 +19,17 @@ console.info(
 );
 
 const CUSTOM_ID = "__custom__";
+
+/**
+ * The mark in front of a profile's name: an icon only when the user chose
+ * one, otherwise a dot in the profile's colour - which says more than the
+ * same filler icon six times over.
+ */
+function profileMark(profile) {
+  return profile.icon
+    ? `<ha-icon icon="${profile.icon}"></ha-icon>`
+    : `<span class="dot-mark" aria-hidden="true"></span>`;
+}
 
 /** Purely cosmetic icons - unknown modes fall back to a neutral one. */
 const HVAC_ICONS = {
@@ -40,6 +51,35 @@ const FALLBACK_ICON = "mdi:tune-variant";
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 const isNum = (value) => typeof value === "number" && Number.isFinite(value);
+
+//: The dial: a 270 degree arc with its gap at the bottom, where the two step
+//: buttons sit. Angles run clockwise from the top, so -135 is the minimum of
+//: the range and +135 its maximum. In the 100x100 user space of the svg.
+const DIAL = { cx: 50, cy: 50, r: 40, span: 135 };
+
+/** Return the point on the arc at ``fraction`` of the range, 0 to 1. */
+function dialPoint(fraction) {
+  const angle = ((2 * DIAL.span * fraction - DIAL.span) * Math.PI) / 180;
+  return [
+    DIAL.cx + DIAL.r * Math.sin(angle),
+    DIAL.cy - DIAL.r * Math.cos(angle),
+  ];
+}
+
+/** Fill one reading inside the dial, and take its row out when there is none. */
+function setReading(row, text) {
+  row.style.display = text ? "" : "none";
+  row.querySelector("span").textContent = text;
+}
+
+/** Return the ``d`` of the arc between two fractions of the range. */
+function dialPath(from, to) {
+  const [x1, y1] = dialPoint(from);
+  const [x2, y2] = dialPoint(to);
+  const large = (to - from) * 2 * DIAL.span > 180 ? 1 : 0;
+  const fixed = (value) => value.toFixed(2);
+  return `M ${fixed(x1)} ${fixed(y1)} A ${DIAL.r} ${DIAL.r} 0 ${large} 1 ${fixed(x2)} ${fixed(y2)}`;
+}
 
 function hexToRgb(hex) {
   const value = String(hex || "").trim();
@@ -109,7 +149,8 @@ class ClimateProfileCard extends HTMLElement {
     this._signature = "";
     this._pending = new Map(); // key -> { value, until }
     this._tempTimer = null;
-    this._fanTimer = null;
+    //: One debounce timer per slider, keyed by the value it belongs to.
+    this._sliderTimers = {};
     this._busy = 0;
     this._naming = false;
     this._error = null;
@@ -137,14 +178,11 @@ class ClimateProfileCard extends HTMLElement {
       throw new Error("entity must be the `sensor.…` entity of Climate Profiles.");
     }
     this._config = {
-      show_temperature: true,
-      show_hvac: true,
-      show_fan_mode: true,
-      show_swing: true,
-      show_fan: true,
-      show_display: true,
-      show_silent: true,
+      // Everything is shown unless it is hidden, so a value added later needs
+      // no change here and none in the dashboard.
+      hide: [],
       profile_layout: "auto",
+      temperature_style: "bar",
       ...config,
     };
     this._built = false;
@@ -178,9 +216,22 @@ class ClimateProfileCard extends HTMLElement {
     const entities = attrs.entities || {};
     const caps = attrs.capabilities || {};
     const climate = entities.climate ? hass.states[entities.climate] : null;
-    const fan = entities.fan ? hass.states[entities.fan] : null;
-    const display = entities.display ? hass.states[entities.display] : null;
-    const silent = entities.silent ? hass.states[entities.silent] : null;
+
+    // The additional values: the integration says what they are called and how
+    // to draw them, this only reads their state. The card knows no value by
+    // name any more - it only ever sees ids here.
+    const additional = (attrs.additional_values || [])
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((definition) => {
+        const state = hass.states[definition.entity] || null;
+        return {
+          ...definition,
+          state,
+          value: this._readValue(definition, state),
+        };
+      })
+      .filter((value) => value.kind);
 
     const unavailable =
       !climate || ["unavailable", "unknown"].includes(climate.state);
@@ -191,9 +242,7 @@ class ClimateProfileCard extends HTMLElement {
       entities,
       caps,
       climate,
-      fan,
-      display,
-      silent,
+      additional,
       unavailable,
       profiles: attrs.profiles || [],
       custom: attrs.custom_profile || {
@@ -216,12 +265,21 @@ class ClimateProfileCard extends HTMLElement {
       swingMode: climate ? climate.attributes.swing_mode : null,
       target: this._value("temperature", climate?.attributes.temperature),
       current: climate ? climate.attributes.current_temperature : null,
+      humidity: climate ? climate.attributes.current_humidity : null,
       action: climate ? climate.attributes.hvac_action : null,
-      fanValue: this._value("fan", fan ? Number(fan.state) : null),
-      displayOn: display ? display.state === "on" : null,
-      silentOn: silent ? silent.state === "on" : null,
       unit: hass.config.unit_system.temperature || "°C",
     };
+  }
+
+  /** Read one additional value's state in the shape its kind needs. */
+  _readValue(definition, state) {
+    if (!state || ["unavailable", "unknown"].includes(state.state)) return null;
+    if (definition.kind === "number") {
+      const number = Number(state.state);
+      return Number.isFinite(number) ? number : null;
+    }
+    if (definition.kind === "boolean") return state.state === "on";
+    return state.state;
   }
 
   /** Optimistic value: what the user just asked for, until the state agrees. */
@@ -247,8 +305,16 @@ class ClimateProfileCard extends HTMLElement {
     this._pending.set(key, { value, until: Date.now() + ms });
   }
 
-  _visible(option, available) {
-    return this._config[option] !== false && Boolean(available);
+  /**
+   * Everything configured is shown unless it is hidden, so a value added later
+   * appears without editing every dashboard. One list over one key space - the
+   * four climate keys and the ids of the additional values, the same mix that
+   * a profile's ``values`` carries.
+   */
+  _visible(key, available) {
+    const hide = this._config.hide;
+    const hidden = Array.isArray(hide) && hide.includes(key);
+    return !hidden && Boolean(available);
   }
 
   /* ---- rendering ---- */
@@ -267,10 +333,14 @@ class ClimateProfileCard extends HTMLElement {
       model.hvacModes.join(","),
       model.fanModes.join(","),
       model.swingModes.join(","),
-      Boolean(model.fan),
-      Boolean(model.display),
-      Boolean(model.silent),
+      // A value added, removed, renamed or repointed changes the controls, so
+      // the card has to be rebuilt rather than repainted.
+      model.additional
+        .map((v) => `${v.id}:${v.name}:${v.kind}:${Boolean(v.state)}`)
+        .join("|"),
+      (this._config.hide || []).join(","),
       this._config.profile_layout,
+      this._config.temperature_style,
     ].join("::");
 
     if (!this._built || signature !== this._signature) {
@@ -294,6 +364,57 @@ class ClimateProfileCard extends HTMLElement {
     this.shadowRoot.querySelector(".fatal span").textContent = message;
   }
 
+  /**
+   * The temperature, in one of two shapes. The bar is the compact default; the
+   * dial is what a thermostat card looks like, and keeps the two step buttons
+   * in the gap of its arc - a finger dragged around a ring rarely lands on the
+   * half degree somebody meant. Both drive the same code underneath.
+   */
+  _tempSection() {
+    const minus = `<button class="step" data-step="down" type="button" aria-label="Cooler">
+            <ha-icon icon="mdi:minus"></ha-icon>
+          </button>`;
+    const plus = `<button class="step" data-step="up" type="button" aria-label="Warmer">
+            <ha-icon icon="mdi:plus"></ha-icon>
+          </button>`;
+
+    if (this._config.temperature_style !== "dial") {
+      return `
+        <section class="temp" hidden>
+          ${minus}
+          <div class="readout">
+            <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
+            <div class="meter"><div class="meter-fill"></div></div>
+            <div class="ambient"></div>
+          </div>
+          ${plus}
+        </section>`;
+    }
+
+    return `
+        <section class="temp dial" hidden>
+          <div class="ring">
+            <svg class="arc" viewBox="0 0 100 100" role="slider" tabindex="0">
+              <path class="arc-track" d="${dialPath(0, 1)}"></path>
+              <path class="arc-fill" d="${dialPath(0, 0)}"></path>
+              <circle class="arc-current" r="1.7"></circle>
+              <circle class="arc-handle" r="4.6"></circle>
+            </svg>
+            <div class="ring-center">
+              <div class="ring-action"></div>
+              <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
+              <div class="ring-reading ring-current">
+                <ha-icon icon="mdi:thermometer"></ha-icon><span></span>
+              </div>
+              <div class="ring-reading ring-humidity">
+                <ha-icon icon="mdi:water-percent"></ha-icon><span></span>
+              </div>
+            </div>
+            <div class="ring-steps">${minus}${plus}</div>
+          </div>
+        </section>`;
+  }
+
   _build(model) {
     const root = this.shadowRoot;
     root.innerHTML = `
@@ -312,23 +433,24 @@ class ClimateProfileCard extends HTMLElement {
           </button>
         </header>
 
-        <section class="temp" hidden>
-          <button class="step" data-step="down" type="button" aria-label="Warmer">
-            <ha-icon icon="mdi:minus"></ha-icon>
-          </button>
-          <div class="readout">
-            <div class="value"><span class="degrees">–</span><span class="unit"></span></div>
-            <div class="meter"><div class="meter-fill"></div></div>
-            <div class="ambient"></div>
-          </div>
-          <button class="step" data-step="up" type="button" aria-label="Cooler">
-            <ha-icon icon="mdi:plus"></ha-icon>
-          </button>
-        </section>
+        ${this._tempSection()}
 
         <section class="profiles" role="group"></section>
 
+        <section class="unreached" role="status" hidden>
+          <div class="capture-main">
+            <ha-icon icon="mdi:alert-circle-outline"></ha-icon>
+            <div class="capture-text">
+              <span class="capture-title unreached-title"></span>
+              <span class="capture-values unreached-values"></span>
+            </div>
+          </div>
+        </section>
+
         <section class="capture" hidden>
+          <button class="capture-dismiss" type="button" title="">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
           <div class="capture-main">
             <ha-icon icon="mdi:pencil-outline"></ha-icon>
             <div class="capture-text">
@@ -373,12 +495,27 @@ class ClimateProfileCard extends HTMLElement {
       unit: root.querySelector(".unit"),
       meter: root.querySelector(".meter-fill"),
       ambient: root.querySelector(".ambient"),
+      // Only one of the two temperature sections is built, so everything
+      // below is null in the other one - every use is guarded.
+      arc: root.querySelector(".arc"),
+      arcFill: root.querySelector(".arc-fill"),
+      arcHandle: root.querySelector(".arc-handle"),
+      arcCurrent: root.querySelector(".arc-current"),
+      ringAction: root.querySelector(".ring-action"),
+      ringCurrent: root.querySelector(".ring-current"),
+      ringHumidity: root.querySelector(".ring-humidity"),
       profiles: root.querySelector(".profiles"),
       controls: root.querySelector(".controls"),
+      unreached: root.querySelector(".unreached"),
+      unreachedTitle: root.querySelector(".unreached-title"),
+      unreachedValues: root.querySelector(".unreached-values"),
       capture: root.querySelector(".capture"),
-      captureTitle: root.querySelector(".capture-title"),
-      captureValues: root.querySelector(".capture-values"),
+      // Scoped to their section: the unreached hint reuses the same layout
+      // classes and comes first, so a bare selector would find it instead.
+      captureTitle: root.querySelector(".capture .capture-title"),
+      captureValues: root.querySelector(".capture .capture-values"),
       captureActions: root.querySelector(".capture-actions"),
+      captureDismiss: root.querySelector(".capture-dismiss"),
       captureInto: root.querySelector(".capture-into"),
       captureNew: root.querySelector(".capture-new"),
       captureForm: root.querySelector(".capture-form"),
@@ -391,6 +528,30 @@ class ClimateProfileCard extends HTMLElement {
         this._nudgeTemperature(button.dataset.step === "up" ? 1 : -1)
       );
     });
+
+    const arc = this._el.arc;
+    if (arc) {
+      const drag = (event) => {
+        event.preventDefault();
+        this._dialTo(event);
+      };
+      arc.addEventListener("pointerdown", (event) => {
+        arc.setPointerCapture(event.pointerId);
+        drag(event);
+      });
+      arc.addEventListener("pointermove", (event) => {
+        if (arc.hasPointerCapture(event.pointerId)) drag(event);
+      });
+      // A ring that can only be dragged is a ring half the people cannot use.
+      arc.addEventListener("keydown", (event) => {
+        const by = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[
+          event.key
+        ];
+        if (!by) return;
+        event.preventDefault();
+        this._nudgeTemperature(by);
+      });
+    }
     this._el.pill.addEventListener("click", () => this._togglePower());
 
     this._wireCapture();
@@ -402,36 +563,52 @@ class ClimateProfileCard extends HTMLElement {
     const wrap = this._el.profiles;
     wrap.innerHTML = "";
     wrap.setAttribute("aria-label", this._t("Profiles"));
-    wrap.dataset.layout = this._layout(model.profiles.length);
+    const layout = this._layout(model.profiles.length);
+    wrap.dataset.layout = layout;
 
     const all = [...model.profiles, { ...model.custom, virtual: true }];
     this._profileButtons = new Map();
+    this._openProfileList(false);
+    this._profilePicker = null;
 
+    if (layout === "dropdown") {
+      this._buildProfileSelect(model, all);
+      return;
+    }
+
+    const iconsOnly = layout === "icons";
     for (const profile of all) {
+      // Custom has no icon of its own, and a row of icons has no room for a
+      // dashed box that says nothing: it joins only while it is what is on.
+      if (iconsOnly && profile.virtual && profile.id !== model.activeId) continue;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "profile";
+      button.className = iconsOnly ? "profile icon-only" : "profile";
       button.dataset.id = profile.id;
       if (profile.virtual) button.classList.add("virtual");
       const [r, g, b] = hexToRgb(profile.color);
       button.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
       button.style.setProperty("--profile-color", profile.color);
       button.style.setProperty("--profile-contrast", contrastColor(profile.color));
-      // An icon only when the user chose one - otherwise a dot in the
-      // profile's colour, which says more than the same filler icon six times.
-      const mark = profile.icon
-        ? `<ha-icon icon="${profile.icon}"></ha-icon>`
-        : `<span class="dot-mark" aria-hidden="true"></span>`;
       button.innerHTML = `
-        ${mark}
-        <span class="profile-name"></span>
+        ${profileMark(profile)}
+        ${iconsOnly ? "" : '<span class="profile-name"></span>'}
         <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
-      button.querySelector(".profile-name").textContent = profile.name;
+      if (iconsOnly) {
+        // The name is the label now - there is nothing else to go by, for a
+        // pointer or for a screen reader.
+        button.title = profile.name;
+        button.setAttribute("aria-label", profile.name);
+      } else {
+        button.querySelector(".profile-name").textContent = profile.name;
+      }
       if (profile.virtual) {
         button.disabled = true;
-        button.title = this._t(
-          "Shown when the current state matches none of your profiles."
-        );
+        if (!iconsOnly) {
+          button.title = this._t(
+            "Shown when the current state matches none of your profiles."
+          );
+        }
       } else {
         button.addEventListener("click", () => this._applyProfile(profile));
       }
@@ -443,6 +620,7 @@ class ClimateProfileCard extends HTMLElement {
   _wireCapture() {
     const el = this._el;
     el.captureInto.addEventListener("click", () => this._captureIntoProfile());
+    el.captureDismiss.addEventListener("click", () => this._dismissChange());
     el.captureNew.addEventListener("click", () => this._openNameField());
     el.captureCancel.addEventListener("click", () => this._closeNameField());
     el.captureForm.addEventListener("submit", (event) => {
@@ -470,9 +648,116 @@ class ClimateProfileCard extends HTMLElement {
     el.captureActions.hidden = false;
   }
 
+  /**
+   * The profiles as one dropdown instead of a wall of buttons - for a
+   * dashboard where the card is one of many.
+   *
+   * Not a ``<select>``: a native list cannot draw an icon or a colour, and
+   * those are how a profile is recognised at a glance. So it is a button and
+   * a list of buttons, with the same marks the grid uses, and the keyboard
+   * and screen reader behaviour spelled out by hand.
+   */
+  _buildProfileSelect(model, all) {
+    const picker = document.createElement("div");
+    picker.className = "picker";
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "picker-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-label", this._t("Profiles"));
+    trigger.innerHTML = `
+      <span class="picker-mark"></span>
+      <span class="picker-name"></span>
+      <ha-icon class="picker-arrow" icon="mdi:chevron-down"></ha-icon>`;
+
+    const list = document.createElement("div");
+    list.className = "picker-list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+
+    const options = new Map();
+    for (const profile of all) {
+      // Custom is a status, not something to pick: it is in the list while it
+      // is what the device is doing, and cannot be chosen.
+      if (profile.virtual && profile.id !== model.activeId) continue;
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "picker-option";
+      option.setAttribute("role", "option");
+      option.dataset.id = profile.id;
+      option.style.setProperty("--profile-color", profile.color);
+      option.innerHTML = `
+        ${profileMark(profile)}
+        <span class="picker-option-name"></span>
+        <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
+      option.querySelector(".picker-option-name").textContent = profile.name;
+      if (profile.virtual) {
+        option.disabled = true;
+      } else {
+        option.addEventListener("click", () => {
+          this._openProfileList(false);
+          this._applyProfile(profile);
+        });
+      }
+      list.appendChild(option);
+      options.set(profile.id, option);
+    }
+
+    trigger.addEventListener("click", () => this._openProfileList(list.hidden));
+    picker.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !list.hidden) {
+        event.stopPropagation();
+        this._openProfileList(false);
+        trigger.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      if (list.hidden) {
+        this._openProfileList(true);
+        return;
+      }
+      const usable = [...list.querySelectorAll(".picker-option:not(:disabled)")];
+      const at = usable.indexOf(this.shadowRoot.activeElement);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = at < 0 ? 0 : (at + step + usable.length) % usable.length;
+      usable[next]?.focus();
+    });
+
+    picker.append(trigger, list);
+    this._el.profiles.appendChild(picker);
+    this._profilePicker = { trigger, list, options };
+  }
+
+  /** Open or close the profile list, and listen for the click that ends it. */
+  _openProfileList(open) {
+    const picker = this._profilePicker;
+    if (!picker) return;
+    picker.list.hidden = !open;
+    picker.trigger.setAttribute("aria-expanded", open ? "true" : "false");
+
+    if (this._closePicker) {
+      window.removeEventListener("pointerdown", this._closePicker, true);
+      this._closePicker = null;
+    }
+    if (!open) return;
+    // A click anywhere else closes it - including on another card, which is
+    // why this hangs off the window rather than off the card.
+    this._closePicker = (event) => {
+      if (event.composedPath().includes(picker.list)) return;
+      if (event.composedPath().includes(picker.trigger)) return;
+      this._openProfileList(false);
+    };
+    window.addEventListener("pointerdown", this._closePicker, true);
+  }
+
   _layout(count) {
     const configured = this._config.profile_layout;
-    if (configured === "grid" || configured === "scroll") return configured;
+    if (["grid", "scroll", "dropdown", "icons"].includes(configured)) {
+      return configured;
+    }
     return count > 6 ? "scroll" : "grid";
   }
 
@@ -481,7 +766,7 @@ class ClimateProfileCard extends HTMLElement {
     wrap.innerHTML = "";
     this._controls = {};
 
-    if (this._visible("show_hvac", model.hvacModes.length)) {
+    if (this._visible("hvac_mode", model.hvacModes.length)) {
       wrap.appendChild(
         this._segmented({
           key: "hvac_mode",
@@ -499,7 +784,7 @@ class ClimateProfileCard extends HTMLElement {
     row.className = "row";
     let rowUsed = false;
 
-    if (this._visible("show_fan_mode", model.fanModes.length)) {
+    if (this._visible("fan_mode", model.fanModes.length)) {
       row.appendChild(
         this._picker({
           key: "fan_mode",
@@ -516,7 +801,7 @@ class ClimateProfileCard extends HTMLElement {
       );
       rowUsed = true;
     }
-    if (this._visible("show_swing", model.swingModes.length)) {
+    if (this._visible("swing_mode", model.swingModes.length)) {
       row.appendChild(
         this._picker({
           key: "swing_mode",
@@ -535,34 +820,39 @@ class ClimateProfileCard extends HTMLElement {
     }
     if (rowUsed) wrap.appendChild(row);
 
-    if (this._visible("show_fan", model.fan)) {
-      wrap.appendChild(this._slider(model));
-    }
-
+    // The additional values, in their configured order. Which control to draw
+    // follows from the kind, which follows from the entity's domain - nothing
+    // here knows what any single value means.
     const toggles = document.createElement("div");
     toggles.className = "row toggles";
     let togglesUsed = false;
-    if (this._visible("show_display", model.display)) {
-      toggles.appendChild(
-        this._toggle({
-          key: "display",
-          label: this._t("Display"),
-          icon: "mdi:television",
-          onToggle: (on) => this._setValue({ display: on }),
-        })
-      );
-      togglesUsed = true;
-    }
-    if (this._visible("show_silent", model.silent)) {
-      toggles.appendChild(
-        this._toggle({
-          key: "silent",
-          label: this._t("Silent"),
-          icon: "mdi:sleep",
-          onToggle: (on) => this._setValue({ silent: on }),
-        })
-      );
-      togglesUsed = true;
+
+    for (const value of model.additional) {
+      if (!this._visible(value.id, value.state)) continue;
+      if (value.kind === "number") {
+        wrap.appendChild(this._slider(value));
+      } else if (value.kind === "boolean") {
+        toggles.appendChild(
+          this._toggle({
+            key: value.id,
+            label: value.name,
+            icon: value.icon || "mdi:toggle-switch-outline",
+            onToggle: (on) => this._setValue({ [value.id]: on }),
+          })
+        );
+        togglesUsed = true;
+      } else if (value.kind === "option" && (value.options || []).length) {
+        wrap.appendChild(
+          this._picker({
+            key: value.id,
+            label: value.name,
+            icon: value.icon || FALLBACK_ICON,
+            options: value.options,
+            translate: (option) => this._prettify(option),
+            onSelect: (option) => this._setValue({ [value.id]: option }),
+          })
+        );
+      }
     }
     if (togglesUsed) wrap.appendChild(toggles);
   }
@@ -625,7 +915,7 @@ class ClimateProfileCard extends HTMLElement {
     return block;
   }
 
-  _slider(model) {
+  _slider(definition) {
     const block = document.createElement("div");
     block.className = "block";
     block.innerHTML = `
@@ -634,24 +924,28 @@ class ClimateProfileCard extends HTMLElement {
         <output class="slider-value"></output>
       </div>
       <input class="slider" type="range" />`;
-    block.querySelector(".label").textContent = this._t("Fan speed");
+    block.querySelector(".label").textContent = definition.name;
 
+    // The range belongs to the entity, not to us.
     const input = block.querySelector(".slider");
-    input.min = isNum(model.caps.fan_min) ? model.caps.fan_min : 0;
-    input.max = isNum(model.caps.fan_max) ? model.caps.fan_max : 100;
-    input.step = isNum(model.caps.fan_step) && model.caps.fan_step > 0 ? model.caps.fan_step : 1;
-    input.setAttribute("aria-label", this._t("Fan speed"));
+    input.min = isNum(definition.min) ? definition.min : 0;
+    input.max = isNum(definition.max) ? definition.max : 100;
+    input.step = isNum(definition.step) && definition.step > 0 ? definition.step : 1;
+    input.setAttribute("aria-label", definition.name);
 
     input.addEventListener("input", () => {
       const value = Number(input.value);
-      this._setPending("fan", value);
+      this._setPending(definition.id, value);
       this._paintSliderFill(input);
       block.querySelector(".slider-value").textContent = `${formatNumber(value, Number(input.step))}`;
-      clearTimeout(this._fanTimer);
-      this._fanTimer = setTimeout(() => this._setValue({ fan: value }), 500);
+      clearTimeout(this._sliderTimers[definition.id]);
+      this._sliderTimers[definition.id] = setTimeout(
+        () => this._setValue({ [definition.id]: value }),
+        500
+      );
     });
 
-    this._controls.fan = { block, input, kind: "slider" };
+    this._controls[definition.id] = { block, input, kind: "slider" };
     return block;
   }
 
@@ -710,8 +1004,7 @@ class ClimateProfileCard extends HTMLElement {
     el.pill.disabled = model.unavailable || !model.hvacModes.includes("off");
 
     // temperature
-    const showTemp =
-      this._config.show_temperature !== false && isNum(model.target);
+    const showTemp = this._visible("temperature", isNum(model.target));
     el.temp.hidden = !showTemp;
     if (showTemp) {
       el.degrees.textContent = formatNumber(model.target, model.caps.target_temp_step);
@@ -719,21 +1012,58 @@ class ClimateProfileCard extends HTMLElement {
       const min = isNum(model.caps.min_temp) ? model.caps.min_temp : 16;
       const max = isNum(model.caps.max_temp) ? model.caps.max_temp : 30;
       const ratio = max > min ? clamp((model.target - min) / (max - min), 0, 1) : 0;
-      el.meter.style.width = `${(ratio * 100).toFixed(1)}%`;
-      el.ambient.textContent = isNum(model.current)
-        ? `${this._t("Currently")} ${formatNumber(model.current, 0.1)} ${model.unit}${
-            model.action ? ` · ${this._localize(
-              `component.climate.entity_component._.state_attributes.hvac_action.state.${model.action}`,
-              model.action
-            )}` : ""
-          }`
+      if (el.meter) el.meter.style.width = `${(ratio * 100).toFixed(1)}%`;
+      if (el.arc) this._paintDial(model, ratio, min, max);
+      // What the device reports about the room. Each part only when there is
+      // something to show: a device without a humidity sensor must not print
+      // an empty "%". The bar puts them in one line, the dial in its middle.
+      const current = isNum(model.current)
+        ? `${formatNumber(model.current, 0.1)} ${model.unit}`
         : "";
+      const humidity = isNum(model.humidity)
+        ? `${formatNumber(model.humidity, 1)} %`
+        : "";
+      const action = model.action
+        ? this._localize(
+            `component.climate.entity_component._.state_attributes.hvac_action.state.${model.action}`,
+            model.action
+          )
+        : "";
+      if (el.ambient) {
+        const ambient = [];
+        if (current) ambient.push(`${this._t("Currently")} ${current}`);
+        if (humidity) ambient.push(humidity);
+        if (action) ambient.push(action);
+        el.ambient.textContent = ambient.join(" · ");
+      }
+      if (el.ringAction) {
+        el.ringAction.textContent = action;
+        setReading(el.ringCurrent, current);
+        setReading(el.ringHumidity, humidity);
+      }
       this.shadowRoot.querySelectorAll(".step").forEach((button) => {
         button.disabled = model.unavailable;
       });
     }
 
     // profiles
+    if (this._profilePicker) {
+      const active =
+        model.profiles.find((profile) => profile.id === model.activeId) ||
+        model.custom;
+      const { trigger, list, options } = this._profilePicker;
+      trigger.querySelector(".picker-name").textContent = active.name;
+      trigger.querySelector(".picker-mark").innerHTML = profileMark(active);
+      trigger.style.setProperty("--profile-color", active.color);
+      trigger.disabled = model.unavailable;
+      if (model.unavailable) this._openProfileList(false);
+      for (const [id, option] of options) {
+        const isActive = id === model.activeId;
+        option.classList.toggle("active", isActive);
+        option.setAttribute("aria-selected", isActive ? "true" : "false");
+      }
+      list.setAttribute("aria-label", this._t("Profiles"));
+    }
     for (const [id, button] of this._profileButtons) {
       const isActive = id === model.activeId;
       button.classList.toggle("active", isActive);
@@ -748,26 +1078,76 @@ class ClimateProfileCard extends HTMLElement {
     this._paintGroup("fan_mode", model.fanMode, model.unavailable || !on);
     this._paintGroup("swing_mode", model.swingMode, model.unavailable || !on);
 
-    const fan = this._controls.fan;
-    if (fan) {
-      const value = isNum(model.fanValue) ? model.fanValue : Number(fan.input.min);
-      if (document.activeElement !== fan.input) fan.input.value = value;
-      fan.input.disabled = model.unavailable;
-      fan.block.querySelector(".slider-value").textContent = formatNumber(
-        Number(fan.input.value),
-        Number(fan.input.step)
-      );
-      fan.input.setAttribute("aria-valuetext", `${fan.input.value}`);
-      this._paintSliderFill(fan.input);
+    for (const value of model.additional) {
+      const control = this._controls[value.id];
+      if (!control) continue;
+      const shown = this._value(value.id, value.value);
+      if (control.kind === "slider") {
+        const number = isNum(shown) ? shown : Number(control.input.min);
+        if (document.activeElement !== control.input) control.input.value = number;
+        control.input.disabled = model.unavailable;
+        control.block.querySelector(".slider-value").textContent = formatNumber(
+          Number(control.input.value),
+          Number(control.input.step)
+        );
+        control.input.setAttribute("aria-valuetext", `${control.input.value}`);
+        this._paintSliderFill(control.input);
+      } else if (control.kind === "toggle") {
+        this._paintToggle(value.id, shown, model.unavailable);
+      } else {
+        this._paintGroup(value.id, shown, model.unavailable);
+      }
     }
 
-    this._paintToggle("display", this._value("display", model.displayOn), model.unavailable);
-    this._paintToggle("silent", this._value("silent", model.silentOn), model.unavailable);
-
+    this._paintUnreached(model);
     this._paintCapture(model);
 
     el.progress.classList.toggle("busy", Boolean(model.applying));
     el.card.setAttribute("aria-busy", model.applying ? "true" : "false");
+  }
+
+  /**
+   * Says that a profile was applied but did not take, and which of its values
+   * the device did not keep.
+   *
+   * Only a report, no button: the likely cause is two values of the profile
+   * contradicting each other on the device, and only the user knows which of
+   * the two was meant. Offering to write the result into the profile would be
+   * the wrong answer half of the time.
+   */
+  _paintUnreached(model) {
+    const el = this._el;
+    const report = model.attrs.unreached;
+    const show = Boolean(report) && !model.unavailable;
+    el.unreached.hidden = !show;
+    if (!show) return;
+
+    el.unreachedTitle.textContent = `${report.profile} ${this._t("not reached")}`;
+    el.unreachedValues.textContent = Object.entries(report.values || {})
+      .map(([key, { wanted, actual }]) => {
+        const label = CLIMATE_LABELS[key]
+          ? this._t(CLIMATE_LABELS[key])
+          : (model.additional.find((item) => item.id === key) || {}).name || key;
+        const show = (value) => this._valueText(key, value);
+        return `${label}: ${show(actual)} ${this._t("instead of")} ${show(wanted)}`;
+      })
+      .join(" · ");
+  }
+
+  /** A stored value the way the controls show it. */
+  _valueText(key, value) {
+    if (value === null || value === undefined) return "–";
+    if (key === "hvac_mode") {
+      return this._localize(`component.climate.entity_component._.state.${value}`, value);
+    }
+    if (key === "fan_mode" || key === "swing_mode") {
+      return this._localize(
+        `component.climate.entity_component._.state_attributes.${key}.state.${value}`,
+        value
+      );
+    }
+    if (value === "on" || value === "off") return this._t(value === "on" ? "On" : "Off");
+    return typeof value === "number" ? String(value) : this._prettify(String(value));
   }
 
   /**
@@ -780,7 +1160,12 @@ class ClimateProfileCard extends HTMLElement {
   _paintCapture(model) {
     const el = this._el;
     const changed = model.changed || [];
-    const show = changed.length > 0 && !model.unavailable;
+    const target = model.lastMatched;
+    // A profile that stores changes by itself asks nothing. The write is a
+    // few seconds away, so an offer here would be a question that answers
+    // itself - and "save as a new profile" is not what was asked for either.
+    const storesItself = Boolean(target && target.capture === "auto");
+    const show = changed.length > 0 && !model.unavailable && !storesItself;
     el.capture.hidden = !show;
     if (!show) {
       if (this._naming) this._closeNameField();
@@ -788,11 +1173,19 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     el.captureTitle.textContent = this._t("Changed by hand");
+    const dismiss = this._t("Do not store");
+    el.captureDismiss.title = dismiss;
+    el.captureDismiss.setAttribute("aria-label", dismiss);
+    // Changed values arrive as keys: four are the climate ones, the rest are
+    // ids only the definitions can name.
     el.captureValues.textContent = changed
-      .map((key) => this._t(VALUE_LABELS[key] || key))
+      .map((key) => {
+        if (CLIMATE_LABELS[key]) return this._t(CLIMATE_LABELS[key]);
+        const value = model.additional.find((item) => item.id === key);
+        return value ? value.name : key;
+      })
       .join(" · ");
 
-    const target = model.lastMatched;
     const protectedTarget = Boolean(target && target.protected);
     el.captureInto.hidden = !target || protectedTarget;
     if (target && !protectedTarget) {
@@ -852,7 +1245,59 @@ class ClimateProfileCard extends HTMLElement {
     );
   }
 
+  /** Move the arc, its handle and the dot marking the room's temperature. */
+  _paintDial(model, ratio, min, max) {
+    const el = this._el;
+    el.arcFill.setAttribute("d", dialPath(0, ratio));
+    const [hx, hy] = dialPoint(ratio);
+    el.arcHandle.setAttribute("cx", hx.toFixed(2));
+    el.arcHandle.setAttribute("cy", hy.toFixed(2));
+
+    const showsCurrent = isNum(model.current) && max > min;
+    el.arcCurrent.style.display = showsCurrent ? "" : "none";
+    if (showsCurrent) {
+      const [cx, cy] = dialPoint(clamp((model.current - min) / (max - min), 0, 1));
+      el.arcCurrent.setAttribute("cx", cx.toFixed(2));
+      el.arcCurrent.setAttribute("cy", cy.toFixed(2));
+    }
+
+    el.arc.setAttribute("aria-valuemin", String(min));
+    el.arc.setAttribute("aria-valuemax", String(max));
+    el.arc.setAttribute("aria-valuenow", String(model.target));
+    el.arc.setAttribute("aria-valuetext", `${model.target} ${model.unit}`);
+    el.arc.setAttribute("aria-disabled", model.unavailable ? "true" : "false");
+  }
+
   /* ---- actions ---- */
+
+  /** Where on the ring the pointer is, as a temperature. */
+  _dialTo(event) {
+    const model = this._model();
+    if (model.error || model.unavailable || !isNum(model.target)) return;
+
+    const box = this._el.arc.getBoundingClientRect();
+    const dx = event.clientX - (box.left + box.width / 2);
+    const dy = event.clientY - (box.top + box.height / 2);
+    // Clockwise from the top. The gap at the bottom is dead ground: a touch
+    // there belongs to whichever end of the range it is nearer to.
+    const degrees = clamp(
+      (Math.atan2(dx, -dy) * 180) / Math.PI,
+      -DIAL.span,
+      DIAL.span
+    );
+    const fraction = (degrees + DIAL.span) / (2 * DIAL.span);
+
+    const step = isNum(model.caps.target_temp_step) ? model.caps.target_temp_step : 0.5;
+    const min = isNum(model.caps.min_temp) ? model.caps.min_temp : 5;
+    const max = isNum(model.caps.max_temp) ? model.caps.max_temp : 35;
+    const next = clamp(
+      roundToStep(min + fraction * (max - min), step, min),
+      min,
+      max
+    );
+    if (next === model.target) return;
+    this._commitTemperature(next);
+  }
 
   _nudgeTemperature(direction) {
     const model = this._model();
@@ -866,11 +1311,15 @@ class ClimateProfileCard extends HTMLElement {
       max
     );
     if (next === model.target) return;
+    this._commitTemperature(next);
+  }
 
+  /** Show the new value at once and tell the device about it in a moment. */
+  _commitTemperature(next) {
     this._setPending("temperature", next);
     this._update();
 
-    // Coalesce rapid taps into one service call.
+    // Coalesce rapid taps - and every step of a drag - into one service call.
     clearTimeout(this._tempTimer);
     this._tempTimer = setTimeout(() => this._setValue({ temperature: next }), 600);
   }
@@ -891,6 +1340,11 @@ class ClimateProfileCard extends HTMLElement {
 
   async _captureIntoProfile() {
     await this._call("capture_profile", {});
+  }
+
+  /** Drop the offer without storing anything - what the timeout also does. */
+  async _dismissChange() {
+    await this._call("dismiss_change", {});
   }
 
   async _saveAsNewProfile(name) {
@@ -972,24 +1426,40 @@ class ClimateProfileCard extends HTMLElement {
   }
 }
 
-const VALUE_LABELS = {
+//: The four values Home Assistant defines. Everything else is named by the
+//: user, which is why it is not in here.
+const CLIMATE_LABELS = {
   hvac_mode: "Mode",
   temperature: "Temperature",
   swing_mode: "Swing",
   fan_mode: "Fan mode",
-  fan: "Fan speed",
-  display: "Display",
-  silent: "Silent",
 };
+
+/**
+ * The climate values this device actually has, read from the sensor's own
+ * attributes - the same ones the card draws from, so the editor cannot offer
+ * a switch for a control that never appears. A radiator thermostat has no fan
+ * and no swing; the additional values were always read this way, these four
+ * were not.
+ */
+function climateKeys(attrs, hass) {
+  const caps = attrs.capabilities || {};
+  const entities = attrs.entities || {};
+  const climate =
+    hass && entities.climate ? hass.states[entities.climate] : null;
+  const keys = [];
+  if (climate && isNum(climate.attributes.temperature)) keys.push("temperature");
+  if ((caps.hvac_modes || []).length) keys.push("hvac_mode");
+  if ((caps.fan_modes || []).length) keys.push("fan_mode");
+  if ((caps.swing_modes || []).length) keys.push("swing_mode");
+  return keys;
+}
 
 const CARD_DE = {
   Profiles: "Profile",
   Mode: "Modus",
   "Fan mode": "Lüftermodus",
   Swing: "Swing",
-  "Fan speed": "Lüftergeschwindigkeit",
-  Display: "Anzeige",
-  Silent: "Flüstermodus",
   On: "An",
   Off: "Aus",
   Currently: "Aktuell",
@@ -998,6 +1468,9 @@ const CARD_DE = {
   "Turn off": "Ausschalten",
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
   "Changed by hand": "Von Hand geändert",
+  "Do not store": "Nicht speichern",
+  "not reached": "nicht erreicht",
+  "instead of": "statt",
   "Save into": "Übernehmen in",
   "New profile": "Neues Profil",
   "Name of the profile": "Name des Profils",
@@ -1019,6 +1492,8 @@ const STYLES = `
   --cp-surface: var(--card-background-color, #fff);
   --cp-text: var(--primary-text-color, #1f2933);
   --cp-muted: var(--secondary-text-color, #6b7280);
+  /* Home Assistant's warning colour as RGB, for tinted backgrounds. */
+  --cp-warning-rgb: 255, 166, 0;
   --cp-line: var(--divider-color, rgba(127, 127, 127, 0.25));
   --cp-fill: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
   --accent-color: var(--primary-color, #03a9f4);
@@ -1035,16 +1510,6 @@ ha-card {
   gap: var(--cp-gap);
   border-radius: var(--cp-radius);
   color: var(--cp-text);
-}
-
-ha-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 140px;
-  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.16), transparent 85%);
-  pointer-events: none;
-  transition: background 320ms ease;
 }
 
 ha-card > * { position: relative; }
@@ -1163,6 +1628,7 @@ ha-card.unavailable { opacity: 0.6; }
 .pill.on .dot { opacity: 1; }
 
 /* temperature */
+.temp[hidden] { display: none; }
 .temp {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -1214,6 +1680,86 @@ ha-card.unavailable { opacity: 0.6; }
 }
 .ambient { font-size: 0.78rem; color: var(--cp-muted); min-height: 1.1em; }
 
+/* the dial */
+.temp.dial { display: block; padding: 8px 4px 0; }
+.ring {
+  position: relative;
+  width: min(268px, 86%);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  background: radial-gradient(
+    circle at 50% 48%,
+    rgba(var(--accent-rgb), 0.1),
+    transparent 62%
+  );
+}
+.arc {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Without this the browser scrolls the dashboard instead of turning the
+     dial - the one line that decides whether it works on a phone. */
+  touch-action: none;
+  cursor: pointer;
+  outline: none;
+}
+.arc-track {
+  fill: none;
+  stroke: var(--cp-fill);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.arc-fill {
+  fill: none;
+  stroke: var(--accent-color);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke 260ms ease;
+}
+.arc-current { fill: var(--cp-muted); }
+.arc-handle {
+  fill: var(--cp-surface);
+  stroke: var(--accent-color);
+  stroke-width: 2.4;
+}
+.arc:focus-visible .arc-handle { stroke-width: 4; }
+.ring-center {
+  position: absolute;
+  inset: 24% 20% 28%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+}
+.ring-center .value { font-size: 2.6rem; }
+.ring-action {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--cp-muted);
+  min-height: 1.1em;
+}
+.ring-reading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--cp-muted);
+}
+.ring-reading:first-of-type { margin-top: 6px; }
+.ring-reading ha-icon { --mdc-icon-size: 15px; width: 15px; height: 15px; }
+.ring-steps {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+}
+.dial .step { width: 46px; height: 46px; border-radius: 16px; }
+
 /* profiles */
 .profiles { display: grid; gap: 8px; }
 .profiles[data-layout="grid"] {
@@ -1228,6 +1774,116 @@ ha-card.unavailable { opacity: 0.6; }
   scrollbar-width: thin;
 }
 .profiles[data-layout="scroll"] .profile { scroll-snap-align: start; }
+
+/* the icons layout: one row, the name only as a label */
+.profiles[data-layout="icons"] {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+.profile.icon-only {
+  min-height: 0;
+  padding: 12px 6px;
+  gap: 0;
+}
+.profile.icon-only ha-icon { --mdc-icon-size: 24px; }
+/* No check mark in here: there is one icon in the button and the mark lands
+   on top of it. The filled button is what says "this one is on" - and
+   aria-pressed says it where no shape is seen at all. */
+/* ".profile.active .check" comes later and is just as specific, so this has
+   to out-weigh it rather than merely contradict it. */
+.profile.icon-only.active .check,
+.profile.icon-only .check { display: none; }
+.profile.icon-only .dot-mark { width: 14px; height: 14px; margin: 5px 0; }
+
+/* the dropdown layout */
+.profiles[data-layout="dropdown"] { display: block; }
+.picker { position: relative; }
+.picker-trigger,
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--cp-text);
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.picker-trigger {
+  padding: 12px 12px 12px 14px;
+  border-color: var(--cp-line);
+  background: var(--cp-fill);
+  font-weight: 500;
+}
+.picker-trigger .picker-name { flex: 1; min-width: 0; }
+.picker-arrow {
+  --mdc-icon-size: 20px;
+  color: var(--cp-muted);
+  flex: none;
+}
+.picker-trigger[aria-expanded="true"] .picker-arrow { transform: rotate(180deg); }
+.picker-trigger:disabled { opacity: 0.6; cursor: default; }
+.picker-list[hidden] { display: none; }
+/* In the flow, not floating above it: an overlay is at the mercy of whoever
+   clips the card - a theme that hides ha-card's overflow, a view that crops
+   it - and a list cut off at the card's edge is worse than one that pushes
+   the rest down for as long as it is open. (No backticks in here: the whole
+   stylesheet is one template literal.) */
+.picker-list {
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  margin-top: 6px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--cp-line);
+  border-radius: 16px;
+  background: var(--cp-surface);
+}
+.picker-option { padding: 10px 10px 10px 12px; }
+.picker-option .picker-option-name { flex: 1; min-width: 0; }
+.picker-option:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.1); }
+.picker-option.active { background: rgba(var(--accent-rgb), 0.14); font-weight: 600; }
+.picker-option:disabled { color: var(--cp-muted); cursor: default; }
+.picker-option .check { display: none; }
+.picker-option.active .check {
+  display: block;
+  --mdc-icon-size: 18px;
+  color: var(--profile-color, var(--accent-color));
+}
+.picker-trigger ha-icon,
+.picker-option ha-icon {
+  --mdc-icon-size: 20px;
+  flex: none;
+  color: var(--profile-color);
+}
+.picker-trigger .picker-arrow { color: var(--cp-muted); }
+/* The mark sits in a span of its own, and an inline span gives a dot no box
+   to be 12px in - the rows get theirs from being flex items. */
+.picker-mark { display: flex; flex: none; align-items: center; }
+/* The grid draws its dot with a halo around it; in a row of text that would
+   only make the line taller. */
+.picker-trigger .dot-mark,
+.picker-option .dot-mark {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--profile-color);
+  box-shadow: none;
+}
+.picker-trigger:focus-visible,
+.picker-option:focus-visible {
+  outline: 2px solid var(--profile-color, var(--accent-color));
+  outline-offset: -2px;
+}
 
 .profile {
   position: relative;
@@ -1311,12 +1967,14 @@ ha-card.unavailable { opacity: 0.6; }
 /* capture offer */
 /* Every one of these is a flex container, and "display" beats the "hidden"
    attribute - so each needs its own [hidden] rule. */
+.unreached[hidden],
 .capture[hidden],
 .capture-actions[hidden],
 .capture-form[hidden],
 .capture-into[hidden] { display: none; }
 
 .capture {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1326,6 +1984,35 @@ ha-card.unavailable { opacity: 0.6; }
   border-radius: 14px;
   background: rgba(var(--accent-rgb), 0.06);
 }
+/* Same layout as the capture bar, but in the warning colour: this is not an
+   offer, it is a report that something did not happen. */
+.unreached {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--cp-warning-rgb), 0.55);
+  border-radius: 14px;
+  background: rgba(var(--cp-warning-rgb), 0.08);
+}
+.unreached .capture-main > ha-icon { color: var(--warning-color, #ffa600); }
+.capture-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--cp-muted);
+  cursor: pointer;
+}
+.capture-dismiss:hover { background: rgba(var(--accent-rgb), 0.12); }
+.capture-dismiss ha-icon { --mdc-icon-size: 16px; }
 .capture-main {
   display: flex;
   align-items: center;
@@ -1598,29 +2285,92 @@ class ClimateProfileCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    if (this._form) {
+      this._form.hass = hass;
+      this._render();
+    }
+  }
+
+  /**
+   * The switches are built from the sensor's own definitions, so a value the
+   * user added shows up here by itself. They are stored the other way round -
+   * as the list of what to hide - so a value added later is visible without
+   * every dashboard having to be edited.
+   */
+  _values() {
+    const entity = this._config && this._config.entity;
+    const state = entity && this._hass ? this._hass.states[entity] : null;
+    const attrs = state ? state.attributes || {} : {};
+    const climate = climateKeys(attrs, this._hass).map((key) => [
+      key,
+      CLIMATE_LABELS[key],
+    ]);
+    const additional = (attrs.additional_values || [])
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((value) => [value.id, value.name]);
+    return [...climate, ...additional];
+  }
+
+  _schema() {
+    return [
+      ...SCHEMA,
+      {
+        type: "grid",
+        name: "",
+        schema: this._values().map(([key]) => ({
+          name: `show_${key}`,
+          selector: { boolean: {} },
+        })),
+      },
+    ];
+  }
+
+  /** Turn the stored hide list into the switches the form shows. */
+  _data() {
+    const hide = Array.isArray(this._config.hide) ? this._config.hide : [];
+    const data = { ...this._config };
+    delete data.hide;
+    for (const [key] of this._values()) data[`show_${key}`] = !hide.includes(key);
+    return data;
   }
 
   _render() {
-    if (this._form) {
-      this._form.data = this._config;
-      return;
+    const labels = new Map(this._values());
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.hass = this._hass;
+      this._form.computeLabel = (schema) => {
+        if (EDITOR_LABELS[schema.name]) return EDITOR_LABELS[schema.name];
+        const key = String(schema.name).replace(/^show_/, "");
+        return labels.get(key) || schema.name;
+      };
+      this._form.addEventListener("value-changed", (event) => {
+        const value = { ...event.detail.value };
+        const offered = this._values().map(([key]) => key);
+        // What is not on offer keeps whatever was decided about it. An entity
+        // that is away for a moment takes its switch with it, and editing the
+        // name must not quietly unhide the value along with it.
+        const hide = (Array.isArray(this._config.hide) ? this._config.hide : [])
+          .filter((key) => !offered.includes(key));
+        for (const key of offered) {
+          if (value[`show_${key}`] === false) hide.push(key);
+          delete value[`show_${key}`];
+        }
+        if (hide.length) value.hide = hide;
+        else delete value.hide;
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: value },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+      this.appendChild(this._form);
     }
-    this._form = document.createElement("ha-form");
-    this._form.hass = this._hass;
-    this._form.data = this._config;
-    this._form.schema = SCHEMA;
-    this._form.computeLabel = (schema) => EDITOR_LABELS[schema.name] || schema.name;
-    this._form.addEventListener("value-changed", (event) => {
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: event.detail.value },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    });
-    this.appendChild(this._form);
+    this._form.schema = this._schema();
+    this._form.data = this._data();
   }
 }
 
@@ -1632,6 +2382,18 @@ const SCHEMA = [
   },
   { name: "name", selector: { text: {} } },
   {
+    name: "temperature_style",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "bar", label: "Bar" },
+          { value: "dial", label: "Dial" },
+        ],
+      },
+    },
+  },
+  {
     name: "profile_layout",
     selector: {
       select: {
@@ -1639,23 +2401,12 @@ const SCHEMA = [
         options: [
           { value: "auto", label: "Auto" },
           { value: "grid", label: "Grid" },
+          { value: "dropdown", label: "Dropdown" },
+          { value: "icons", label: "Icons only" },
           { value: "scroll", label: "Scroll" },
         ],
       },
     },
-  },
-  {
-    type: "grid",
-    name: "",
-    schema: [
-      { name: "show_temperature", selector: { boolean: {} } },
-      { name: "show_hvac", selector: { boolean: {} } },
-      { name: "show_fan_mode", selector: { boolean: {} } },
-      { name: "show_swing", selector: { boolean: {} } },
-      { name: "show_fan", selector: { boolean: {} } },
-      { name: "show_display", selector: { boolean: {} } },
-      { name: "show_silent", selector: { boolean: {} } },
-    ],
   },
 ];
 
@@ -1663,13 +2414,7 @@ const EDITOR_LABELS = {
   entity: "Climate profile sensor",
   name: "Name (optional)",
   profile_layout: "Profile layout",
-  show_temperature: "Temperature",
-  show_hvac: "Mode",
-  show_fan_mode: "Fan mode",
-  show_swing: "Swing",
-  show_fan: "Fan speed",
-  show_display: "Display",
-  show_silent: "Silent mode",
+  temperature_style: "Temperature control",
 };
 
 /* -------------------------------------------------------------------------

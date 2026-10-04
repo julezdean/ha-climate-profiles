@@ -14,20 +14,52 @@ DOMAIN: Final = "climate_profiles"
 # --- config entry data -----------------------------------------------------
 
 CONF_CLIMATE_ENTITY: Final = "climate_entity"
-CONF_FAN_ENTITY: Final = "fan_entity"
-CONF_DISPLAY_ENTITY: Final = "display_entity"
-CONF_SILENT_ENTITY: Final = "silent_entity"
+
+#: The additional values a config entry drives, each backed by an entity of the
+#: user's choosing. Lives in the entry's options, not its data: unlike the
+#: climate entity it is preference rather than identity.
+CONF_ADDITIONAL: Final = "additional_values"
+
+CONF_ADDITIONAL_ID: Final = "id"
+CONF_ADDITIONAL_NAME: Final = "name"
+CONF_ADDITIONAL_ENTITY: Final = "entity"
+CONF_ADDITIONAL_ICON: Final = "icon"
+CONF_ADDITIONAL_ORDER: Final = "order"
+
+#: The order in which values are applied - and in which the card shows the
+#: additional ones. One list over one key space: the climate keys and the ids of
+#: the additional values, mixed. ``hvac_mode`` is not in it: it always goes
+#: first, because most devices ignore everything else while they are off.
+CONF_VALUE_ORDER: Final = "value_order"
+
 
 # --- config entry options --------------------------------------------------
 
 CONF_PROFILES: Final = "profiles"
 CONF_CUSTOM_NAME: Final = "custom_profile_name"
+CONF_CUSTOM_COLOR: Final = "custom_profile_color"
+CONF_CUSTOM_ICON: Final = "custom_profile_icon"
 
 CONF_PROFILE_ID: Final = "id"
 CONF_PROFILE_NAME: Final = "name"
 CONF_PROFILE_COLOR: Final = "color"
 CONF_PROFILE_ICON: Final = "icon"
 CONF_PROFILE_VALUES: Final = "values"
+#: Whether this profile may become active just because the state fits it. Off,
+#: it is active only while it is the one that was selected - which is what lets
+#: two profiles hold the same values.
+CONF_PROFILE_DETECT: Final = "detect"
+
+#: What happens to a manual change while this profile is active. One question,
+#: one answer - write protection and automatic capture used to be two settings
+#: in two places that could contradict each other.
+CONF_PROFILE_CAPTURE: Final = "capture"
+CAPTURE_ASK: Final = "ask"
+CAPTURE_AUTO: Final = "auto"
+CAPTURE_NEVER: Final = "never"
+CAPTURE_MODES: Final[tuple[str, ...]] = (CAPTURE_ASK, CAPTURE_AUTO, CAPTURE_NEVER)
+
+#: Read from profiles stored by 1.x and the 2.0 betas.
 CONF_PROFILE_PROTECTED: Final = "protected"
 
 # --- profile value keys ----------------------------------------------------
@@ -36,35 +68,45 @@ VALUE_HVAC_MODE: Final = "hvac_mode"
 VALUE_TEMPERATURE: Final = "temperature"
 VALUE_SWING_MODE: Final = "swing_mode"
 VALUE_FAN_MODE: Final = "fan_mode"
-VALUE_FAN: Final = "fan"
-VALUE_DISPLAY: Final = "display"
-VALUE_SILENT: Final = "silent"
 
-#: Every supported key, in the order in which the values are applied.
-#: ``hvac_mode`` goes first because most devices ignore everything else while
-#: they are off - this mirrors the behaviour of the original YAML script.
-VALUE_KEYS: Final[tuple[str, ...]] = (
+#: The keys that live on the climate entity itself, in the order in which they
+#: are applied. ``hvac_mode`` goes first because most devices ignore everything
+#: else while they are off - this mirrors the original YAML script. Additional
+#: values are applied after these, in their configured order.
+CLIMATE_KEYS: Final[tuple[str, ...]] = (
     VALUE_HVAC_MODE,
     VALUE_TEMPERATURE,
     VALUE_SWING_MODE,
     VALUE_FAN_MODE,
-    VALUE_FAN,
-    VALUE_DISPLAY,
-    VALUE_SILENT,
 )
 
-#: Keys that are only usable when the matching optional entity is configured.
-KEY_REQUIRES_ENTITY: Final[dict[str, str]] = {
-    VALUE_FAN: CONF_FAN_ENTITY,
-    VALUE_DISPLAY: CONF_DISPLAY_ENTITY,
-    VALUE_SILENT: CONF_SILENT_ENTITY,
+# --- what a value is -------------------------------------------------------
+
+#: How a value is compared, stored and written. Derived from the domain of the
+#: entity behind it, never hard coded per key.
+KIND_NUMBER: Final = "number"
+KIND_BOOLEAN: Final = "boolean"
+KIND_OPTION: Final = "option"
+
+#: The domains an additional value may point at: those whose state is a single
+#: value. A ``light`` would have to answer what "equal" means - brightness?
+#: colour? - and every rule in ``matching`` would have to carry that answer.
+ADDITIONAL_DOMAINS: Final[dict[str, str]] = {
+    "number": KIND_NUMBER,
+    "input_number": KIND_NUMBER,
+    "switch": KIND_BOOLEAN,
+    "input_boolean": KIND_BOOLEAN,
+    "select": KIND_OPTION,
+    "input_select": KIND_OPTION,
 }
 
-BOOLEAN_KEYS: Final[frozenset[str]] = frozenset({VALUE_DISPLAY, VALUE_SILENT})
-NUMERIC_KEYS: Final[frozenset[str]] = frozenset({VALUE_TEMPERATURE, VALUE_FAN})
-STRING_KEYS: Final[frozenset[str]] = frozenset(
-    {VALUE_HVAC_MODE, VALUE_SWING_MODE, VALUE_FAN_MODE}
-)
+#: The kind of each climate key. These four are given by Home Assistant.
+CLIMATE_KINDS: Final[dict[str, str]] = {
+    VALUE_HVAC_MODE: KIND_OPTION,
+    VALUE_TEMPERATURE: KIND_NUMBER,
+    VALUE_SWING_MODE: KIND_OPTION,
+    VALUE_FAN_MODE: KIND_OPTION,
+}
 
 # --- the virtual "custom" profile -----------------------------------------
 
@@ -78,6 +120,14 @@ DEFAULT_PROFILE_COLOR: Final = "#03a9f4"
 # --- attributes ------------------------------------------------------------
 
 ATTR_ACTIVE_PROFILE: Final = "active_profile"
+
+#: A profile that was applied but did not take: which one, and which of its
+#: values the device did not keep.
+ATTR_UNREACHED: Final = "unreached"
+
+#: The definitions of the additional values, so the card can label and draw
+#: what it otherwise only sees as ids.
+ATTR_ADDITIONAL: Final = "additional_values"
 ATTR_ACTIVE_PROFILE_ID: Final = "active_profile_id"
 ATTR_ACTIVE_PROFILE_COLOR: Final = "active_profile_color"
 ATTR_PROFILES: Final = "profiles"
@@ -99,6 +149,7 @@ ATTR_CHANGED_VALUES: Final = "changed_values"
 SERVICE_APPLY_PROFILE: Final = "apply_profile"
 SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
+SERVICE_DISMISS_CHANGE: Final = "dismiss_change"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
 
 # --- tuning ----------------------------------------------------------------
@@ -110,3 +161,29 @@ RECALC_DEBOUNCE_SECONDS: Final = 0.4
 
 #: Smallest difference that still counts as "a different value" for floats.
 FLOAT_EPSILON: Final = 0.05
+
+# --- did the profile take? -------------------------------------------------
+
+#: After a profile is applied, the device is given this long without any state
+#: change before the result is judged. PROVISIONAL: set from measurements on a
+#: real device, see the debug log of the coordinator.
+REACH_QUIET_SECONDS: Final = 3.0
+#: ... but never longer than this after the last call, so a device that keeps
+#: reporting does not postpone the verdict forever. PROVISIONAL as well.
+REACH_MAX_SECONDS: Final = 30.0
+
+#: How long the offer to capture a manual change stays up, counted from the
+#: last change. After that the reference point is dropped: the state is simply
+#: custom, the way it is after a restart. Every further change starts it over,
+#: so adjusting something in several steps keeps the offer alive.
+CAPTURE_TIMEOUT_SECONDS: Final = 60.0
+
+#: Where the selected profile is remembered across restarts. Not the config
+#: entry's options: writing those on every selection would run the options
+#: listener each time.
+SELECTION_STORAGE_VERSION: Final = 1
+SELECTION_STORAGE_KEY: Final = f"{DOMAIN}.selection"
+
+#: How long the state has to be quiet before a manual change is written into
+#: the active profile - otherwise every step of a slider lands in it.
+AUTO_CAPTURE_QUIET_SECONDS: Final = 3.0

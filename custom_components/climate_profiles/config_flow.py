@@ -1,10 +1,13 @@
 """Config and options flow.
 
-Home Assistant's config flows render one form at a time and have no widget for
-"a sortable list of nested objects", so profile management is modelled as a
-menu: pick what you want to do, fill in one form, come back. Ordering is done
-by re-picking the profiles in the wanted order (see ``async_step_reorder``),
-which is the closest native equivalent to drag & drop.
+Setup is one form. Afterwards there are two lists: the additional values and
+the profiles. Each is an object selector with ``multiple``, which Home
+Assistant renders as a sortable list - one row per entry, with a drag handle,
+a pencil and a bin - so adding, editing, ordering and deleting happen in one
+place instead of in four menu entries each. What a row carries is defined in
+:meth:`ClimateProfilesOptionsFlow._profile_fields` and ``_value_fields``; the
+id travels with the row, read only, because everything a profile stored hangs
+off it.
 """
 
 from __future__ import annotations
@@ -18,17 +21,15 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
-    BooleanSelector,
     ColorRGBSelector,
     EntitySelector,
     EntitySelectorConfig,
     IconSelector,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
+    ObjectSelector,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -37,46 +38,54 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    ADDITIONAL_DOMAINS,
+    CAPTURE_ASK,
+    CAPTURE_MODES,
+    CONF_ADDITIONAL,
+    CONF_ADDITIONAL_ENTITY,
+    CONF_ADDITIONAL_ICON,
+    CONF_ADDITIONAL_ID,
+    CONF_ADDITIONAL_NAME,
     CONF_CLIMATE_ENTITY,
+    CONF_CUSTOM_COLOR,
+    CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
-    CONF_DISPLAY_ENTITY,
-    CONF_FAN_ENTITY,
+    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
+    CONF_PROFILE_DETECT,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
-    CONF_PROFILE_PROTECTED,
     CONF_PROFILES,
-    CONF_SILENT_ENTITY,
+    CONF_VALUE_ORDER,
+    DEFAULT_CUSTOM_COLOR,
     DEFAULT_CUSTOM_NAME,
-    DEFAULT_PROFILE_COLOR,
     DOMAIN,
-    VALUE_DISPLAY,
-    VALUE_FAN,
+    KIND_NUMBER,
+    KIND_OPTION,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
-    VALUE_KEYS,
-    VALUE_SILENT,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
-from .matching import canonical_option
 from .models import (
+    AdditionalValue,
+    AdditionalValueSet,
     Capabilities,
     ClimateProfile,
     EntityMap,
     ProfileError,
     ProfileSet,
+    Vocabulary,
     color_to_rgb,
     new_profile_id,
+    new_value_id,
     normalise_color,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_CREATE_DEFAULTS = "create_default_profiles"
 CONF_ORDER = "order"
-CONF_CONFIRM = "confirm"
 CONF_SELECTED = "selected"
 
 ON_OFF_OPTIONS = ["on", "off"]
@@ -87,18 +96,200 @@ ON_OFF_OPTIONS = ["on", "off"]
 # ---------------------------------------------------------------------------
 
 
+#: What the fields of a row are called, and the climate keys with them. These
+#: are labels inside a selector, not form fields, so they cannot come from the
+#: translation files: a row mixes them with the user's own value names, which
+#: are literals by nature.
+_ROW_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "name": "Name",
+        "entity": "Entity",
+        "icon": "Icon",
+        "color": "Colour",
+        "detect": "Recognise this profile automatically",
+        "capture": "Changes by hand",
+        VALUE_HVAC_MODE: "Mode",
+        VALUE_TEMPERATURE: "Temperature",
+        VALUE_SWING_MODE: "Swing",
+        VALUE_FAN_MODE: "Fan mode",
+    },
+    "de": {
+        "name": "Name",
+        "entity": "Entität",
+        "icon": "Symbol",
+        "color": "Farbe",
+        "detect": "Dieses Profil automatisch erkennen",
+        "capture": "Änderungen von Hand",
+        VALUE_HVAC_MODE: "Modus",
+        VALUE_TEMPERATURE: "Temperatur",
+        VALUE_SWING_MODE: "Swing",
+        VALUE_FAN_MODE: "Lüftermodus",
+    },
+}
+
+
+class RowSelector(ObjectSelector):
+    """A sortable list of rows that carry an id the user never sees.
+
+    The stock validator refuses every key that is not a field, and the id is
+    deliberately not one: a field marked ``read_only`` is accepted by the
+    backend and ignored by the frontend's text selector, which drew the id as
+    an ordinary editable box. Left out of the fields it is invisible, and it
+    still survives every edit - the frontend hands the whole row to the edit
+    dialog, merges the fields back into it, and moves rows as whole objects.
+    So the id is taken off the rows before they are validated and put back
+    afterwards. Only a row added with the + button arrives without one.
+    """
+
+    def __init__(self, config: dict[str, Any], id_key: str) -> None:
+        """Remember which key of a row is the id."""
+        super().__init__(config)
+        self._id_key = id_key
+
+    def __call__(self, data: Any) -> Any:
+        """Validate the rows, ignoring the id each one carries."""
+        if not isinstance(data, list):
+            return super().__call__(data)
+
+        super().__call__(
+            [
+                {key: value for key, value in row.items() if key != self._id_key}
+                if isinstance(row, dict)
+                else row
+                for row in data
+            ]
+        )
+        return data
+
+
+def _value_row(value: AdditionalValue) -> dict[str, Any]:
+    """Return one additional value as a row of the list.
+
+    The id is in the row but in no field, so there is nothing to edit and
+    nothing to mistype. It survives all the same: the frontend hands the whole
+    row to the edit dialog and merges the fields back into it, moves rows as
+    whole objects, and only a row added with the button arrives without one.
+    (A field marked ``read_only`` would not do - the backend takes the option
+    and the frontend's text selector ignores it, so the id showed up as an
+    ordinary editable box.)
+
+    A field that is not set is left out rather than sent as ``None``: the
+    selectors validate what they are given, and ``None`` is not a string.
+    """
+    row = {
+        CONF_ADDITIONAL_NAME: value.name,
+        CONF_ADDITIONAL_ENTITY: value.entity,
+        CONF_ADDITIONAL_ICON: value.icon,
+        CONF_ADDITIONAL_ID: value.id,
+    }
+    return {key: item for key, item in row.items() if item is not None}
+
+
+def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
+    """Return one profile as a row of the list.
+
+    Only the values the entry still knows about are put back into the row: a
+    deleted additional value leaves its stored value alone, but there is no
+    field to show it in any more.
+    """
+    row: dict[str, Any] = {
+        key: value
+        for key, value in (
+            (CONF_PROFILE_NAME, profile.name),
+            (CONF_PROFILE_COLOR, color_to_rgb(profile.color)),
+            (CONF_PROFILE_ICON, profile.icon),
+            (CONF_PROFILE_DETECT, profile.detect),
+            (CONF_PROFILE_CAPTURE, profile.capture),
+            (CONF_PROFILE_ID, profile.id),
+        )
+        if value is not None
+    }
+    for spec in vocab:
+        if spec.key in profile.values:
+            row[spec.key] = profile.values[spec.key]
+    return row
+
+
+def _log_catch_alls(profiles: ProfileSet) -> None:
+    """Say which profiles are catch-alls for others.
+
+    A profile whose values are contained in another one matches whenever that
+    other one does. The more specific one wins the display, so the broader is
+    only ever shown when nothing narrower fits. That is deliberate - a profile
+    saying "heating" should lose against one that also names the temperature -
+    but it is worth knowing when you wonder why a profile rarely shows up.
+    """
+    for broad in profiles:
+        covered = [
+            narrow.name
+            for narrow in profiles
+            if narrow.id != broad.id
+            and len(narrow.values) > len(broad.values)
+            and all(
+                key in narrow.values and narrow.values[key] == value
+                for key, value in broad.values.items()
+            )
+        ]
+        if covered:
+            _LOGGER.warning(
+                "Profile %s is a catch-all for %s: it matches whenever they do, "
+                "so it is only shown when none of them fits",
+                broad.name,
+                ", ".join(covered),
+            )
+
+
+def device_candidates(
+    hass: HomeAssistant, entities: EntityMap
+) -> list[SelectOptionDict]:
+    """Return the siblings of the climate entity that could carry a value.
+
+    Everything that sits on the same Home Assistant device, in the domains
+    whose state is a single value, minus what is already configured. Diagnostic
+    entities are left out - a battery level or a link quality is not something
+    a profile sets - while configuration entities stay: a calibration offset is
+    a plausible thing to put into one.
+
+    Nothing is added automatically from this. A device that gains three
+    entities with a firmware update must not quietly gain three profile values.
+    """
+    registry = er.async_get(hass)
+    climate = registry.async_get(entities.climate)
+    if climate is None or climate.device_id is None:
+        return []
+
+    taken = set(entities.additional.entity_ids())
+    options: list[SelectOptionDict] = []
+    for entry in er.async_entries_for_device(registry, climate.device_id):
+        if entry.entity_id in taken or entry.disabled or entry.hidden:
+            continue
+        if entry.domain not in ADDITIONAL_DOMAINS:
+            continue
+        if entry.entity_category == EntityCategory.DIAGNOSTIC:
+            continue
+        state = hass.states.get(entry.entity_id)
+        label = (
+            (state.attributes.get("friendly_name") if state else None)
+            or entry.name
+            or entry.original_name
+            or entry.entity_id
+        )
+        options.append(SelectOptionDict(value=entry.entity_id, label=str(label)))
+    return sorted(options, key=lambda option: option["label"])
+
+
+def _float(raw: Any) -> float | None:
+    try:
+        return float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def read_capabilities(hass: HomeAssistant, entities: EntityMap) -> Capabilities:
-    """Read the supported values straight from the configured entities."""
+    """Read the supported values straight from the climate entity."""
     attrs: dict[str, Any] = {}
     if (climate := hass.states.get(entities.climate)) is not None:
         attrs = dict(climate.attributes)
-
-    fan_min = fan_max = None
-    fan_step = 1.0
-    if entities.fan and (number := hass.states.get(entities.fan)) is not None:
-        fan_min = _float(number.attributes.get("min"))
-        fan_max = _float(number.attributes.get("max"))
-        fan_step = _float(number.attributes.get("step")) or 1.0
 
     return Capabilities(
         hvac_modes=tuple(str(m) for m in attrs.get("hvac_modes") or ()),
@@ -107,17 +298,36 @@ def read_capabilities(hass: HomeAssistant, entities: EntityMap) -> Capabilities:
         min_temp=_float(attrs.get("min_temp")),
         max_temp=_float(attrs.get("max_temp")),
         temp_step=_float(attrs.get("target_temp_step")) or 0.5,
-        fan_min=fan_min,
-        fan_max=fan_max,
-        fan_step=fan_step,
     )
 
 
-def _float(raw: Any) -> float | None:
-    try:
-        return float(raw)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+def read_vocabulary(
+    hass: HomeAssistant,
+    entities: EntityMap,
+    order: list[str] | None = None,
+) -> Vocabulary:
+    """Read what an entry knows about, straight from its entities.
+
+    The limits of an additional value belong to its entity, not to us: a
+    number carries ``min``/``max``/``step``, a select carries ``options``.
+    """
+    specs: dict[str, dict[str, Any]] = {}
+    for value in entities.additional:
+        if (state := hass.states.get(value.entity)) is None:
+            continue
+        attrs = state.attributes
+        specs[value.id] = {
+            "min": _float(attrs.get("min")),
+            "max": _float(attrs.get("max")),
+            "step": _float(attrs.get("step")) or 1.0,
+            "options": tuple(str(o) for o in attrs.get("options") or ()),
+        }
+    return Vocabulary.build(
+        entities,
+        read_capabilities(hass, entities),
+        additional_specs=specs,
+        order=order,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -141,142 +351,16 @@ def _device_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     )
 
 
-def _optional_entities_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Return the schema for the optional helper entities.
-
-    All three are optional: a device without a fan number entity simply never
-    shows a fan slider, and profiles cannot define a ``fan`` value for it.
-    """
-    defaults = defaults or {}
-
-    def suggest(key: str) -> dict[str, Any]:
-        value = defaults.get(key)
-        return {"suggested_value": value} if value else {}
-
-    return vol.Schema(
-        {
-            vol.Optional(
-                CONF_FAN_ENTITY, description=suggest(CONF_FAN_ENTITY)
-            ): EntitySelector(EntitySelectorConfig(domain="number")),
-            vol.Optional(
-                CONF_DISPLAY_ENTITY, description=suggest(CONF_DISPLAY_ENTITY)
-            ): EntitySelector(EntitySelectorConfig(domain="switch")),
-            vol.Optional(
-                CONF_SILENT_ENTITY, description=suggest(CONF_SILENT_ENTITY)
-            ): EntitySelector(EntitySelectorConfig(domain="switch")),
-        }
-    )
-
-
-def _string_selector(options: tuple[str, ...]) -> Any:
-    """Return a dropdown of the device's own options, or free text if it has none."""
-    if not options:
-        return TextSelector()
-    return SelectSelector(
-        SelectSelectorConfig(
-            options=[
-                SelectOptionDict(value=option, label=option) for option in options
-            ],
-            mode=SelectSelectorMode.DROPDOWN,
-            custom_value=True,
-            sort=False,
-        )
-    )
-
-
-def _number_selector(
-    low: float | None, high: float | None, step: float, unit: str | None = None
-) -> NumberSelector:
-    """Return a number box (not a slider) so the field stays clearable."""
-    return NumberSelector(
-        NumberSelectorConfig(
-            min=low if low is not None else 0,
-            max=high if high is not None else 100,
-            step=step or 1,
-            mode=NumberSelectorMode.BOX,
-            unit_of_measurement=unit,
-        )
-    )
-
-
-def profile_schema(
-    caps: Capabilities,
-    entities: EntityMap,
-    profile: ClimateProfile | None = None,
-) -> vol.Schema:
-    """Build the form for one profile.
-
-    Every value field is optional and clearable: leaving it empty means "this
-    profile does not care about that value", which is what makes partial
-    profiles work. ``hvac_mode`` is the one required value, as a profile that
-    does not say what the device should do is rarely what anyone wants.
-    """
-    values = dict(profile.values) if profile else {}
-
-    def suggest(key: str) -> dict[str, Any]:
-        return {"suggested_value": values[key]} if key in values else {}
-
-    fields: dict[Any, Any] = {
-        vol.Required(
-            CONF_PROFILE_NAME,
-            description={"suggested_value": profile.name if profile else None},
-        ): TextSelector(),
-        vol.Required(
-            CONF_PROFILE_COLOR,
-            default=color_to_rgb(profile.color if profile else DEFAULT_PROFILE_COLOR),
-        ): ColorRGBSelector(),
-        vol.Optional(
-            CONF_PROFILE_ICON,
-            description={"suggested_value": profile.icon if profile else None},
-        ): IconSelector(),
-        vol.Required(
-            CONF_PROFILE_PROTECTED,
-            default=bool(profile.protected) if profile else False,
-        ): BooleanSelector(),
-        vol.Required(
-            VALUE_HVAC_MODE, description=suggest(VALUE_HVAC_MODE)
-        ): _string_selector(caps.hvac_modes),
-        vol.Optional(
-            VALUE_TEMPERATURE, description=suggest(VALUE_TEMPERATURE)
-        ): _number_selector(caps.min_temp, caps.max_temp, caps.temp_step, "°C"),
-    }
-
-    if caps.fan_modes or VALUE_FAN_MODE in values:
-        fields[vol.Optional(VALUE_FAN_MODE, description=suggest(VALUE_FAN_MODE))] = (
-            _string_selector(caps.fan_modes)
-        )
-    if caps.swing_modes or VALUE_SWING_MODE in values:
-        fields[
-            vol.Optional(VALUE_SWING_MODE, description=suggest(VALUE_SWING_MODE))
-        ] = _string_selector(caps.swing_modes)
-    if entities.fan:
-        fields[vol.Optional(VALUE_FAN, description=suggest(VALUE_FAN))] = (
-            _number_selector(caps.fan_min, caps.fan_max, caps.fan_step, "%")
-        )
-    for key, entity in (
-        (VALUE_DISPLAY, entities.display),
-        (VALUE_SILENT, entities.silent),
-    ):
-        if entity:
-            fields[vol.Optional(key, description=suggest(key))] = SelectSelector(
-                SelectSelectorConfig(
-                    options=ON_OFF_OPTIONS,
-                    mode=SelectSelectorMode.DROPDOWN,
-                    translation_key="on_off",
-                )
-            )
-
-    return vol.Schema(fields)
-
-
 def profile_from_input(
-    user_input: dict[str, Any], profile_id: str | None = None
+    user_input: dict[str, Any],
+    vocab: Vocabulary,
+    profile_id: str | None = None,
 ) -> ClimateProfile:
     """Turn a submitted profile form into a profile."""
     values = {
-        key: user_input[key]
-        for key in VALUE_KEYS
-        if key in user_input and user_input[key] not in (None, "")
+        spec.key: user_input[spec.key]
+        for spec in vocab
+        if spec.key in user_input and user_input[spec.key] not in (None, "")
     }
     return ClimateProfile(
         id=profile_id or new_profile_id(),
@@ -284,106 +368,9 @@ def profile_from_input(
         color=normalise_color(user_input.get(CONF_PROFILE_COLOR)),
         values=values,
         icon=user_input.get(CONF_PROFILE_ICON) or None,
-        protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
+        detect=bool(user_input.get(CONF_PROFILE_DETECT, True)),
+        capture=str(user_input.get(CONF_PROFILE_CAPTURE) or CAPTURE_ASK),
     )
-
-
-# ---------------------------------------------------------------------------
-# default profiles
-# ---------------------------------------------------------------------------
-
-
-def build_default_profiles(
-    caps: Capabilities, entities: EntityMap
-) -> list[ClimateProfile]:
-    """Build a starter set from what the device actually supports.
-
-    Anything the device does not advertise is left out instead of guessed, so
-    the generated profiles can really be matched and applied.
-    """
-    blueprint: list[tuple[str, str, dict[str, Any]]] = [
-        ("Aus", "#64748b", {VALUE_HVAC_MODE: "off"}),
-        (
-            "Away",
-            "#3b82f6",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 26,
-                VALUE_SWING_MODE: "off",
-                VALUE_FAN_MODE: "auto",
-                VALUE_DISPLAY: "off",
-                VALUE_SILENT: "off",
-            },
-        ),
-        (
-            "Komfort",
-            "#22c55e",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 24,
-                VALUE_SWING_MODE: "off",
-                VALUE_FAN_MODE: "auto",
-                VALUE_DISPLAY: "off",
-                VALUE_SILENT: "off",
-            },
-        ),
-        (
-            "Nacht",
-            "#8b5cf6",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 26,
-                VALUE_SWING_MODE: "off",
-                VALUE_DISPLAY: "off",
-                VALUE_SILENT: "on",
-            },
-        ),
-        (
-            "Max",
-            "#ef4444",
-            {
-                VALUE_HVAC_MODE: "cool",
-                VALUE_TEMPERATURE: 16,
-                VALUE_SWING_MODE: "vertical",
-                VALUE_FAN: 100,
-                VALUE_DISPLAY: "off",
-                VALUE_SILENT: "off",
-            },
-        ),
-    ]
-
-    profiles: list[ClimateProfile] = []
-    for name, color, raw_values in blueprint:
-        values: dict[str, Any] = {}
-        for key, value in raw_values.items():
-            if not entities.supports(key):
-                continue
-            if key in (VALUE_HVAC_MODE, VALUE_FAN_MODE, VALUE_SWING_MODE):
-                option = canonical_option(str(value), caps.options_for(key))
-                if option is None:
-                    continue
-                values[key] = option
-            elif key == VALUE_TEMPERATURE:
-                values[key] = _clamp(float(value), caps.min_temp, caps.max_temp)
-            elif key == VALUE_FAN:
-                values[key] = _clamp(float(value), caps.fan_min, caps.fan_max)
-            else:
-                values[key] = value
-
-        if VALUE_HVAC_MODE not in values:
-            continue
-        profiles.append(
-            ClimateProfile(id=new_profile_id(), name=name, color=color, values=values)
-        )
-    return profiles
-
-
-def _clamp(value: float, low: float | None, high: float | None) -> float:
-    if low is not None:
-        value = max(value, low)
-    if high is not None:
-        value = min(value, high)
-    return value
 
 
 # ---------------------------------------------------------------------------
@@ -413,52 +400,22 @@ class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(entity_id)
                 self._abort_if_unique_id_configured()
                 self._data = dict(user_input)
-                return await self.async_step_entities()
+                name = self._data.pop(CONF_NAME)
+                # No starter profiles: the blueprint was shaped like an air
+                # conditioner, and on a radiator thermostat it produced
+                # profiles that had to be fixed before they were any use.
+                # Adding one under Configure is a form away.
+                return self.async_create_entry(
+                    title=name,
+                    data=self._data,
+                    options={
+                        CONF_PROFILES: [],
+                        CONF_CUSTOM_NAME: DEFAULT_CUSTOM_NAME,
+                    },
+                )
 
         return self.async_show_form(
             step_id="user", data_schema=_device_schema(user_input), errors=errors
-        )
-
-    async def async_step_entities(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Step 2: the optional fan / display / silent entities."""
-        if user_input is not None:
-            self._data.update(
-                {key: value for key, value in user_input.items() if value}
-            )
-            return await self.async_step_profiles()
-
-        return self.async_show_form(
-            step_id="entities", data_schema=_optional_entities_schema()
-        )
-
-    async def async_step_profiles(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Step 3: optionally seed a starter set of profiles."""
-        if user_input is not None:
-            entities = EntityMap.from_config(self._data)
-            profiles: list[ClimateProfile] = []
-            if user_input.get(CONF_CREATE_DEFAULTS, True):
-                caps = read_capabilities(self.hass, entities)
-                profiles = build_default_profiles(caps, entities)
-
-            name = self._data.pop(CONF_NAME)
-            return self.async_create_entry(
-                title=name,
-                data=self._data,
-                options={
-                    CONF_PROFILES: [profile.as_dict() for profile in profiles],
-                    CONF_CUSTOM_NAME: DEFAULT_CUSTOM_NAME,
-                },
-            )
-
-        return self.async_show_form(
-            step_id="profiles",
-            data_schema=vol.Schema(
-                {vol.Required(CONF_CREATE_DEFAULTS, default=True): bool}
-            ),
         )
 
     @staticmethod
@@ -474,11 +431,7 @@ class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ClimateProfilesOptionsFlow(OptionsFlow):
-    """Manage entities, profiles and their order after setup."""
-
-    def __init__(self) -> None:
-        """Start with the stored profiles."""
-        self._editing: str | None = None
+    """Manage the additional values and the profiles after setup."""
 
     # -- helpers ------------------------------------------------------------
 
@@ -491,220 +444,377 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             return ProfileSet()
 
     @property
+    def _additional(self) -> AdditionalValueSet:
+        try:
+            return AdditionalValueSet.from_list(
+                self.config_entry.options.get(CONF_ADDITIONAL)
+            )
+        except ProfileError as err:  # pragma: no cover - defensive
+            _LOGGER.error("Stored additional values are invalid: %s", err)
+            return AdditionalValueSet()
+
+    @property
     def _entities(self) -> EntityMap:
-        return EntityMap.from_config(self.config_entry.data)
+        return EntityMap.from_config(self.config_entry.data, self._additional)
 
-    def _caps(self) -> Capabilities:
-        return read_capabilities(self.hass, self._entities)
-
-    def _profile_options(self) -> list[SelectOptionDict]:
-        names = self._profiles.display_names()
-        return [
-            SelectOptionDict(value=profile.id, label=names[profile.id])
-            for profile in self._profiles
-        ]
-
-    def _save(self, profiles: ProfileSet) -> ConfigFlowResult:
-        """Persist the profiles in the config entry's options."""
-        return self.async_create_entry(
-            data={
-                **self.config_entry.options,
-                CONF_PROFILES: profiles.as_list(),
-            }
+    def _vocab(self) -> Vocabulary:
+        return read_vocabulary(
+            self.hass,
+            self._entities,
+            list(self.config_entry.options.get(CONF_VALUE_ORDER) or []),
         )
 
-    # -- menu ---------------------------------------------------------------
+    def _order_options(self) -> list[SelectOptionDict]:
+        """Every value that can be moved, labelled - ``hvac_mode`` excluded.
+
+        Climate keys are labelled here rather than through the translation
+        files: the list mixes them with the user's own names, and a selector
+        translates either all of its options or none.
+        """
+        labels = self._labels()
+        names = {value.id: value.name for value in self._additional}
+        return [
+            SelectOptionDict(
+                value=spec.key, label=labels.get(spec.key) or names[spec.key]
+            )
+            for spec in self._vocab()
+            if spec.key != VALUE_HVAC_MODE and (spec.key in labels or spec.key in names)
+        ]
+
+    # -- the two lists ------------------------------------------------------
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show what can be changed."""
-        options = ["entities", "add_profile"]
-        if self._profiles:
-            options += ["edit_profile", "reorder", "delete_profile"]
-        options.append("custom_name")
-        return self.async_show_menu(step_id="init", menu_options=options)
+        """Show the two things an entry is made of."""
+        return self.async_show_menu(step_id="init", menu_options=["values", "profiles"])
 
-    # -- entities -----------------------------------------------------------
-
-    async def async_step_entities(
+    async def async_step_values(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Change the optional entities.
+        """One list of the additional values, plus the order they are written in.
 
-        These live in the entry's ``data`` (they are identity, not preference),
-        so they are updated separately from the options.
+        A row is a value; where it sits in the list is where it sits on the
+        card. The id travels with the row, read only, so renaming a value or
+        pointing it at a different entity leaves every profile that sets it
+        intact - a value added anew would get a new id and lose them.
         """
-        if user_input is not None:
-            # A cleared field is simply absent from user_input, so the optional
-            # entities are rebuilt from scratch instead of merged - otherwise
-            # clearing one would silently keep the old value.
-            data: dict[str, Any] = {
-                CONF_CLIMATE_ENTITY: self.config_entry.data[CONF_CLIMATE_ENTITY]
-            }
-            for key in (CONF_FAN_ENTITY, CONF_DISPLAY_ENTITY, CONF_SILENT_ENTITY):
-                if value := user_input.get(key):
-                    data[key] = value
-
-            self.hass.config_entries.async_update_entry(self.config_entry, data=data)
-            return self.async_create_entry(data=dict(self.config_entry.options))
-
-        return self.async_show_form(
-            step_id="entities",
-            data_schema=_optional_entities_schema(dict(self.config_entry.data)),
-        )
-
-    # -- profiles -----------------------------------------------------------
-
-    async def async_step_add_profile(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Add a new profile."""
+        candidates = device_candidates(self.hass, self._entities)
+        rows = [_value_row(value) for value in self._additional]
         errors: dict[str, str] = {}
+
         if user_input is not None:
-            try:
-                profile = profile_from_input(user_input)
-            except (ProfileError, ValueError) as err:
-                _LOGGER.debug("Invalid profile input: %s", err)
-                errors["base"] = "invalid_profile"
-            else:
-                return self._save(ProfileSet((*self._profiles.profiles, profile)))
+            rows = list(user_input.get(CONF_ADDITIONAL) or [])
+            values, errors = self._values_from_rows(rows)
+            if values is not None:
+                for entity_id in user_input.get(CONF_SELECTED) or []:
+                    values = self._appended_from_entity(values, str(entity_id))
+                return self.async_create_entry(
+                    data={
+                        **self.config_entry.options,
+                        CONF_ADDITIONAL: values.as_list(),
+                        CONF_VALUE_ORDER: self._order_from_input(user_input),
+                    }
+                )
 
-        return self.async_show_form(
-            step_id="add_profile",
-            data_schema=profile_schema(self._caps(), self._entities),
-            errors=errors,
-        )
-
-    async def async_step_edit_profile(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Pick the profile to edit."""
-        if user_input is not None:
-            self._editing = user_input[CONF_PROFILE_ID]
-            return await self.async_step_edit_values()
-
-        return self.async_show_form(
-            step_id="edit_profile",
-            data_schema=vol.Schema(
+        fields: dict[Any, Any] = {
+            vol.Optional(
+                CONF_ADDITIONAL, description={"suggested_value": rows}
+            ): RowSelector(
                 {
-                    vol.Required(CONF_PROFILE_ID): SelectSelector(
-                        SelectSelectorConfig(
-                            options=self._profile_options(),
-                            mode=SelectSelectorMode.LIST,
-                        )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_edit_values(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Edit name, colour and values of the chosen profile."""
-        profiles = self._profiles
-        current = profiles.get(self._editing or "")
-        if current is None:  # pragma: no cover - only after a concurrent edit
-            return await self.async_step_init()
-
-        if user_input is not None:
-            updated = profile_from_input(user_input, profile_id=current.id)
-            return self._save(
-                ProfileSet(
-                    tuple(
-                        updated if profile.id == current.id else profile
-                        for profile in profiles
-                    )
+                    "multiple": True,
+                    "label_field": CONF_ADDITIONAL_NAME,
+                    "description_field": CONF_ADDITIONAL_ENTITY,
+                    "fields": self._value_fields(),
+                },
+                CONF_ADDITIONAL_ID,
+            )
+        }
+        if candidates:
+            fields[vol.Optional(CONF_SELECTED, default=[])] = SelectSelector(
+                SelectSelectorConfig(
+                    options=candidates,
+                    mode=SelectSelectorMode.LIST,
+                    multiple=True,
+                )
+            )
+        if order := self._order_options():
+            fields[
+                vol.Optional(CONF_ORDER, default=[option["value"] for option in order])
+            ] = SelectSelector(
+                SelectSelectorConfig(
+                    options=order,
+                    mode=SelectSelectorMode.DROPDOWN,
+                    multiple=True,
+                    sort=False,
                 )
             )
 
         return self.async_show_form(
-            step_id="edit_values",
-            data_schema=profile_schema(self._caps(), self._entities, current),
-            description_placeholders={"profile": current.name},
+            step_id="values", data_schema=vol.Schema(fields), errors=errors
         )
 
-    async def async_step_delete_profile(
+    async def async_step_profiles(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Delete one or more profiles."""
-        if user_input is not None:
-            doomed = set(user_input.get(CONF_SELECTED, []))
-            return self._save(self._profiles.without(doomed))
+        """One list of the profiles, and the "custom" entry below it.
 
-        return self.async_show_form(
-            step_id="delete_profile",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SELECTED, default=[]): SelectSelector(
-                        SelectSelectorConfig(
-                            options=self._profile_options(),
-                            mode=SelectSelectorMode.LIST,
-                            multiple=True,
-                        )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_reorder(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Change the order in which profiles are matched and displayed.
-
-        Config flows cannot render a drag & drop list, so the order is entered
-        by picking the profiles one after another; anything left out keeps its
-        relative position at the end.
+        Everything a profile is lives in its row: name, colour, icon, how it
+        becomes active, what a change by hand does, and the values it sets.
+        The order of the rows is the order they are matched and shown in.
         """
-        profiles = self._profiles
+        vocab = self._vocab()
+        options = self.config_entry.options
+        rows = [_profile_row(profile, vocab) for profile in self._profiles]
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            wanted = list(dict.fromkeys(user_input.get(CONF_ORDER, [])))
-            ordered = [p for pid in wanted if (p := profiles.get(pid)) is not None]
-            ordered += [p for p in profiles if p.id not in wanted]
-            return self._save(ProfileSet(tuple(ordered)))
+            rows = list(user_input.get(CONF_PROFILES) or [])
+            profiles, errors = self._profiles_from_rows(rows, vocab)
+            if profiles is not None:
+                _log_catch_alls(profiles)
+                return self.async_create_entry(
+                    data={
+                        **options,
+                        CONF_PROFILES: profiles.as_list(),
+                        CONF_CUSTOM_NAME: str(
+                            user_input.get(CONF_CUSTOM_NAME) or DEFAULT_CUSTOM_NAME
+                        ).strip(),
+                        CONF_CUSTOM_COLOR: normalise_color(
+                            user_input.get(CONF_CUSTOM_COLOR), DEFAULT_CUSTOM_COLOR
+                        ),
+                        CONF_CUSTOM_ICON: user_input.get(CONF_CUSTOM_ICON) or None,
+                    }
+                )
 
         return self.async_show_form(
-            step_id="reorder",
+            step_id="profiles",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_ORDER, default=[p.id for p in profiles]
-                    ): SelectSelector(
-                        SelectSelectorConfig(
-                            options=self._profile_options(),
-                            mode=SelectSelectorMode.DROPDOWN,
-                            multiple=True,
-                            sort=False,
-                        )
-                    )
-                }
-            ),
-        )
-
-    async def async_step_custom_name(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Rename the virtual "custom" profile."""
-        if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    CONF_CUSTOM_NAME: str(
-                        user_input.get(CONF_CUSTOM_NAME) or DEFAULT_CUSTOM_NAME
-                    ).strip(),
-                }
-            )
-
-        return self.async_show_form(
-            step_id="custom_name",
-            data_schema=vol.Schema(
-                {
+                    vol.Optional(
+                        CONF_PROFILES, description={"suggested_value": rows}
+                    ): RowSelector(
+                        {
+                            "multiple": True,
+                            "label_field": CONF_PROFILE_NAME,
+                            "fields": self._profile_fields(vocab),
+                        },
+                        CONF_PROFILE_ID,
+                    ),
                     vol.Required(
                         CONF_CUSTOM_NAME,
-                        default=self.config_entry.options.get(
-                            CONF_CUSTOM_NAME, DEFAULT_CUSTOM_NAME
+                        default=options.get(CONF_CUSTOM_NAME, DEFAULT_CUSTOM_NAME),
+                    ): TextSelector(),
+                    vol.Required(
+                        CONF_CUSTOM_COLOR,
+                        default=color_to_rgb(
+                            normalise_color(
+                                options.get(CONF_CUSTOM_COLOR), DEFAULT_CUSTOM_COLOR
+                            )
                         ),
-                    ): TextSelector()
+                    ): ColorRGBSelector(),
+                    vol.Optional(
+                        CONF_CUSTOM_ICON,
+                        description={"suggested_value": options.get(CONF_CUSTOM_ICON)},
+                    ): IconSelector(),
                 }
             ),
+            errors=errors,
         )
+
+    # -- turning rows back into what is stored -------------------------------
+
+    def _labels(self) -> dict[str, str]:
+        """Return the row field labels in Home Assistant's language.
+
+        A selector's fields are labelled here rather than in the translation
+        files: the rows mix fixed fields with the user's own value names, and
+        those can only be literals.
+        """
+        language = (self.hass.config.language or "en").split("-")[0]
+        return _ROW_LABELS.get(language, _ROW_LABELS["en"])
+
+    def _value_fields(self) -> dict[str, Any]:
+        """Return the fields of one additional value's row."""
+        labels = self._labels()
+        return {
+            # Optional: left empty, the name is taken from the entity, which
+            # is what the old one-value-at-a-time form did as well.
+            CONF_ADDITIONAL_NAME: {
+                "required": False,
+                "label": labels["name"],
+                "selector": {"text": {}},
+            },
+            CONF_ADDITIONAL_ENTITY: {
+                "required": True,
+                "label": labels["entity"],
+                "selector": {"entity": {"domain": sorted(ADDITIONAL_DOMAINS)}},
+            },
+            CONF_ADDITIONAL_ICON: {
+                "required": False,
+                "label": labels["icon"],
+                "selector": {"icon": {}},
+            },
+        }
+
+    def _profile_fields(self, vocab: Vocabulary) -> dict[str, Any]:
+        """Return the fields of one profile's row, values included."""
+        labels = self._labels()
+        names = {value.id: value.name for value in self._additional}
+        fields: dict[str, Any] = {
+            CONF_PROFILE_NAME: {
+                "required": True,
+                "label": labels["name"],
+                "selector": {"text": {}},
+            },
+            CONF_PROFILE_COLOR: {
+                "required": False,
+                "label": labels["color"],
+                "selector": {"color_rgb": {}},
+            },
+            CONF_PROFILE_ICON: {
+                "required": False,
+                "label": labels["icon"],
+                "selector": {"icon": {}},
+            },
+            CONF_PROFILE_DETECT: {
+                "required": False,
+                "label": labels["detect"],
+                "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_CAPTURE: {
+                # Required, so a new row opens with "ask" already picked: the
+                # frontend fills a required select with its first option, and
+                # an empty field that silently means "ask" is a riddle.
+                "required": True,
+                "label": labels["capture"],
+                "selector": {
+                    "select": {
+                        "options": list(CAPTURE_MODES),
+                        "mode": "dropdown",
+                        "translation_key": "capture",
+                    }
+                },
+            },
+        }
+
+        for spec in vocab:
+            key = spec.key
+            label = labels.get(key) or names.get(key) or key
+            if spec.kind == KIND_OPTION:
+                if spec.is_climate and not spec.options and key != VALUE_HVAC_MODE:
+                    # A value the device does not advertise: offering it would
+                    # fill every row with a field that cannot be applied.
+                    continue
+                selector_config: dict[str, Any] = {
+                    "select": {
+                        "options": list(spec.options),
+                        "mode": "dropdown",
+                        "custom_value": spec.is_climate or not spec.options,
+                        "sort": False,
+                    }
+                }
+            elif spec.kind == KIND_NUMBER:
+                number: dict[str, Any] = {
+                    "min": spec.minimum if spec.minimum is not None else 0,
+                    "max": spec.maximum if spec.maximum is not None else 100,
+                    "step": spec.step or 1,
+                    # A box, not a slider: a slider cannot be left empty, and
+                    # an empty field is how a profile says "do not touch".
+                    "mode": "box",
+                }
+                if key == VALUE_TEMPERATURE:
+                    number["unit_of_measurement"] = "°C"
+                selector_config = {"number": number}
+            else:
+                selector_config = {
+                    "select": {
+                        "options": list(ON_OFF_OPTIONS),
+                        "mode": "dropdown",
+                        "translation_key": "on_off",
+                    }
+                }
+            fields[key] = {
+                # A profile that does not say what the device should do is
+                # rarely what anyone wants; everything else stays optional,
+                # and an empty field means "do not touch".
+                "required": key == VALUE_HVAC_MODE,
+                "label": label,
+                "selector": selector_config,
+            }
+
+        return fields
+
+    def _values_from_rows(
+        self, rows: list[dict[str, Any]]
+    ) -> tuple[AdditionalValueSet | None, dict[str, str]]:
+        """Return the values the rows describe, or what is wrong with them."""
+        values = AdditionalValueSet()
+        for index, row in enumerate(rows):
+            entity_id = str(row.get(CONF_ADDITIONAL_ENTITY) or "")
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                return None, {CONF_ADDITIONAL: "entity_not_found"}
+            if entity_id.partition(".")[0] not in ADDITIONAL_DOMAINS:
+                return None, {CONF_ADDITIONAL: "unsupported_domain"}
+            name = str(
+                row.get(CONF_ADDITIONAL_NAME)
+                or state.attributes.get("friendly_name")
+                or entity_id
+            ).strip()
+            values = values.appended(
+                AdditionalValue(
+                    id=str(row.get(CONF_ADDITIONAL_ID) or "") or new_value_id(),
+                    name=values.unique_name(name),
+                    entity=entity_id,
+                    icon=row.get(CONF_ADDITIONAL_ICON) or None,
+                    order=index,
+                )
+            )
+        return values, {}
+
+    def _appended_from_entity(
+        self, values: AdditionalValueSet, entity_id: str
+    ) -> AdditionalValueSet:
+        """Add one of the device's own entities to the end of the list."""
+        state = self.hass.states.get(entity_id)
+        name = str(
+            (state.attributes.get("friendly_name") if state else None) or entity_id
+        ).strip()
+        return values.appended(
+            AdditionalValue(
+                id=new_value_id(),
+                name=values.unique_name(name),
+                entity=entity_id,
+                order=values.next_order(),
+            )
+        )
+
+    def _profiles_from_rows(
+        self, rows: list[dict[str, Any]], vocab: Vocabulary
+    ) -> tuple[ProfileSet | None, dict[str, str]]:
+        """Return the profiles the rows describe, or what is wrong with them."""
+        profiles: list[ClimateProfile] = []
+        for row in rows:
+            try:
+                profiles.append(
+                    profile_from_input(
+                        row,
+                        vocab,
+                        profile_id=str(row.get(CONF_PROFILE_ID) or "") or None,
+                    )
+                )
+            except (ProfileError, ValueError, KeyError) as err:
+                _LOGGER.debug("Invalid profile row: %s", err)
+                return None, {CONF_PROFILES: "invalid_profile"}
+        return ProfileSet(tuple(profiles)), {}
+
+    def _order_from_input(self, user_input: dict[str, Any]) -> list[str]:
+        """Return the apply order, keeping what the form did not mention."""
+        current = [option["value"] for option in self._order_options()]
+        wanted = [
+            key
+            for key in dict.fromkeys(user_input.get(CONF_ORDER) or [])
+            if key in current
+        ]
+        return wanted + [key for key in current if key not in wanted]

@@ -7,25 +7,38 @@ operates on these objects.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import uuid4
 
 from .const import (
+    ADDITIONAL_DOMAINS,
+    CAPTURE_ASK,
+    CAPTURE_AUTO,
+    CAPTURE_MODES,
+    CAPTURE_NEVER,
+    CLIMATE_KEYS,
+    CLIMATE_KINDS,
+    CONF_ADDITIONAL_ENTITY,
+    CONF_ADDITIONAL_ICON,
+    CONF_ADDITIONAL_ID,
+    CONF_ADDITIONAL_NAME,
+    CONF_ADDITIONAL_ORDER,
     CONF_CLIMATE_ENTITY,
-    CONF_DISPLAY_ENTITY,
-    CONF_FAN_ENTITY,
+    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
+    CONF_PROFILE_DETECT,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILE_VALUES,
-    CONF_SILENT_ENTITY,
     DEFAULT_PROFILE_COLOR,
-    KEY_REQUIRES_ENTITY,
-    VALUE_FAN,
-    VALUE_KEYS,
+    KIND_NUMBER,
+    KIND_OPTION,
+    VALUE_HVAC_MODE,
+    VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
 
@@ -85,7 +98,23 @@ class ClimateProfile:
     #: Protected profiles refuse to be overwritten by "capture". They can
     #: still be edited deliberately in the options flow - otherwise a
     #: protected profile would be frozen forever.
-    protected: bool = False
+    #: Whether this profile may be recognised from the device state. Off, it
+    #: is active only while it is the one that was selected.
+    detect: bool = True
+    #: What a manual change does while this profile is active: ask (the card
+    #: offers to capture it), auto (it is written straight in) or never (the
+    #: profile is write protected).
+    capture: str = CAPTURE_ASK
+
+    @property
+    def protected(self) -> bool:
+        """Return whether this profile refuses the quick path."""
+        return self.capture == CAPTURE_NEVER
+
+    @property
+    def captures_automatically(self) -> bool:
+        """Return whether a change is written in without asking."""
+        return self.capture == CAPTURE_AUTO
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ClimateProfile:
@@ -101,12 +130,12 @@ class ClimateProfile:
         if not isinstance(raw_values, dict):
             raise ProfileError(f"values of profile {name!r} must be a mapping")
 
-        values = {key: raw_values[key] for key in VALUE_KEYS if key in raw_values}
-        unknown = set(raw_values) - set(VALUE_KEYS)
-        if unknown:
-            raise ProfileError(
-                f"profile {name!r} has unsupported keys: {', '.join(sorted(unknown))}"
-            )
+        # Keys are not validated here. Four of them are the climate ones; the
+        # rest are ids of additional values, which this class has no way of
+        # knowing about - and a value whose additional value was deleted has to
+        # survive in storage rather than make the whole profile unreadable.
+        # ``Vocabulary`` decides at runtime what is usable.
+        values = {str(key): value for key, value in raw_values.items()}
 
         icon = raw.get(CONF_PROFILE_ICON) or None
         return cls(
@@ -115,7 +144,8 @@ class ClimateProfile:
             color=normalise_color(raw.get(CONF_PROFILE_COLOR)),
             values=values,
             icon=str(icon) if icon else None,
-            protected=bool(raw.get(CONF_PROFILE_PROTECTED, False)),
+            detect=bool(raw.get(CONF_PROFILE_DETECT, True)),
+            capture=_capture_mode(raw),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -128,13 +158,27 @@ class ClimateProfile:
         }
         if self.icon:
             data[CONF_PROFILE_ICON] = self.icon
-        if self.protected:
-            data[CONF_PROFILE_PROTECTED] = True
+        if not self.detect:
+            data[CONF_PROFILE_DETECT] = False
+        if self.capture != CAPTURE_ASK:
+            data[CONF_PROFILE_CAPTURE] = self.capture
         return data
 
     def with_values(self, values: dict[str, Any]) -> ClimateProfile:
         """Return a copy carrying ``values``, everything else unchanged."""
         return replace(self, values=dict(values))
+
+
+def _capture_mode(raw: dict[str, Any]) -> str:
+    """Return what a change does to this profile, reading older shapes too.
+
+    1.x and the 2.0 betas stored a boolean ``protected``; it answers the same
+    question with two of the three answers.
+    """
+    mode = str(raw.get(CONF_PROFILE_CAPTURE, "") or "").strip().casefold()
+    if mode in CAPTURE_MODES:
+        return mode
+    return CAPTURE_NEVER if raw.get(CONF_PROFILE_PROTECTED) else CAPTURE_ASK
 
 
 def new_profile_id() -> str:
@@ -206,6 +250,10 @@ class ProfileSet:
             None,
         )
 
+    def detectable(self) -> ProfileSet:
+        """Return the profiles that may be recognised from the state alone."""
+        return ProfileSet(tuple(p for p in self.profiles if p.detect))
+
     def display_names(self) -> dict[str, str]:
         """Return ``{profile_id: unique display name}``.
 
@@ -236,69 +284,252 @@ class ProfileSet:
 
 
 @dataclass(frozen=True, slots=True)
-class EntityMap:
-    """The entities a config entry drives. Everything but climate is optional."""
+class AdditionalValue:
+    """One user defined value, backed by an entity of their choosing.
 
-    climate: str
-    fan: str | None = None
-    display: str | None = None
-    silent: str | None = None
+    The three optional entities this replaced - a fan speed number and two
+    switches - were the vocabulary of one air conditioner. Everything here is
+    the user's: which entity, what it is called, which icon it carries.
+    """
+
+    #: Stable and meaningless, like a profile's. Profiles store their values
+    #: under it, so renaming the value or pointing it at a different entity
+    #: leaves every profile intact.
+    id: str
+    name: str
+    entity: str
+    icon: str | None = None
+    order: int = 0
+
+    @property
+    def domain(self) -> str:
+        """Return the domain of the entity behind this value."""
+        return self.entity.partition(".")[0]
+
+    @property
+    def kind(self) -> str | None:
+        """Return how this value is compared and written, or ``None``.
+
+        ``None`` means the entity is of a domain whose state is not a single
+        value, which the config flow does not offer in the first place.
+        """
+        return ADDITIONAL_DOMAINS.get(self.domain)
 
     @classmethod
-    def from_config(cls, data: dict[str, Any]) -> EntityMap:
-        """Build the entity map from a config entry's data."""
+    def from_dict(cls, raw: dict[str, Any]) -> AdditionalValue:
+        """Build an additional value from its stored representation."""
+        if not isinstance(raw, dict):
+            raise ProfileError(
+                f"additional value must be a mapping, got {type(raw).__name__}"
+            )
+        name = str(raw.get(CONF_ADDITIONAL_NAME, "") or "").strip()
+        if not name:
+            raise ProfileError("additional value needs a name")
+        entity = str(raw.get(CONF_ADDITIONAL_ENTITY, "") or "").strip()
+        if not entity:
+            raise ProfileError(f"additional value {name!r} needs an entity")
+
+        icon = raw.get(CONF_ADDITIONAL_ICON) or None
+        try:
+            order = int(raw.get(CONF_ADDITIONAL_ORDER, 0) or 0)
+        except (TypeError, ValueError):
+            order = 0
+        return cls(
+            id=str(raw.get(CONF_ADDITIONAL_ID) or new_value_id()),
+            name=name,
+            entity=entity,
+            icon=str(icon) if icon else None,
+            order=order,
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the storage representation."""
+        data: dict[str, Any] = {
+            CONF_ADDITIONAL_ID: self.id,
+            CONF_ADDITIONAL_NAME: self.name,
+            CONF_ADDITIONAL_ENTITY: self.entity,
+            CONF_ADDITIONAL_ORDER: self.order,
+        }
+        if self.icon:
+            data[CONF_ADDITIONAL_ICON] = self.icon
+        return data
+
+
+def new_value_id() -> str:
+    """Return a fresh, stable id for an additional value."""
+    return uuid4().hex
+
+
+@dataclass(frozen=True, slots=True)
+class AdditionalValueSet:
+    """The additional values of one config entry, in their configured order."""
+
+    values: tuple[AdditionalValue, ...] = ()
+
+    @classmethod
+    def from_list(cls, raw: Any) -> AdditionalValueSet:
+        """Build the set from its stored representation."""
+        if not raw:
+            return cls()
+        if not isinstance(raw, list):
+            raise ProfileError("additional values must be a list")
+        built = tuple(AdditionalValue.from_dict(item) for item in raw)
+        return cls(tuple(sorted(built, key=lambda value: value.order)))
+
+    def as_list(self) -> list[dict[str, Any]]:
+        """Return the storage representation."""
+        return [value.as_dict() for value in self.values]
+
+    def get(self, value_id: str) -> AdditionalValue | None:
+        """Return the value with that id, if there is one."""
+        return next((v for v in self.values if v.id == value_id), None)
+
+    def resolve(self, reference: str) -> AdditionalValue | None:
+        """Return the value an id or a name refers to.
+
+        Ids win over names, so a value literally named like another one's id
+        cannot shadow it - the same rule profiles follow.
+        """
+        if not reference:
+            return None
+        if (by_id := self.get(reference)) is not None:
+            return by_id
+        wanted = reference.strip().casefold()
+        return next((v for v in self.values if v.name.casefold() == wanted), None)
+
+    def unique_name(self, name: str, *, ignoring: str | None = None) -> str:
+        """Return ``name``, with a counter appended if it is already taken.
+
+        Names are kept unique here rather than disambiguated on the way out,
+        because a name is pre-filled from the entity: two device switches are
+        both called "Silent" without anybody deciding that, and the collision
+        would otherwise surface in an automation at runtime.
+        """
+        taken = {
+            v.name.casefold()
+            for v in self.values
+            if ignoring is None or v.id != ignoring
+        }
+        wanted = name.strip() or "Value"
+        if wanted.casefold() not in taken:
+            return wanted
+        count = 2
+        while f"{wanted} ({count})".casefold() in taken:
+            count += 1
+        return f"{wanted} ({count})"
+
+    def next_order(self) -> int:
+        """Return the order a newly added value should get."""
+        return max((v.order for v in self.values), default=-1) + 1
+
+    def replaced(self, value: AdditionalValue) -> AdditionalValueSet:
+        """Return a copy with ``value`` in place of the one with its id."""
+        return AdditionalValueSet(
+            tuple(value if v.id == value.id else v for v in self.values)
+        )
+
+    def appended(self, value: AdditionalValue) -> AdditionalValueSet:
+        """Return a copy with ``value`` added at the end."""
+        return AdditionalValueSet((*self.values, value))
+
+    def without(self, value_ids: set[str]) -> AdditionalValueSet:
+        """Return a copy without the values carrying those ids."""
+        return AdditionalValueSet(
+            tuple(v for v in self.values if v.id not in value_ids)
+        )
+
+    def entity_ids(self) -> tuple[str, ...]:
+        """Return every entity behind these values."""
+        return tuple(v.entity for v in self.values)
+
+    def as_frontend(self, vocab: Vocabulary | None = None) -> list[dict[str, Any]]:
+        """Return the definitions the card needs to label and draw them.
+
+        With a vocabulary the limits come along - a slider needs its range and
+        a dropdown its options, and both belong to the entity behind the value
+        rather than to its definition.
+        """
+        entries: list[dict[str, Any]] = []
+        for value in self.values:
+            entry: dict[str, Any] = {
+                "id": value.id,
+                "name": value.name,
+                "entity": value.entity,
+                "icon": value.icon,
+                "order": value.order,
+                "kind": value.kind,
+            }
+            if vocab is not None and (spec := vocab.get(value.id)) is not None:
+                entry |= {
+                    "min": spec.minimum,
+                    "max": spec.maximum,
+                    "step": spec.step,
+                    "options": list(spec.options),
+                }
+            entries.append(entry)
+        return entries
+
+    def __iter__(self):
+        """Iterate over the values in order."""
+        return iter(self.values)
+
+    def __len__(self) -> int:
+        """Return how many values are configured."""
+        return len(self.values)
+
+
+@dataclass(frozen=True, slots=True)
+class EntityMap:
+    """The entities a config entry drives.
+
+    The climate entity is identity - it is what the entry is about and cannot
+    be changed. The additional ones hang off their own definitions, so this
+    class only carries what they add up to.
+    """
+
+    climate: str
+    additional: AdditionalValueSet = field(default_factory=AdditionalValueSet)
+
+    @classmethod
+    def from_config(
+        cls, data: dict[str, Any], additional: AdditionalValueSet | None = None
+    ) -> EntityMap:
+        """Build the entity map from a config entry's data and options."""
         climate = data.get(CONF_CLIMATE_ENTITY)
         if not climate:
             raise ProfileError("a climate entity is required")
         return cls(
             climate=str(climate),
-            fan=data.get(CONF_FAN_ENTITY) or None,
-            display=data.get(CONF_DISPLAY_ENTITY) or None,
-            silent=data.get(CONF_SILENT_ENTITY) or None,
+            additional=additional or AdditionalValueSet(),
         )
 
     def entity_for(self, key: str) -> str | None:
         """Return the entity that carries the profile value ``key``."""
-        if key in (CONF_FAN_ENTITY, VALUE_FAN):
-            return self.fan
-        if key in (CONF_DISPLAY_ENTITY, "display"):
-            return self.display
-        if key in (CONF_SILENT_ENTITY, "silent"):
-            return self.silent
-        return self.climate
-
-    def supports(self, key: str) -> bool:
-        """Return whether the value ``key`` can be used at all."""
-        if (conf_key := KEY_REQUIRES_ENTITY.get(key)) is None:
-            return True
-        return self.entity_for(conf_key) is not None
+        if key in CLIMATE_KINDS:
+            return self.climate
+        value = self.additional.get(key)
+        return value.entity if value else None
 
     def all_entities(self) -> tuple[str, ...]:
         """Return every configured entity id."""
-        return tuple(
-            entity
-            for entity in (self.climate, self.fan, self.display, self.silent)
-            if entity
-        )
+        return (self.climate, *self.additional.entity_ids())
 
-    def as_dict(self) -> dict[str, str | None]:
+    def as_dict(self) -> dict[str, Any]:
         """Return a representation for the frontend."""
         return {
             "climate": self.climate,
-            "fan": self.fan,
-            "display": self.display,
-            "silent": self.silent,
+            "additional": {v.id: v.entity for v in self.additional},
         }
 
 
 @dataclass(frozen=True, slots=True)
 class Capabilities:
-    """What the configured devices actually support, read from their states.
+    """What the climate entity supports, read from its state.
 
-    Nothing here is hard coded - the values come from the climate entity's
+    Nothing here is hard coded - the values come from the entity's
     ``hvac_modes``/``fan_modes``/``swing_modes``/``min_temp``/``max_temp``/
-    ``target_temp_step`` attributes and from the number entity's ``min``/
-    ``max``/``step``.
+    ``target_temp_step`` attributes. What an additional value supports is read
+    from its own entity and lives in its :class:`ValueSpec`.
     """
 
     hvac_modes: tuple[str, ...] = ()
@@ -307,29 +538,14 @@ class Capabilities:
     min_temp: float | None = None
     max_temp: float | None = None
     temp_step: float = 0.5
-    fan_min: float | None = None
-    fan_max: float | None = None
-    fan_step: float = 1.0
 
     def options_for(self, key: str) -> tuple[str, ...]:
-        """Return the supported options of a string valued key."""
+        """Return the supported options of an option valued climate key."""
         return {
-            "hvac_mode": self.hvac_modes,
+            VALUE_HVAC_MODE: self.hvac_modes,
             "fan_mode": self.fan_modes,
-            "swing_mode": self.swing_modes,
+            VALUE_SWING_MODE: self.swing_modes,
         }.get(key, ())
-
-    def step_for(self, key: str) -> float:
-        """Return the step width used to compare a numeric key."""
-        return self.fan_step if key == VALUE_FAN else self.temp_step
-
-    def range_for(self, key: str) -> tuple[float | None, float | None]:
-        """Return ``(min, max)`` of a numeric key."""
-        if key == VALUE_TEMPERATURE:
-            return self.min_temp, self.max_temp
-        if key == VALUE_FAN:
-            return self.fan_min, self.fan_max
-        return None, None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a representation for the frontend."""
@@ -340,7 +556,148 @@ class Capabilities:
             "min_temp": self.min_temp,
             "max_temp": self.max_temp,
             "target_temp_step": self.temp_step,
-            "fan_min": self.fan_min,
-            "fan_max": self.fan_max,
-            "fan_step": self.fan_step,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ValueSpec:
+    """Everything the matching rules need to know about one value.
+
+    This is what replaced the constants: ``matching`` used to look up whether a
+    key was boolean, numeric or a string in a frozenset, and its range in
+    ``Capabilities``. With entities the user picks, all of that is runtime
+    knowledge - so it is handed in as data, and ``matching`` keeps its promise
+    of importing nothing from Home Assistant.
+    """
+
+    key: str
+    kind: str
+    entity: str
+    #: Empty for the four climate keys: they are labelled by the card itself.
+    name: str = ""
+    options: tuple[str, ...] = ()
+    minimum: float | None = None
+    maximum: float | None = None
+    step: float = 1.0
+
+    @property
+    def domain(self) -> str:
+        """Return the domain of the entity behind this value."""
+        return self.entity.partition(".")[0]
+
+    @property
+    def is_climate(self) -> bool:
+        """Return whether this value lives on the climate entity itself."""
+        return self.key in CLIMATE_KINDS
+
+
+@dataclass(frozen=True, slots=True)
+class Vocabulary:
+    """The values one config entry knows about, in the order they are applied.
+
+    The four climate keys come first - ``hvac_mode`` before everything else,
+    because most devices ignore the rest while they are off - then the
+    additional values in their configured order.
+    """
+
+    specs: tuple[ValueSpec, ...] = ()
+
+    @classmethod
+    def build(
+        cls,
+        entities: EntityMap,
+        caps: Capabilities | None = None,
+        *,
+        additional_specs: dict[str, dict[str, Any]] | None = None,
+        order: Sequence[str] | None = None,
+    ) -> Vocabulary:
+        """Assemble the vocabulary of a config entry.
+
+        ``additional_specs`` carries what each additional value's entity says
+        about itself - ``options`` for the select domains, ``min``/``max``/
+        ``step`` for the number ones. The coordinator reads it from the states;
+        leaving it out yields specs without limits, which compare fine and only
+        lose the range check when applying.
+
+        ``order`` is the configured apply order. Keys it names come first, in
+        its order; everything it leaves out keeps its default place after them -
+        so a value added later lands at the end without anybody sorting it.
+        ``hvac_mode`` goes first whatever the list says.
+        """
+        caps = caps or Capabilities()
+        limits = additional_specs or {}
+        specs: list[ValueSpec] = [
+            ValueSpec(
+                key=key,
+                kind=CLIMATE_KINDS[key],
+                entity=entities.climate,
+                options=caps.options_for(key),
+                minimum=caps.min_temp if key == VALUE_TEMPERATURE else None,
+                maximum=caps.max_temp if key == VALUE_TEMPERATURE else None,
+                step=caps.temp_step if key == VALUE_TEMPERATURE else 1.0,
+            )
+            for key in CLIMATE_KEYS
+        ]
+        for value in entities.additional:
+            if (kind := value.kind) is None:
+                # A domain that is not offered any more, or was hand edited
+                # into the options. Not usable, so not part of the vocabulary.
+                continue
+            limit = limits.get(value.id, {})
+            specs.append(
+                ValueSpec(
+                    key=value.id,
+                    kind=kind,
+                    entity=value.entity,
+                    name=value.name,
+                    options=tuple(limit.get("options") or ()),
+                    minimum=limit.get("min"),
+                    maximum=limit.get("max"),
+                    step=float(limit.get("step") or 1.0),
+                )
+            )
+        return cls(_ordered(specs, order))
+
+    def get(self, key: str) -> ValueSpec | None:
+        """Return the spec of ``key``, or ``None`` when it is not usable."""
+        return next((spec for spec in self.specs if spec.key == key), None)
+
+    def keys(self) -> tuple[str, ...]:
+        """Return every usable key, in apply order."""
+        return tuple(spec.key for spec in self.specs)
+
+    def numeric_keys(self) -> tuple[str, ...]:
+        """Return the keys compared as numbers."""
+        return tuple(s.key for s in self.specs if s.kind == KIND_NUMBER)
+
+    def option_keys(self) -> tuple[str, ...]:
+        """Return the keys compared as options."""
+        return tuple(s.key for s in self.specs if s.kind == KIND_OPTION)
+
+    def __contains__(self, key: object) -> bool:
+        """Return whether ``key`` is usable in this entry."""
+        return any(spec.key == key for spec in self.specs)
+
+    def __iter__(self):
+        """Iterate over the specs in apply order."""
+        return iter(self.specs)
+
+    def __len__(self) -> int:
+        """Return how many values are usable."""
+        return len(self.specs)
+
+
+def _ordered(
+    specs: list[ValueSpec], order: Sequence[str] | None
+) -> tuple[ValueSpec, ...]:
+    """Return ``specs`` in the configured apply order, ``hvac_mode`` first."""
+    first = [spec for spec in specs if spec.key == VALUE_HVAC_MODE]
+    rest = [spec for spec in specs if spec.key != VALUE_HVAC_MODE]
+    if order:
+        position = {key: index for index, key in enumerate(dict.fromkeys(order))}
+        listed = sorted(
+            (spec for spec in rest if spec.key in position),
+            key=lambda spec: position[spec.key],
+        )
+        rest = listed + [spec for spec in rest if spec.key not in position]
+    return (*first, *rest)

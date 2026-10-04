@@ -8,20 +8,29 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    async_mock_service,
 )
 
 from custom_components.climate_profiles.const import (
     ATTR_ACTIVE_PROFILE_ID,
     ATTR_CAPABILITIES,
+    CONF_ADDITIONAL,
     CONF_CLIMATE_ENTITY,
+    CONF_CUSTOM_COLOR,
+    CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
     CONF_PROFILES,
     CUSTOM_PROFILE_ID,
     DOMAIN,
 )
 
-from .conftest import CLIMATE, DISPLAY, SILENT, set_device_state, settle
+from .conftest import (
+    CLIMATE,
+    DISPLAY,
+    SILENT,
+    additional_option,
+    set_device_state,
+    settle,
+)
 
 SENSOR = "sensor.living_room_climate_profile"
 SELECT = "select.living_room_profile"
@@ -66,6 +75,7 @@ async def setup_entry(
         options={
             CONF_PROFILES: PROFILES if profiles is None else profiles,
             CONF_CUSTOM_NAME: "Custom",
+            CONF_ADDITIONAL: additional_option(),
             **(options or {}),
         },
         unique_id=entry_data[CONF_CLIMATE_ENTITY],
@@ -74,20 +84,6 @@ async def setup_entry(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
-
-
-@pytest.fixture
-def calls(hass: HomeAssistant) -> dict:
-    """Record every service call the integration makes."""
-    return {
-        "set_hvac_mode": async_mock_service(hass, "climate", "set_hvac_mode"),
-        "set_temperature": async_mock_service(hass, "climate", "set_temperature"),
-        "set_fan_mode": async_mock_service(hass, "climate", "set_fan_mode"),
-        "set_swing_mode": async_mock_service(hass, "climate", "set_swing_mode"),
-        "set_value": async_mock_service(hass, "number", "set_value"),
-        "turn_on": async_mock_service(hass, "switch", "turn_on"),
-        "turn_off": async_mock_service(hass, "switch", "turn_off"),
-    }
 
 
 # --- entities --------------------------------------------------------------
@@ -121,10 +117,15 @@ async def test_capabilities_come_from_the_device(hass, entry_data):
     set_device_state(hass)
     await setup_entry(hass, entry_data)
 
-    caps = hass.states.get(SENSOR).attributes[ATTR_CAPABILITIES]
+    attributes = hass.states.get(SENSOR).attributes
+    caps = attributes[ATTR_CAPABILITIES]
     assert caps["hvac_modes"] == ["off", "cool", "dry", "fan_only", "heat", "auto"]
     assert caps["min_temp"] == 16
-    assert caps["fan_max"] == 100
+
+    # The limits of an additional value belong to its own entity.
+    fan = next(v for v in attributes["additional_values"] if v["id"] == "fan")
+    assert fan["max"] == 100
+    assert fan["kind"] == "number"
 
 
 async def test_select_lists_the_profiles_plus_custom(hass, entry_data):
@@ -292,15 +293,12 @@ async def test_set_value_needs_at_least_one_value(hass, entry_data, calls):
 
 async def test_without_optional_entities_nothing_breaks(hass, calls):
     set_device_state(hass, temperature=26)
-    await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+    await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, options={CONF_ADDITIONAL: []}
+    )
 
     state = hass.states.get(SENSOR)
-    assert state.attributes["entities"] == {
-        "climate": CLIMATE,
-        "fan": None,
-        "display": None,
-        "silent": None,
-    }
+    assert state.attributes["entities"] == {"climate": CLIMATE, "additional": {}}
     # "Komfort" defines display/silent, which this device cannot do -> custom.
     assert state.state == "Custom"
 
@@ -328,7 +326,7 @@ async def test_unavailable_climate_marks_entities_unavailable(hass, entry_data):
 # --- ordering and multiple instances ---------------------------------------
 
 
-async def test_profile_order_decides_between_overlapping_profiles(hass, entry_data):
+async def test_the_most_specific_of_the_matching_profiles_is_shown(hass, entry_data):
     broad = {
         "id": "a",
         "name": "Kuehlen",
@@ -344,13 +342,19 @@ async def test_profile_order_decides_between_overlapping_profiles(hass, entry_da
 
     set_device_state(hass)
     entry = await setup_entry(hass, entry_data, profiles=[broad, narrow])
-    assert hass.states.get(SENSOR).state == "Kuehlen"
+    # The catch-all is first in order and still loses: it says less.
+    assert hass.states.get(SENSOR).state == "Komfort"
 
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, CONF_PROFILES: [narrow, broad]}
     )
     await settle(hass)
     assert hass.states.get(SENSOR).state == "Komfort"
+
+    # Only when nothing more specific matches does the catch-all show.
+    set_device_state(hass, temperature=26)
+    await settle(hass)
+    assert hass.states.get(SENSOR).state == "Kuehlen"
 
 
 async def test_two_instances_stay_independent(hass, entry_data):
@@ -377,6 +381,30 @@ async def test_renaming_custom_changes_the_state(hass, entry_data):
     set_device_state(hass, temperature=23)
     await setup_entry(hass, entry_data, options={CONF_CUSTOM_NAME: "Manuell"})
     assert hass.states.get(SENSOR).state == "Manuell"
+
+
+async def test_custom_carries_its_colour_and_icon(hass, entry_data):
+    """The card draws it as a button like any other, so it needs both."""
+    set_device_state(hass, temperature=23)
+    await setup_entry(
+        hass,
+        entry_data,
+        options={
+            CONF_CUSTOM_NAME: "Manuell",
+            CONF_CUSTOM_COLOR: "#8b5cf6",
+            CONF_CUSTOM_ICON: "mdi:hand-back-right",
+        },
+    )
+
+    state = hass.states.get(SENSOR)
+    assert state.attributes["custom_profile"] == {
+        "id": "__custom__",
+        "name": "Manuell",
+        "color": "#8b5cf6",
+        "icon": "mdi:hand-back-right",
+    }
+    # The sensor's own colour follows it while nothing matches.
+    assert state.attributes["active_profile_color"] == "#8b5cf6"
 
 
 async def test_unload_removes_the_entities(hass, entry_data):

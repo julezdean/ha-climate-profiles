@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from homeassistant.exceptions import ServiceValidationError
 
@@ -246,3 +248,74 @@ async def test_changes_are_reported_while_a_partial_profile_stays_active(
     assert state.state == "Kuehlung", "a value it does not define cannot unmatch it"
     assert state.attributes["changed_values"] == ["fan_mode"]
     assert state.attributes["last_matched_profile_id"] == "kuehlung"
+
+
+# --- the offer runs out ----------------------------------------------------
+
+
+async def test_the_capture_offer_expires(hass, entry_data, monkeypatch):
+    """An offer that never expires claims hours later that you just changed it."""
+    from custom_components.climate_profiles import coordinator as coordinator_module
+
+    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 0.4)
+
+    set_device_state(hass)
+    await setup_entry(hass, entry_data)
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+
+    attributes = hass.states.get(SENSOR).attributes
+    assert attributes["changed_values"] == ["temperature"]
+    assert attributes["last_matched_profile_id"] == "komfort"
+
+    await asyncio.sleep(0.6)
+    await hass.async_block_till_done()
+
+    attributes = hass.states.get(SENSOR).attributes
+    assert hass.states.get(SENSOR).state == "Custom"
+    assert attributes["changed_values"] == []
+    assert attributes["last_matched_profile_id"] is None
+
+
+async def test_another_change_starts_the_clock_over(hass, entry_data, monkeypatch):
+    from custom_components.climate_profiles import coordinator as coordinator_module
+
+    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 2.0)
+
+    set_device_state(hass)
+    await setup_entry(hass, entry_data)
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+
+    await asyncio.sleep(1.0)
+    set_device_state(hass, temperature=23, fan_mode="high")
+    await settle(hass)
+    await asyncio.sleep(0.8)
+    await hass.async_block_till_done()
+
+    # More than 2 s after the first change, less than 2 s after the second:
+    # without the restart the offer would be gone.
+    assert set(hass.states.get(SENSOR).attributes["changed_values"]) == {
+        "temperature",
+        "fan_mode",
+    }
+
+
+async def test_capturing_into_a_named_profile_still_works_after_expiry(
+    hass, entry_data, monkeypatch
+):
+    """Only the silent "into the one from before" goes away."""
+    from custom_components.climate_profiles import coordinator as coordinator_module
+
+    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 0.3)
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data)
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+    await asyncio.sleep(0.5)
+    await hass.async_block_till_done()
+
+    await capture(hass, profile="Komfort")
+
+    assert by_name(entry, "Komfort")["values"]["temperature"] == 23

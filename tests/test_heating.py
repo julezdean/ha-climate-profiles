@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from pytest_homeassistant_custom_component.common import async_mock_service
 
-from custom_components.climate_profiles.config_flow import build_default_profiles
-from custom_components.climate_profiles.const import CONF_CLIMATE_ENTITY, DOMAIN
-from custom_components.climate_profiles.models import Capabilities, EntityMap
+from custom_components.climate_profiles.const import (
+    CONF_ADDITIONAL,
+    CONF_CLIMATE_ENTITY,
+    DOMAIN,
+)
 
 from .conftest import settle
 from .test_integration import setup_entry
@@ -58,6 +60,7 @@ def set_heater(hass, *, hvac_mode: str = "heat", temperature: float = 21.5) -> N
 async def setup_heater(hass, **kwargs):
     """Set up an entry for the thermostat."""
     kwargs.setdefault("profiles", HEATING_PROFILES)
+    kwargs.setdefault("options", {CONF_ADDITIONAL: []})
     return await setup_entry(
         hass, {CONF_CLIMATE_ENTITY: HEATER}, title="Radiator", **kwargs
     )
@@ -78,12 +81,7 @@ async def test_a_thermostat_gets_the_same_profiles(hass):
         35,
         0.5,
     )
-    assert state.attributes["entities"] == {
-        "climate": HEATER,
-        "fan": None,
-        "display": None,
-        "silent": None,
-    }
+    assert state.attributes["entities"] == {"climate": HEATER, "additional": {}}
 
 
 async def test_half_degree_steps_are_compared_correctly(hass):
@@ -145,15 +143,6 @@ async def test_a_mode_the_thermostat_lacks_is_refused(hass):
 
     assert not mode, "cool is not in hvac_modes, so it must not be sent"
     assert temp[0].data["temperature"] == 20, "the rest of the profile still applies"
-
-
-def test_starter_profiles_for_a_heating_only_device():
-    """The blueprint is cooling shaped - a heater gets what fits, not nonsense."""
-    caps = Capabilities(
-        hvac_modes=("off", "heat", "auto"), min_temp=5, max_temp=35, temp_step=0.5
-    )
-    profiles = build_default_profiles(caps, EntityMap(climate=HEATER))
-    assert [p.name for p in profiles] == ["Aus"]
 
 
 # --- known limitations -----------------------------------------------------

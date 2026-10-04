@@ -15,6 +15,7 @@ from .const import (
     ATTR_ACTIVE_PROFILE,
     ATTR_ACTIVE_PROFILE_COLOR,
     ATTR_ACTIVE_PROFILE_ID,
+    ATTR_ADDITIONAL,
     ATTR_APPLYING,
     ATTR_CAPABILITIES,
     ATTR_CHANGED_VALUES,
@@ -26,19 +27,16 @@ from .const import (
     ATTR_NAME,
     ATTR_PROFILE,
     ATTR_PROFILES,
+    ATTR_UNREACHED,
     ATTR_VALUES,
     CUSTOM_PROFILE_ID,
-    DEFAULT_CUSTOM_COLOR,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
-    VALUE_DISPLAY,
-    VALUE_FAN,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
-    VALUE_KEYS,
-    VALUE_SILENT,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
@@ -46,6 +44,21 @@ from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
 from .matching import normalise_values
 
+#: Keys a service call carries that name its target, not a value.
+_TARGET_KEYS = frozenset({"entity_id", "device_id", "area_id", "floor_id", "label_id"})
+
+
+def _at_least_one_value(data: dict[str, Any]) -> dict[str, Any]:
+    """Reject a call that names no value at all."""
+    if not set(data) - _TARGET_KEYS:
+        raise vol.Invalid("set_value needs at least one value")
+    return data
+
+
+#: Only the four climate keys are typed here. An additional value's kind
+#: follows from an entity the user picked, so it is known at runtime and
+#: nowhere else - the coordinator checks it against the vocabulary and names
+#: what it knows when it does not fit.
 SET_VALUE_SCHEMA = vol.All(
     cv.make_entity_service_schema(
         {
@@ -53,19 +66,17 @@ SET_VALUE_SCHEMA = vol.All(
             vol.Optional(VALUE_TEMPERATURE): vol.Coerce(float),
             vol.Optional(VALUE_SWING_MODE): cv.string,
             vol.Optional(VALUE_FAN_MODE): cv.string,
-            vol.Optional(VALUE_FAN): vol.Coerce(float),
-            vol.Optional(VALUE_DISPLAY): cv.boolean,
-            vol.Optional(VALUE_SILENT): cv.boolean,
-        }
+        },
+        extra=vol.ALLOW_EXTRA,
     ),
-    cv.has_at_least_one_key(*VALUE_KEYS),
+    _at_least_one_value,
 )
 
 
 CAPTURE_PROFILE_SCHEMA = cv.make_entity_service_schema(
     {
         vol.Optional(ATTR_PROFILE): cv.string,
-        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [vol.In(VALUE_KEYS)]),
+        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -74,7 +85,7 @@ SAVE_AS_PROFILE_SCHEMA = cv.make_entity_service_schema(
         vol.Required(ATTR_NAME): cv.string,
         vol.Optional(ATTR_COLOR): cv.string,
         vol.Optional(ATTR_ICON): cv.icon,
-        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [vol.In(VALUE_KEYS)]),
+        vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -99,6 +110,11 @@ async def async_setup_entry(
     )
     platform.async_register_entity_service(
         SERVICE_SAVE_AS_PROFILE, SAVE_AS_PROFILE_SCHEMA, "async_save_as_profile_service"
+    )
+    platform.async_register_entity_service(
+        SERVICE_DISMISS_CHANGE,
+        cv.make_entity_service_schema({}),
+        "async_dismiss_change_service",
     )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
@@ -152,6 +168,8 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "color": profile.color,
                     "icon": profile.icon,
                     "order": order,
+                    "detect": profile.detect,
+                    "capture": profile.capture,
                     "protected": profile.protected,
                     "values": dict(profile.values),
                 }
@@ -160,10 +178,19 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             "custom_profile": {
                 "id": CUSTOM_PROFILE_ID,
                 "name": coordinator.custom_name,
-                "color": DEFAULT_CUSTOM_COLOR,
+                "color": coordinator.custom_color,
+                "icon": coordinator.custom_icon,
             },
-            ATTR_CURRENT_VALUES: normalise_values(data.values) if data else {},
+            ATTR_CURRENT_VALUES: (
+                normalise_values(data.vocabulary, data.values) if data else {}
+            ),
             ATTR_CAPABILITIES: data.capabilities.as_dict() if data else {},
+            # The card only ever sees ids in ``values``; these say what they
+            # are called, which entity they are and how to draw them.
+            ATTR_ADDITIONAL: _in_apply_order(
+                coordinator.additional.as_frontend(data.vocabulary if data else None),
+                data.vocabulary.keys() if data else (),
+            ),
             ATTR_ENTITIES: coordinator.entities.as_dict(),
             ATTR_APPLYING: bool(data and data.applying),
             # What "capture" would write into, and what it would change.
@@ -172,6 +199,11 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                 data.last_matched.id if data and data.last_matched else None
             ),
             ATTR_CHANGED_VALUES: list(data.changed) if data else [],
+            # A profile that was applied but did not take, and why - so an
+            # automation can react instead of guessing from a plain "custom".
+            ATTR_UNREACHED: (
+                data.unreached.as_dict() if data and data.unreached else None
+            ),
         }
 
     # -- services -----------------------------------------------------------
@@ -183,8 +215,12 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
     async def async_set_value_service(self, **values: Any) -> None:
         """Handle ``climate_profiles.set_value``."""
         await self.coordinator.async_set_values(
-            {key: value for key, value in values.items() if key in VALUE_KEYS}
+            self.coordinator.resolve_value_keys(values)
         )
+
+    async def async_dismiss_change_service(self) -> None:
+        """Handle ``climate_profiles.dismiss_change``."""
+        await self.coordinator.async_dismiss_change()
 
     async def async_capture_profile_service(
         self, profile: str | None = None, values: list[str] | None = None
@@ -203,3 +239,18 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         await self.coordinator.async_save_as_profile(
             name, color=color, icon=icon, keys=values
         )
+
+
+def _in_apply_order(
+    definitions: list[dict[str, Any]], order: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Return the definitions in apply order, ``order`` set to the position.
+
+    The card shows the additional values in the order they are applied - one
+    list, one truth, rather than a second sorting nobody can tell apart.
+    """
+    position = {key: index for index, key in enumerate(order)}
+    ordered = sorted(
+        definitions, key=lambda item: position.get(item["id"], len(position))
+    )
+    return [item | {"order": index} for index, item in enumerate(ordered)]
