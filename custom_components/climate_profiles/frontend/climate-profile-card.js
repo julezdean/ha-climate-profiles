@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.11";
+const CARD_VERSION = "2.0.0-beta.12";
 
 /* eslint-disable no-console */
 console.info(
@@ -576,10 +576,14 @@ class ClimateProfileCard extends HTMLElement {
       return;
     }
 
+    const iconsOnly = layout === "icons";
     for (const profile of all) {
+      // Custom has no icon of its own, and a row of icons has no room for a
+      // dashed box that says nothing: it joins only while it is what is on.
+      if (iconsOnly && profile.virtual && profile.id !== model.activeId) continue;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "profile";
+      button.className = iconsOnly ? "profile icon-only" : "profile";
       button.dataset.id = profile.id;
       if (profile.virtual) button.classList.add("virtual");
       const [r, g, b] = hexToRgb(profile.color);
@@ -588,14 +592,23 @@ class ClimateProfileCard extends HTMLElement {
       button.style.setProperty("--profile-contrast", contrastColor(profile.color));
       button.innerHTML = `
         ${profileMark(profile)}
-        <span class="profile-name"></span>
+        ${iconsOnly ? "" : '<span class="profile-name"></span>'}
         <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
-      button.querySelector(".profile-name").textContent = profile.name;
+      if (iconsOnly) {
+        // The name is the label now - there is nothing else to go by, for a
+        // pointer or for a screen reader.
+        button.title = profile.name;
+        button.setAttribute("aria-label", profile.name);
+      } else {
+        button.querySelector(".profile-name").textContent = profile.name;
+      }
       if (profile.virtual) {
         button.disabled = true;
-        button.title = this._t(
-          "Shown when the current state matches none of your profiles."
-        );
+        if (!iconsOnly) {
+          button.title = this._t(
+            "Shown when the current state matches none of your profiles."
+          );
+        }
       } else {
         button.addEventListener("click", () => this._applyProfile(profile));
       }
@@ -742,7 +755,9 @@ class ClimateProfileCard extends HTMLElement {
 
   _layout(count) {
     const configured = this._config.profile_layout;
-    if (["grid", "scroll", "dropdown"].includes(configured)) return configured;
+    if (["grid", "scroll", "dropdown", "icons"].includes(configured)) {
+      return configured;
+    }
     return count > 6 ? "scroll" : "grid";
   }
 
@@ -1760,6 +1775,20 @@ ha-card.unavailable { opacity: 0.6; }
 }
 .profiles[data-layout="scroll"] .profile { scroll-snap-align: start; }
 
+/* the icons layout: one row, the name only as a label */
+.profiles[data-layout="icons"] {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 8px;
+}
+.profile.icon-only {
+  min-height: 0;
+  padding: 12px 6px;
+  gap: 0;
+}
+.profile.icon-only ha-icon { --mdc-icon-size: 24px; }
+.profile.icon-only .dot-mark { width: 14px; height: 14px; margin: 5px 0; }
+
 /* the dropdown layout */
 .profiles[data-layout="dropdown"] { display: block; }
 .picker { position: relative; }
@@ -1794,20 +1823,21 @@ ha-card.unavailable { opacity: 0.6; }
 .picker-trigger[aria-expanded="true"] .picker-arrow { transform: rotate(180deg); }
 .picker-trigger:disabled { opacity: 0.6; cursor: default; }
 .picker-list[hidden] { display: none; }
+/* In the flow, not floating above it: an overlay is at the mercy of whoever
+   clips the card - a theme that hides ha-card's overflow, a view that crops
+   it - and a list cut off at the card's edge is worse than one that pushes
+   the rest down for as long as it is open. (No backticks in here: the whole
+   stylesheet is one template literal.) */
 .picker-list {
-  position: absolute;
-  inset-inline: 0;
-  top: calc(100% + 6px);
-  z-index: 5;
   display: grid;
   gap: 2px;
   max-height: 320px;
+  margin-top: 6px;
   padding: 6px;
   overflow-y: auto;
   border: 1px solid var(--cp-line);
   border-radius: 16px;
   background: var(--cp-surface);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
 }
 .picker-option { padding: 10px 10px 10px 12px; }
 .picker-option .picker-option-name { flex: 1; min-width: 0; }
@@ -2365,6 +2395,7 @@ const SCHEMA = [
           { value: "auto", label: "Auto" },
           { value: "grid", label: "Grid" },
           { value: "dropdown", label: "Dropdown" },
+          { value: "icons", label: "Icons only" },
           { value: "scroll", label: "Scroll" },
         ],
       },

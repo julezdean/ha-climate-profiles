@@ -560,3 +560,53 @@ async def test_custom_joins_the_dropdown_while_it_is_what_is_on(open_card):
     custom = card.locator(".picker-option[data-id='__custom__']")
     assert await custom.is_disabled()
     assert await custom.get_attribute("aria-selected") == "true"
+
+
+async def test_the_open_list_stays_inside_the_card(open_card):
+    """Floating above the card left it cut off wherever something clips it."""
+    page = await open_card(card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+
+    before = (await card.bounding_box())["height"]
+    await card.locator(".picker-trigger").click()
+    after = await card.bounding_box()
+    list_box = await card.locator(".picker-list").bounding_box()
+
+    # The card grows by the list instead of the list hanging over its edge.
+    assert after["height"] > before
+    assert list_box["y"] + list_box["height"] <= after["y"] + after["height"]
+
+
+async def test_the_profiles_can_be_icons_only(open_card):
+    page = await open_card(card={"profile_layout": "icons"})
+    card = page.locator("climate-profile-card")
+
+    buttons = card.locator(".profile")
+    # Six profiles, no "Custom" box - it joins only while it is what is on.
+    assert await buttons.count() == 6
+    assert await buttons.locator(".profile-name").count() == 0
+    # The name is what names the button instead.
+    assert await buttons.nth(5).get_attribute("aria-label") == "Max"
+    assert await buttons.nth(5).get_attribute("title") == "Max"
+    # A profile without an icon keeps its colour as a dot.
+    assert await buttons.nth(1).locator(".dot-mark").count() == 1
+    assert await card.locator(".profile.active").get_attribute("data-id") == "p3"
+
+
+async def test_an_icon_button_applies_its_profile(open_card):
+    page = await open_card(card={"profile_layout": "icons"})
+
+    await page.locator("climate-profile-card .profile[data-id='p5']").click()
+    await page.wait_for_timeout(200)
+
+    assert (await calls(page))[0]["data"]["profile"] == "p5"
+
+
+async def test_custom_joins_the_icons_while_it_is_what_is_on(open_card):
+    page = await open_card(CHANGED, card={"profile_layout": "icons"})
+    card = page.locator("climate-profile-card")
+
+    custom = card.locator(".profile[data-id='__custom__']")
+    assert await custom.count() == 1
+    assert await custom.is_disabled()
+    assert "active" in (await custom.get_attribute("class"))

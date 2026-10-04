@@ -162,7 +162,7 @@ range - comes from the integration. Options, all optional:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
-| `profile_layout` | `auto` | `auto`, `grid`, `scroll` or `dropdown` |
+| `profile_layout` | `auto` | `auto`, `grid`, `scroll`, `dropdown` or `icons` |
 | `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
 
@@ -189,16 +189,24 @@ active profile with its icon, or a dot in its colour where it has none, and the
 open list shows the same for every profile - a native `<select>` can draw
 neither, which is why this one is built from buttons and takes the arrow keys,
 Enter and Escape. **Custom** appears in the list only while it is what the
-device is doing, and cannot be picked: it has no values to apply. `auto` never
-chooses the dropdown - it is grid up to six profiles and scroll beyond.
+device is doing, and cannot be picked: it has no values to apply. The open list
+pushes the rest of the card down instead of floating over it - a list that
+floats is cut off wherever something clips the card, and plenty of themes do.
+
+`profile_layout: icons` is the shortest form: one row, one button per profile,
+nothing but its icon - or a dot in its colour where it has none. The name is
+the button's label, so a pointer and a screen reader still get it; **Custom**
+joins the row only while it is what is on.
+
+`auto` chooses neither - it is grid up to six profiles and scroll beyond.
 
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
 | ![](docs/images/card-light.png) | ![](docs/images/card-custom.png) | ![](docs/images/card-dial.png) |
 
-| `profile_layout: dropdown` | …with the list open |
-| --- | --- |
-| ![](docs/images/card-dropdown.png) | ![](docs/images/card-dropdown-open.png) |
+| `profile_layout: dropdown` | …with the list open | `profile_layout: icons` |
+| --- | --- | --- |
+| ![](docs/images/card-dropdown.png) | ![](docs/images/card-dropdown-open.png) | ![](docs/images/card-icons.png) |
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer

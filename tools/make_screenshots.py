@@ -65,6 +65,13 @@ SHOTS: dict[str, dict] = {
         "theme": "light",
         "card": {"profile_layout": "dropdown"},
     },
+    # The profiles as a row of icons: the name becomes the label, nothing
+    # more. On the thermostat, whose four profiles all carry one.
+    "card-icons": {
+        "theme": "light",
+        "device": "heating",
+        "card": {"profile_layout": "icons"},
+    },
     "card-dropdown-open": {
         "theme": "light",
         "card": {"profile_layout": "dropdown"},

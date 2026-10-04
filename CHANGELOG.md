@@ -79,7 +79,14 @@ versioning [Semantic Versioning](https://semver.org/).
   glance - so the field and every row carry the same mark the buttons do, and
   the list takes the arrow keys, Enter and Escape. "Custom" is in the list only
   while it is what the device is doing, and stays unpickable - it has no values
-  to apply. `auto` is unchanged and never picks it.
+  to apply. The open list pushes the rest of the card down rather than floating
+  over it: floating, it was cut off at the card's edge wherever a theme or a
+  view clips the card. `auto` is unchanged and never picks it.
+- **The profiles can be a row of icons**: `profile_layout: icons`. One button
+  per profile with nothing but its icon - or a dot in its colour where it has
+  none - and the name as the button's label, for a pointer and a screen
+  reader. "Custom" joins the row only while it is what is on: a dashed box
+  saying nothing is not worth a seat in a row that short.
 - **The temperature can be a dial** instead of the bar: `temperature_style:
   dial` in the card, or the dropdown in its editor. A 270° arc in the active
   profile's colour, the room's own temperature as a dot on the same scale, and

@@ -58,6 +58,7 @@ special cases - do not "fix" them into a normal state:
 | `card-dial.png` | the same thermostat with `temperature_style: dial` |
 | `card-dropdown.png` | the air conditioner with `profile_layout: dropdown` |
 | `card-dropdown-open.png` | the same, with the profile list open |
+| `card-icons.png` | the thermostat with `profile_layout: icons` |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-capture.png` | something was changed by hand, the capture offer is up |
 
