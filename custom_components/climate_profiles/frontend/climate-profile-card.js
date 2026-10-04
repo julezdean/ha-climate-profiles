@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0-beta.10";
+const CARD_VERSION = "2.0.0-beta.11";
 
 /* eslint-disable no-console */
 console.info(
@@ -19,6 +19,17 @@ console.info(
 );
 
 const CUSTOM_ID = "__custom__";
+
+/**
+ * The mark in front of a profile's name: an icon only when the user chose
+ * one, otherwise a dot in the profile's colour - which says more than the
+ * same filler icon six times over.
+ */
+function profileMark(profile) {
+  return profile.icon
+    ? `<ha-icon icon="${profile.icon}"></ha-icon>`
+    : `<span class="dot-mark" aria-hidden="true"></span>`;
+}
 
 /** Purely cosmetic icons - unknown modes fall back to a neutral one. */
 const HVAC_ICONS = {
@@ -552,10 +563,18 @@ class ClimateProfileCard extends HTMLElement {
     const wrap = this._el.profiles;
     wrap.innerHTML = "";
     wrap.setAttribute("aria-label", this._t("Profiles"));
-    wrap.dataset.layout = this._layout(model.profiles.length);
+    const layout = this._layout(model.profiles.length);
+    wrap.dataset.layout = layout;
 
     const all = [...model.profiles, { ...model.custom, virtual: true }];
     this._profileButtons = new Map();
+    this._openProfileList(false);
+    this._profilePicker = null;
+
+    if (layout === "dropdown") {
+      this._buildProfileSelect(model, all);
+      return;
+    }
 
     for (const profile of all) {
       const button = document.createElement("button");
@@ -567,13 +586,8 @@ class ClimateProfileCard extends HTMLElement {
       button.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
       button.style.setProperty("--profile-color", profile.color);
       button.style.setProperty("--profile-contrast", contrastColor(profile.color));
-      // An icon only when the user chose one - otherwise a dot in the
-      // profile's colour, which says more than the same filler icon six times.
-      const mark = profile.icon
-        ? `<ha-icon icon="${profile.icon}"></ha-icon>`
-        : `<span class="dot-mark" aria-hidden="true"></span>`;
       button.innerHTML = `
-        ${mark}
+        ${profileMark(profile)}
         <span class="profile-name"></span>
         <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
       button.querySelector(".profile-name").textContent = profile.name;
@@ -621,9 +635,114 @@ class ClimateProfileCard extends HTMLElement {
     el.captureActions.hidden = false;
   }
 
+  /**
+   * The profiles as one dropdown instead of a wall of buttons - for a
+   * dashboard where the card is one of many.
+   *
+   * Not a ``<select>``: a native list cannot draw an icon or a colour, and
+   * those are how a profile is recognised at a glance. So it is a button and
+   * a list of buttons, with the same marks the grid uses, and the keyboard
+   * and screen reader behaviour spelled out by hand.
+   */
+  _buildProfileSelect(model, all) {
+    const picker = document.createElement("div");
+    picker.className = "picker";
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "picker-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-label", this._t("Profiles"));
+    trigger.innerHTML = `
+      <span class="picker-mark"></span>
+      <span class="picker-name"></span>
+      <ha-icon class="picker-arrow" icon="mdi:chevron-down"></ha-icon>`;
+
+    const list = document.createElement("div");
+    list.className = "picker-list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+
+    const options = new Map();
+    for (const profile of all) {
+      // Custom is a status, not something to pick: it is in the list while it
+      // is what the device is doing, and cannot be chosen.
+      if (profile.virtual && profile.id !== model.activeId) continue;
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "picker-option";
+      option.setAttribute("role", "option");
+      option.dataset.id = profile.id;
+      option.style.setProperty("--profile-color", profile.color);
+      option.innerHTML = `
+        ${profileMark(profile)}
+        <span class="picker-option-name"></span>
+        <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
+      option.querySelector(".picker-option-name").textContent = profile.name;
+      if (profile.virtual) {
+        option.disabled = true;
+      } else {
+        option.addEventListener("click", () => {
+          this._openProfileList(false);
+          this._applyProfile(profile);
+        });
+      }
+      list.appendChild(option);
+      options.set(profile.id, option);
+    }
+
+    trigger.addEventListener("click", () => this._openProfileList(list.hidden));
+    picker.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !list.hidden) {
+        event.stopPropagation();
+        this._openProfileList(false);
+        trigger.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      if (list.hidden) {
+        this._openProfileList(true);
+        return;
+      }
+      const usable = [...list.querySelectorAll(".picker-option:not(:disabled)")];
+      const at = usable.indexOf(this.shadowRoot.activeElement);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = at < 0 ? 0 : (at + step + usable.length) % usable.length;
+      usable[next]?.focus();
+    });
+
+    picker.append(trigger, list);
+    this._el.profiles.appendChild(picker);
+    this._profilePicker = { trigger, list, options };
+  }
+
+  /** Open or close the profile list, and listen for the click that ends it. */
+  _openProfileList(open) {
+    const picker = this._profilePicker;
+    if (!picker) return;
+    picker.list.hidden = !open;
+    picker.trigger.setAttribute("aria-expanded", open ? "true" : "false");
+
+    if (this._closePicker) {
+      window.removeEventListener("pointerdown", this._closePicker, true);
+      this._closePicker = null;
+    }
+    if (!open) return;
+    // A click anywhere else closes it - including on another card, which is
+    // why this hangs off the window rather than off the card.
+    this._closePicker = (event) => {
+      if (event.composedPath().includes(picker.list)) return;
+      if (event.composedPath().includes(picker.trigger)) return;
+      this._openProfileList(false);
+    };
+    window.addEventListener("pointerdown", this._closePicker, true);
+  }
+
   _layout(count) {
     const configured = this._config.profile_layout;
-    if (configured === "grid" || configured === "scroll") return configured;
+    if (["grid", "scroll", "dropdown"].includes(configured)) return configured;
     return count > 6 ? "scroll" : "grid";
   }
 
@@ -913,6 +1032,23 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     // profiles
+    if (this._profilePicker) {
+      const active =
+        model.profiles.find((profile) => profile.id === model.activeId) ||
+        model.custom;
+      const { trigger, list, options } = this._profilePicker;
+      trigger.querySelector(".picker-name").textContent = active.name;
+      trigger.querySelector(".picker-mark").innerHTML = profileMark(active);
+      trigger.style.setProperty("--profile-color", active.color);
+      trigger.disabled = model.unavailable;
+      if (model.unavailable) this._openProfileList(false);
+      for (const [id, option] of options) {
+        const isActive = id === model.activeId;
+        option.classList.toggle("active", isActive);
+        option.setAttribute("aria-selected", isActive ? "true" : "false");
+      }
+      list.setAttribute("aria-label", this._t("Profiles"));
+    }
     for (const [id, button] of this._profileButtons) {
       const isActive = id === model.activeId;
       button.classList.toggle("active", isActive);
@@ -1624,6 +1760,94 @@ ha-card.unavailable { opacity: 0.6; }
 }
 .profiles[data-layout="scroll"] .profile { scroll-snap-align: start; }
 
+/* the dropdown layout */
+.profiles[data-layout="dropdown"] { display: block; }
+.picker { position: relative; }
+.picker-trigger,
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--cp-text);
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.picker-trigger {
+  padding: 12px 12px 12px 14px;
+  border-color: var(--cp-line);
+  background: var(--cp-fill);
+  font-weight: 500;
+}
+.picker-trigger .picker-name { flex: 1; min-width: 0; }
+.picker-arrow {
+  --mdc-icon-size: 20px;
+  color: var(--cp-muted);
+  flex: none;
+}
+.picker-trigger[aria-expanded="true"] .picker-arrow { transform: rotate(180deg); }
+.picker-trigger:disabled { opacity: 0.6; cursor: default; }
+.picker-list[hidden] { display: none; }
+.picker-list {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  max-height: 320px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--cp-line);
+  border-radius: 16px;
+  background: var(--cp-surface);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.picker-option { padding: 10px 10px 10px 12px; }
+.picker-option .picker-option-name { flex: 1; min-width: 0; }
+.picker-option:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.1); }
+.picker-option.active { background: rgba(var(--accent-rgb), 0.14); font-weight: 600; }
+.picker-option:disabled { color: var(--cp-muted); cursor: default; }
+.picker-option .check { display: none; }
+.picker-option.active .check {
+  display: block;
+  --mdc-icon-size: 18px;
+  color: var(--profile-color, var(--accent-color));
+}
+.picker-trigger ha-icon,
+.picker-option ha-icon {
+  --mdc-icon-size: 20px;
+  flex: none;
+  color: var(--profile-color);
+}
+.picker-trigger .picker-arrow { color: var(--cp-muted); }
+/* The mark sits in a span of its own, and an inline span gives a dot no box
+   to be 12px in - the rows get theirs from being flex items. */
+.picker-mark { display: flex; flex: none; align-items: center; }
+/* The grid draws its dot with a halo around it; in a row of text that would
+   only make the line taller. */
+.picker-trigger .dot-mark,
+.picker-option .dot-mark {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--profile-color);
+  box-shadow: none;
+}
+.picker-trigger:focus-visible,
+.picker-option:focus-visible {
+  outline: 2px solid var(--profile-color, var(--accent-color));
+  outline-offset: -2px;
+}
+
 .profile {
   position: relative;
   display: flex;
@@ -2140,6 +2364,7 @@ const SCHEMA = [
         options: [
           { value: "auto", label: "Auto" },
           { value: "grid", label: "Grid" },
+          { value: "dropdown", label: "Dropdown" },
           { value: "scroll", label: "Scroll" },
         ],
       },

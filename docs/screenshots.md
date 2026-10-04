@@ -33,6 +33,9 @@ pip install playwright     # the Python package only
 No browser download: the script uses `channel="chrome"`, i.e. the Google Chrome
 that is already on the machine. Override the port with `PORT` if 8719 is busy.
 
+A shot may carry a `click` selector: the recipe clicks it before measuring, so
+a state that only exists while something is open can be in the pictures too.
+
 ## Sizes are not constants
 
 The card grows with the number of profiles and the controls the device offers,
@@ -53,6 +56,8 @@ special cases - do not "fix" them into a normal state:
 | `card-off.png` | device off, the "Off" profile matches |
 | `card-heating.png` | a radiator thermostat: no fan, no swing, no switches |
 | `card-dial.png` | the same thermostat with `temperature_style: dial` |
+| `card-dropdown.png` | the air conditioner with `profile_layout: dropdown` |
+| `card-dropdown-open.png` | the same, with the profile list open |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-capture.png` | something was changed by hand, the capture offer is up |
 

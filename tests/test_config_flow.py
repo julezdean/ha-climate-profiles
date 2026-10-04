@@ -232,7 +232,32 @@ async def test_the_list_shows_what_is_stored(hass):
     fields = schema[CONF_PROFILES].config["fields"]
     assert "fan" in fields
     assert fields["hvac_mode"]["required"] is True
-    assert fields[CONF_PROFILE_ID]["selector"]["text"]["read_only"] is True
+    # The id rides along in the row but has no field: nothing to edit, and
+    # nothing to mistype. `read_only` would not help - the frontend's text
+    # selector ignores it and draws an ordinary box.
+    assert CONF_PROFILE_ID not in fields
+
+
+async def test_a_row_may_carry_its_hidden_id(hass):
+    """It is no field, so the stock validator would refuse it as "not allowed"."""
+    stored = [
+        {
+            "id": "keep-me",
+            "name": "Komfort",
+            "color": "#22c55e",
+            "values": {"hvac_mode": "cool"},
+        }
+    ]
+    entry = await setup_options(hass, stored)
+    result = await open_step(hass, entry, "profiles")
+
+    rows = next(
+        key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if key == CONF_PROFILES
+    )
+    # What the form hands out is what it has to accept back.
+    assert result["data_schema"]({CONF_PROFILES: rows, **custom_fields()})
 
 
 async def test_editing_keeps_the_id_and_can_clear_a_value(hass):

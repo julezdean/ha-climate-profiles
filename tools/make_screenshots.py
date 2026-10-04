@@ -58,6 +58,18 @@ SHOTS: dict[str, dict] = {
     },
     # A radiator thermostat: everything the device cannot do is gone.
     "card-heating": {"theme": "light", "device": "heating"},
+    # The profiles as a dropdown: for a dashboard where this is one card of
+    # many and six buttons are five too many - closed, and with its list open,
+    # which is where the icons and colours are.
+    "card-dropdown": {
+        "theme": "light",
+        "card": {"profile_layout": "dropdown"},
+    },
+    "card-dropdown-open": {
+        "theme": "light",
+        "card": {"profile_layout": "dropdown"},
+        "click": "climate-profile-card .picker-trigger",
+    },
     # The other shape of the temperature control, on the device it suits best.
     "card-dial": {
         "theme": "light",
@@ -157,6 +169,10 @@ def main() -> int:
         for name, shot in SHOTS.items():
             page.goto(build_url(base, shot), wait_until="networkidle")
             page.wait_for_timeout(250)
+            # Some states only exist after a click - an open dropdown, say.
+            if selector := shot.get("click"):
+                page.locator(selector).click()
+                page.wait_for_timeout(250)
             target = page.locator("#stage")
             box = target.bounding_box()
             if box is None:  # pragma: no cover - defensive

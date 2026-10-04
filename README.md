@@ -1,9 +1,9 @@
 # Climate Profiles
 
 A Home Assistant integration that turns any `climate` entity - an air
-conditioner, a heat pump, a radiator thermostat - plus the optional
-`number`/`switch` entities some devices expose, into freely configurable
-profiles, and tells you which profile is currently active.
+conditioner, a heat pump, a radiator thermostat - plus any entity beside it
+whose state is a single value, into freely configurable profiles, and tells
+you which profile is currently active.
 
 It replaces the usual "template sensor plus a script full of `choose` blocks"
 package with a proper integration: profiles are configured in the UI, the
@@ -29,6 +29,9 @@ matching happens server side, and a custom Lovelace card renders it.
   overwritten by accident
 * modes, temperature range, step widths and fan limits are read from the
   devices, never hard coded - a thermostat simply shows fewer controls
+* the temperature is a bar or a dial, whichever suits the dashboard, with what
+  the device reports about the room - its temperature, its humidity, what it is
+  doing right now - beside it
 * several devices, each with its own profiles and its own Home Assistant device
 
 ## Installation
@@ -84,8 +87,11 @@ Each config entry creates one device with two entities:
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.<name>_klimaprofil` | the active profile's name, plus everything the card needs as attributes |
-| `select.<name>_profil` | pick a profile - works in automations, scripts and voice assistants |
+| `sensor.<name>_climate_profile` | the active profile's name, plus everything the card needs as attributes |
+| `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
+
+(The entity names are translated, so a German instance gets
+`sensor.<name>_klimaprofil` and `select.<name>_profil`.)
 
 ## Managing profiles
 
@@ -99,7 +105,9 @@ Two lists, and everything about an entry happens in one of them.
 | **Manage profiles** | a profile | name, colour, icon, how it becomes active, what a change by hand does, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
-button below the list adds one. The order of the rows is the order profiles are
+button below the list adds one. The id a profile or a value is known by rides
+along in its row without being shown: it is what everything stored points at,
+and nothing you would ever want to type. The order of the rows is the order profiles are
 matched and shown in, and the order values appear on the card.
 
 Two things that are not rows:
@@ -120,7 +128,7 @@ leaves what profiles stored for it alone - it is simply skipped from then on.
 To point a value at a different entity, edit its row; adding it anew creates a
 new value with a new id, and every profile loses it.
 
-Each profile form asks what a **change by hand** should do while that profile
+Each profile's row says what a **change by hand** should do while that profile
 is active, and the three answers are the whole story:
 
 | | |
@@ -129,7 +137,7 @@ is active, and the three answers are the whole story:
 | Store automatically | it is written straight into the profile, without an offer |
 | Write protected | nothing is ever stored over the quick path |
 
-The form itself always stays editable, whatever is chosen there.
+The row itself always stays editable, whatever is chosen there.
 
 Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
@@ -154,7 +162,7 @@ range - comes from the integration. Options, all optional:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
-| `profile_layout` | `auto` | `auto`, `grid` or `scroll` |
+| `profile_layout` | `auto` | `auto`, `grid`, `scroll` or `dropdown` |
 | `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
 
@@ -175,9 +183,22 @@ More examples: [`examples/lovelace.yaml`](examples/lovelace.yaml).
 buttons in the gap at its bottom and what the room reports in its middle - a
 drag around an arc rarely lands on the half degree you meant.
 
+`profile_layout: dropdown` puts the profiles into one list instead of a wall of
+buttons, for a dashboard where this is one card among many. The field shows the
+active profile with its icon, or a dot in its colour where it has none, and the
+open list shows the same for every profile - a native `<select>` can draw
+neither, which is why this one is built from buttons and takes the arrow keys,
+Enter and Escape. **Custom** appears in the list only while it is what the
+device is doing, and cannot be picked: it has no values to apply. `auto` never
+chooses the dropdown - it is grid up to six profiles and scroll beyond.
+
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
 | ![](docs/images/card-light.png) | ![](docs/images/card-custom.png) | ![](docs/images/card-dial.png) |
+
+| `profile_layout: dropdown` | …with the list open |
+| --- | --- |
+| ![](docs/images/card-dropdown.png) | ![](docs/images/card-dropdown-open.png) |
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
@@ -315,7 +336,8 @@ reported rather than silently dropped.
 | `target_temp_low`/`target_temp_high` (devices in `heat_cool`) | only `temperature` is read and written, so a profile with a temperature never matches such a device - the state stays custom rather than claiming a match |
 | `humidity` | not a profile value |
 
-Both gaps are pinned down by tests in `tests/test_heating.py`.
+The first two are pinned down by tests in `tests/test_heating.py`. The humidity
+a device reports is shown on the card; it is just not something a profile sets.
 
 ## Services
 
@@ -400,7 +422,7 @@ active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
 profiles: [{id, name, color, icon, order, detect, capture, protected, values}, …]
-custom_profile: {id: __custom__, name: Custom, color: "#78909c"}
+custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
 capabilities: {hvac_modes: […], min_temp: 16, target_temp_step: 1, …}
@@ -484,7 +506,9 @@ wherever a logo would go. The bundled images are picked up from Home Assistant
 
 Every control is a real button with an `aria-label` and `aria-pressed`, the
 focus ring is visible, and the active profile is marked with a check mark and
-not by colour alone. The card measures both candidate text colours against
+not by colour alone. The dial is a `slider` that takes the arrow keys and
+reports its value, and its two step buttons do the same job without any
+dragging at all. The card measures both candidate text colours against
 each profile colour and picks the more readable one. Very saturated mid tone
 colours (a strong violet, for example) can still stay slightly below the 4.5:1
 AA ratio - the profile name is always shown in the header as plain text as

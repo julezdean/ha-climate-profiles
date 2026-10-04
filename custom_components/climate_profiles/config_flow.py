@@ -108,7 +108,6 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "color": "Colour",
         "detect": "Recognise this profile automatically",
         "capture": "Changes by hand",
-        "id": "Id (do not change)",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
         VALUE_SWING_MODE: "Swing",
@@ -121,7 +120,6 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "color": "Farbe",
         "detect": "Dieses Profil automatisch erkennen",
         "capture": "Änderungen von Hand",
-        "id": "Id (nicht ändern)",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
         VALUE_SWING_MODE: "Swing",
@@ -130,8 +128,50 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
 }
 
 
+class RowSelector(ObjectSelector):
+    """A sortable list of rows that carry an id the user never sees.
+
+    The stock validator refuses every key that is not a field, and the id is
+    deliberately not one: a field marked ``read_only`` is accepted by the
+    backend and ignored by the frontend's text selector, which drew the id as
+    an ordinary editable box. Left out of the fields it is invisible, and it
+    still survives every edit - the frontend hands the whole row to the edit
+    dialog, merges the fields back into it, and moves rows as whole objects.
+    So the id is taken off the rows before they are validated and put back
+    afterwards. Only a row added with the + button arrives without one.
+    """
+
+    def __init__(self, config: dict[str, Any], id_key: str) -> None:
+        """Remember which key of a row is the id."""
+        super().__init__(config)
+        self._id_key = id_key
+
+    def __call__(self, data: Any) -> Any:
+        """Validate the rows, ignoring the id each one carries."""
+        if not isinstance(data, list):
+            return super().__call__(data)
+
+        super().__call__(
+            [
+                {key: value for key, value in row.items() if key != self._id_key}
+                if isinstance(row, dict)
+                else row
+                for row in data
+            ]
+        )
+        return data
+
+
 def _value_row(value: AdditionalValue) -> dict[str, Any]:
     """Return one additional value as a row of the list.
+
+    The id is in the row but in no field, so there is nothing to edit and
+    nothing to mistype. It survives all the same: the frontend hands the whole
+    row to the edit dialog and merges the fields back into it, moves rows as
+    whole objects, and only a row added with the button arrives without one.
+    (A field marked ``read_only`` would not do - the backend takes the option
+    and the frontend's text selector ignores it, so the id showed up as an
+    ordinary editable box.)
 
     A field that is not set is left out rather than sent as ``None``: the
     selectors validate what they are given, and ``None`` is not a string.
@@ -480,13 +520,14 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         fields: dict[Any, Any] = {
             vol.Optional(
                 CONF_ADDITIONAL, description={"suggested_value": rows}
-            ): ObjectSelector(
+            ): RowSelector(
                 {
                     "multiple": True,
                     "label_field": CONF_ADDITIONAL_NAME,
                     "description_field": CONF_ADDITIONAL_ENTITY,
                     "fields": self._value_fields(),
-                }
+                },
+                CONF_ADDITIONAL_ID,
             )
         }
         if candidates:
@@ -552,12 +593,13 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 {
                     vol.Optional(
                         CONF_PROFILES, description={"suggested_value": rows}
-                    ): ObjectSelector(
+                    ): RowSelector(
                         {
                             "multiple": True,
                             "label_field": CONF_PROFILE_NAME,
                             "fields": self._profile_fields(vocab),
-                        }
+                        },
+                        CONF_PROFILE_ID,
                     ),
                     vol.Required(
                         CONF_CUSTOM_NAME,
@@ -612,13 +654,6 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "required": False,
                 "label": labels["icon"],
                 "selector": {"icon": {}},
-            },
-            # Not for reading, let alone editing: it is what profiles store
-            # their values under, and it has to survive every other change.
-            CONF_ADDITIONAL_ID: {
-                "required": False,
-                "label": labels["id"],
-                "selector": {"text": {"read_only": True}},
             },
         }
 
@@ -705,11 +740,6 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "selector": selector_config,
             }
 
-        fields[CONF_PROFILE_ID] = {
-            "required": False,
-            "label": labels["id"],
-            "selector": {"text": {"read_only": True}},
-        }
         return fields
 
     def _values_from_rows(

@@ -481,3 +481,82 @@ async def test_the_dial_can_be_moved_from_the_keyboard(open_card):
     await page.wait_for_timeout(800)
 
     assert (await calls(page))[0]["data"]["temperature"] == 25
+
+
+# --- the profile layouts ----------------------------------------------------
+
+
+async def test_the_profiles_can_be_a_dropdown(open_card):
+    page = await open_card(card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".profile").count() == 0, "no buttons"
+    trigger = card.locator(".picker-trigger")
+    assert "Comfort" in await trigger.inner_text()
+    assert await card.locator(".picker-list").is_hidden()
+
+    await trigger.click()
+
+    options = card.locator(".picker-option")
+    assert await options.locator(".picker-option-name").all_inner_texts() == [
+        "Off",
+        "Away",
+        "Comfort",
+        "Comfort+",
+        "Night",
+        "Max",
+    ]
+    # What a profile is recognised by comes along: an icon where there is one,
+    # the profile's colour as a dot where there is not. (The second icon of a
+    # row is the check mark of the active one.)
+    assert (
+        await options.nth(0).locator("ha-icon").first.get_attribute("icon")
+        == "mdi:power"
+    )
+    assert await options.nth(1).locator(".dot-mark").count() == 1
+    assert await options.nth(2).get_attribute("aria-selected") == "true"
+
+
+async def test_picking_from_the_dropdown_applies_the_profile(open_card):
+    page = await open_card(card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+
+    await card.locator(".picker-trigger").click()
+    await card.get_by_role("option", name="Night").click()
+    await page.wait_for_timeout(200)
+
+    assert await calls(page) == [
+        {
+            "domain": "climate_profiles",
+            "service": "apply_profile",
+            "data": {
+                "entity_id": "sensor.living_room_climate_profile",
+                "profile": "p5",
+            },
+        }
+    ]
+    assert await card.locator(".picker-list").is_hidden(), "and it closes again"
+
+
+async def test_the_list_closes_on_escape(open_card):
+    page = await open_card(card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+
+    await card.locator(".picker-trigger").click()
+    assert await card.locator(".picker-list").is_visible()
+    await page.keyboard.press("Escape")
+
+    assert await card.locator(".picker-list").is_hidden()
+
+
+async def test_custom_joins_the_dropdown_while_it_is_what_is_on(open_card):
+    """It has to be shown somewhere - but it still cannot be chosen."""
+    page = await open_card(CHANGED, card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+
+    assert "Custom" in await card.locator(".picker-trigger").inner_text()
+    await card.locator(".picker-trigger").click()
+
+    custom = card.locator(".picker-option[data-id='__custom__']")
+    assert await custom.is_disabled()
+    assert await custom.get_attribute("aria-selected") == "true"

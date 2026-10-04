@@ -47,8 +47,8 @@ versioning [Semantic Versioning](https://semver.org/).
   reordering and deleting used to be four menu entries each, every one of them
   a separate walk through the dialog. A profile's row holds everything it is -
   name, colour, icon, how it becomes active, what a change by hand does, and
-  every value it sets; its id travels with the row, read only, because that is
-  what the stored values hang off. The order of the rows is the order profiles
+  every value it sets; its id travels with the row unseen, because that is what
+  the stored values hang off and it is nothing to type at. The order of the rows is the order profiles
   are matched and shown in. Underneath the value list sit the two things that
   are not rows: the tick-off list of the device's own entities, and the order
   values are written in. Underneath the profile list sit the three fields of
@@ -72,6 +72,14 @@ versioning [Semantic Versioning](https://semver.org/).
   gain profile values. The climate entity remains what identifies an entry, so
   a template or helper climate entity without a device loses nothing; for those
   the menu entry simply does not appear.
+- **The profiles can be a dropdown**: `profile_layout: dropdown`, or the entry
+  in the card's editor. One list instead of a wall of buttons, for a dashboard
+  where this is one card among many. It is not a `<select>`: that can draw
+  neither an icon nor a colour, and those are how a profile is recognised at a
+  glance - so the field and every row carry the same mark the buttons do, and
+  the list takes the arrow keys, Enter and Escape. "Custom" is in the list only
+  while it is what the device is doing, and stays unpickable - it has no values
+  to apply. `auto` is unchanged and never picks it.
 - **The temperature can be a dial** instead of the bar: `temperature_style:
   dial` in the card, or the dropdown in its editor. A 270° arc in the active
   profile's colour, the room's own temperature as a dot on the same scale, and
