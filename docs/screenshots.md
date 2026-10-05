@@ -61,6 +61,11 @@ special cases - do not "fix" them into a normal state:
 | `card-icons.png` | the thermostat with `profile_layout: icons` |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-capture.png` | something was changed by hand, the capture offer is up |
+| `card-hidden.png` | "Summer", hidden from the card, is active - shown, but not offered |
+
+"Summer" is in the air conditioner's profiles in every shot. It is hidden from
+the card, so it shows up only in `card-hidden.png`, where it is active; the
+other pictures must not change when it is added or edited.
 
 To look at a state interactively:
 

@@ -49,6 +49,10 @@ CONF_PROFILE_VALUES: Final = "values"
 #: it is active only while it is the one that was selected - which is what lets
 #: two profiles hold the same values.
 CONF_PROFILE_DETECT: Final = "detect"
+#: Whether the card leaves this profile out of what it offers to pick. It is
+#: still shown while it is active - the card does not hide what the device is
+#: doing - and every other way of applying it keeps working.
+CONF_PROFILE_HIDDEN: Final = "hidden"
 
 #: What happens to a manual change while this profile is active. One question,
 #: one answer - write protection and automatic capture used to be two settings

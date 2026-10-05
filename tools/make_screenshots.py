@@ -100,6 +100,19 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
+    # A profile hidden from the card, set by an automation: shown while it is
+    # what the device is doing, and not offered otherwise.
+    "card-hidden": {
+        "theme": "light",
+        "state": {
+            "temperature": 25,
+            "silent": "on",
+            "active_profile": "Summer",
+            "active_profile_id": "p7",
+            "active_profile_color": "#f59e0b",
+            "last_matched_profile_id": "p7",
+        },
+    },
     # The offer to write a manual change back into the profile it came from.
     "card-capture": {
         "theme": "light",

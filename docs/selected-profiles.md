@@ -23,8 +23,11 @@ of an automation:
 
 ### Recognise this profile automatically
 
-A field on every profile, default **on**, which is today's behaviour. Per
-profile rather than per device: recognition can be off for the named targets of
+A field on every profile, default **on**, which is today's behaviour. (Since
+2.1 a new profile starts with it off; stored profiles keep it on. A profile is
+usually something you choose, and before Home Assistant 2026.10 a new row
+showed the switch off anyway while storing it on.) Per profile rather than per
+device: recognition can be off for the named targets of
 an automation and on for "Off" at the same time, and a device-wide switch next
 to a per profile one would be the same question in two places.
 
