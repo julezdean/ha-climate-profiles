@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-05
+
+### Added
+
+- **Profiles can be hidden on the card.** A switch in the profile's row, for
+  a profile only an automation is meant to set. The card leaves it out of what
+  it offers, in every layout, and shows it only while it is what the device is
+  doing - as the active profile, but not one to pick. `apply_profile` and the
+  select entity still reach it: hiding is about the card, and the select has to
+  keep it among its options, or its state would read "unknown" while it is
+  active. Hiding is not write protection; that stays its own setting.
+
+### Changed
+
+- **A new profile is no longer recognised from the state by default.** A
+  profile is usually something you choose; one that becomes active whenever the
+  state fits it - "Off" - is the exception. Profiles stored before keep
+  recognition on, so updating changes nothing about them. Before Home
+  Assistant 2026.10 a new row shows every switch off anyway, and stored it as
+  on: what the dialog showed and what was saved now agree.
+- A profile saved from the card with **New profile** (`save_as_profile`)
+  starts with recognition off too, and is selected right away - it is the
+  state you are in, and without that the card would have gone on saying
+  custom about it.
+
+### Fixed
+
+- Custom joined the `icons` and `dropdown` layouts only if it was active when
+  the card was built. A change by hand afterwards left the icons without any
+  active one; the card now follows the device.
+
 ## [2.0.0] - 2026-10-04
 
 ### Changed

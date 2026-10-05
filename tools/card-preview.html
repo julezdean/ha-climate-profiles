@@ -142,6 +142,12 @@
         { id: "p6", name: "Max", color: "#ef4444", icon: null, order: 5,
           values: { hvac_mode: "cool", temperature: 16, swing_mode: "vertical",
                     fan: 100, display: "off", silent: "off" } },
+        /* Hidden from the card: only an automation sets it. It stays out of
+           every picture unless it is the active profile. */
+        { id: "p7", name: "Summer", color: "#f59e0b", icon: null, order: 6,
+          hidden: true, detect: false,
+          values: { hvac_mode: "cool", temperature: 25, swing_mode: "off",
+                    fan_mode: "auto", display: "off", silent: "on" } },
       ];
 
       /* The additional values, exactly as the integration reports them. The

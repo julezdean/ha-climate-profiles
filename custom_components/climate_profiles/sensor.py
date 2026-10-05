@@ -169,6 +169,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "icon": profile.icon,
                     "order": order,
                     "detect": profile.detect,
+                    "hidden": profile.hidden,
                     "capture": profile.capture,
                     "protected": profile.protected,
                     "values": dict(profile.values),

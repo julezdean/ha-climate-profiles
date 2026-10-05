@@ -175,7 +175,10 @@ async def test_saving_the_state_as_a_new_profile(hass, entry_data):
     assert created["values"]["temperature"] == 23
     assert created["values"]["fan_mode"] == "high"
     assert created["values"]["display"] == "off"
-    # It is the last one, and it matches right away.
+    # It is the last one, and it is active right away - not because the state
+    # fits it, since a new profile is not recognised on its own, but because
+    # saving it is choosing it.
+    assert created["detect"] is False
     assert stored(entry)[-1]["name"] == "Mittagshitze"
     assert hass.states.get(SENSOR).state == "Mittagshitze"
 

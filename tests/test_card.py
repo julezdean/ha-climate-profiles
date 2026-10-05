@@ -615,3 +615,114 @@ async def test_custom_joins_the_icons_while_it_is_what_is_on(open_card):
     assert await custom.count() == 1
     assert await custom.is_disabled()
     assert "active" in (await custom.get_attribute("class"))
+
+
+async def test_custom_joins_when_it_becomes_what_is_on(open_card):
+    """Not only when the card is built: the list follows the device.
+
+    Custom used to be in the list only if it was active when the card was
+    built - a manual change afterwards left the icons without an active one.
+    """
+    for layout, selector in (
+        ("icons", ".profile[data-id='__custom__']"),
+        ("dropdown", ".picker-option[data-id='__custom__']"),
+    ):
+        page = await open_card(card={"profile_layout": layout})
+        custom = page.locator(f"climate-profile-card {selector}")
+        assert await custom.count() == 0
+
+        await page.evaluate(f"setCardState({json.dumps(CHANGED)})")
+        await page.wait_for_timeout(100)
+        assert await custom.count() == 1, layout
+
+        await page.evaluate("setCardState({})")
+        await page.wait_for_timeout(100)
+        assert await custom.count() == 0, layout
+
+
+# --- profiles hidden from the card ------------------------------------------
+
+#: The fixture's "Summer" is hidden from the card and active here.
+SUMMER = {
+    "temperature": 25,
+    "silent": "on",
+    "active_profile": "Summer",
+    "active_profile_id": "p7",
+    "active_profile_color": "#f59e0b",
+    "last_matched_profile_id": "p7",
+}
+
+
+@pytest.mark.parametrize(
+    ("layout", "selector"),
+    [
+        ("grid", ".profile"),
+        ("scroll", ".profile"),
+        ("icons", ".profile"),
+        ("dropdown", ".picker-option"),
+    ],
+)
+async def test_a_hidden_profile_is_not_offered(open_card, layout, selector):
+    page = await open_card(card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(f"{selector}[data-id='p7']").count() == 0
+    # The six others are all still there.
+    for profile_id in ("p1", "p2", "p3", "p4", "p5", "p6"):
+        assert await card.locator(f"{selector}[data-id='{profile_id}']").count() == 1
+
+
+@pytest.mark.parametrize(
+    ("layout", "selector"),
+    [
+        ("grid", ".profile"),
+        ("scroll", ".profile"),
+        ("icons", ".profile"),
+        ("dropdown", ".picker-option"),
+    ],
+)
+async def test_a_hidden_profile_is_shown_while_it_is_on(open_card, layout, selector):
+    """The card does not pretend the device is doing something else."""
+    page = await open_card(SUMMER, card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+
+    summer = card.locator(f"{selector}[data-id='p7']")
+    assert await summer.count() == 1
+    assert await summer.is_disabled(), "it is shown, not offered"
+    if layout == "dropdown":
+        assert await summer.get_attribute("aria-selected") == "true"
+        assert await card.locator(".picker-name").inner_text() == "Summer"
+    else:
+        assert "active" in (await summer.get_attribute("class"))
+
+
+async def test_a_hidden_profile_comes_and_goes_with_the_state(open_card):
+    page = await open_card()
+    summer = page.locator("climate-profile-card .profile[data-id='p7']")
+    assert await summer.count() == 0
+
+    await page.evaluate(f"setCardState({json.dumps(SUMMER)})")
+    await page.wait_for_timeout(100)
+    assert await summer.count() == 1
+
+    await page.evaluate("setCardState({})")
+    await page.wait_for_timeout(100)
+    assert await summer.count() == 0
+
+
+async def test_a_hidden_profile_does_not_count_towards_the_layout(open_card):
+    """Six offered profiles fit a grid; the hidden seventh does not tip it."""
+    page = await open_card()
+    layout = await page.locator("climate-profile-card .profiles").get_attribute(
+        "data-layout"
+    )
+    assert layout == "grid"
+
+
+async def test_a_hidden_active_profile_cannot_be_applied_from_the_card(open_card):
+    page = await open_card(SUMMER)
+
+    await page.locator("climate-profile-card .profile[data-id='p7']").click(force=True)
+    await page.wait_for_timeout(200)
+
+    assert await calls(page) == []

@@ -17,6 +17,7 @@ from custom_components.climate_profiles.const import (
     CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
@@ -198,6 +199,45 @@ async def test_adding_a_profile(hass):
     }
 
 
+async def test_a_new_profile_is_neither_recognised_nor_hidden(hass):
+    """A new row shows both switches off, so that is what is stored.
+
+    Before Home Assistant 2026.10 a row field cannot carry a default: the +
+    button opens the row with every switch off, and an absent switch has to
+    mean what the dialog showed.
+    """
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [{CONF_PROFILE_NAME: "Neu", CONF_PROFILE_CAPTURE: "ask", "hvac_mode": "cool"}],
+    )
+
+    stored = result["data"][CONF_PROFILES][0]
+    assert stored[CONF_PROFILE_DETECT] is False
+    assert CONF_PROFILE_HIDDEN not in stored
+
+
+async def test_hiding_a_profile_from_the_card(hass):
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_NAME: "Sommer",
+                CONF_PROFILE_CAPTURE: "ask",
+                CONF_PROFILE_HIDDEN: True,
+                "hvac_mode": "cool",
+            }
+        ],
+    )
+
+    assert result["data"][CONF_PROFILES][0][CONF_PROFILE_HIDDEN] is True
+
+
 async def test_the_list_shows_what_is_stored(hass):
     """Every profile is a row, with its values in it and its id read only."""
     stored = [
@@ -223,6 +263,7 @@ async def test_the_list_shows_what_is_stored(hass):
             CONF_PROFILE_COLOR: [34, 197, 94],
             CONF_PROFILE_ICON: "mdi:sofa",
             CONF_PROFILE_DETECT: True,
+            CONF_PROFILE_HIDDEN: False,
             CONF_PROFILE_CAPTURE: "ask",
             CONF_PROFILE_ID: "keep-me",
             "hvac_mode": "cool",

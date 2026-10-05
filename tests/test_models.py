@@ -21,6 +21,26 @@ def test_round_trip_through_storage(profiles):
     assert restored.as_list() == profiles.as_list()
 
 
+def test_stored_profiles_without_the_two_switches_keep_their_meaning():
+    """Absent means recognised and offered - what every older profile was."""
+    restored = ClimateProfile.from_dict(
+        {"id": "old", "name": "Aus", "values": {"hvac_mode": "off"}}
+    )
+    assert restored.detect is True
+    assert restored.hidden is False
+    # Nothing is written back that was not there.
+    assert "detect" not in restored.as_dict()
+    assert "hidden" not in restored.as_dict()
+
+
+def test_a_hidden_profile_round_trips():
+    hidden = ClimateProfile(
+        id="s", name="Sommer", values={"hvac_mode": "cool"}, hidden=True
+    )
+    assert hidden.as_dict()["hidden"] is True
+    assert ClimateProfile.from_dict(hidden.as_dict()).hidden is True
+
+
 def test_ids_stay_stable_when_a_profile_is_renamed():
     original = ClimateProfile(id="abc", name="Komfort", values={"hvac_mode": "cool"})
     renamed = ClimateProfile(

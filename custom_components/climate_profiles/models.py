@@ -29,6 +29,7 @@ from .const import (
     CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
@@ -101,6 +102,9 @@ class ClimateProfile:
     #: Whether this profile may be recognised from the device state. Off, it
     #: is active only while it is the one that was selected.
     detect: bool = True
+    #: Whether the card leaves this profile out of what it offers - for a
+    #: profile only an automation is meant to set. Shown while it is active.
+    hidden: bool = False
     #: What a manual change does while this profile is active: ask (the card
     #: offers to capture it), auto (it is written straight in) or never (the
     #: profile is write protected).
@@ -144,7 +148,11 @@ class ClimateProfile:
             color=normalise_color(raw.get(CONF_PROFILE_COLOR)),
             values=values,
             icon=str(icon) if icon else None,
+            # Absent means on: that is what every profile stored before the
+            # default for new ones changed to off was. New profiles always
+            # store the answer when it is off, so they never land here.
             detect=bool(raw.get(CONF_PROFILE_DETECT, True)),
+            hidden=bool(raw.get(CONF_PROFILE_HIDDEN, False)),
             capture=_capture_mode(raw),
         )
 
@@ -160,6 +168,8 @@ class ClimateProfile:
             data[CONF_PROFILE_ICON] = self.icon
         if not self.detect:
             data[CONF_PROFILE_DETECT] = False
+        if self.hidden:
+            data[CONF_PROFILE_HIDDEN] = True
         if self.capture != CAPTURE_ASK:
             data[CONF_PROFILE_CAPTURE] = self.capture
         return data

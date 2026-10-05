@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.0.0";
+const CARD_VERSION = "2.1.0-beta.1";
 
 /* eslint-disable no-console */
 console.info(
@@ -317,6 +317,17 @@ class ClimateProfileCard extends HTMLElement {
     return !hidden && Boolean(available);
   }
 
+  /**
+   * Whether the active profile is one the card lists only while it is active:
+   * custom, which is a status and not a preset, or a profile hidden from the
+   * card because only an automation is meant to set it.
+   */
+  _shownWhileActive(model) {
+    if (model.activeId === (model.custom.id || CUSTOM_ID)) return true;
+    const active = model.profiles.find((profile) => profile.id === model.activeId);
+    return Boolean(active && active.hidden);
+  }
+
   /* ---- rendering ---- */
 
   _update() {
@@ -328,8 +339,15 @@ class ClimateProfileCard extends HTMLElement {
       return;
     }
 
+    // Custom and a hidden profile are in the list only while they are what
+    // the device is doing, so that coming and going changes what is built -
+    // the active profile itself is only painted.
+    const shownWhileActive = this._shownWhileActive(model) ? model.activeId : "";
     const signature = [
-      model.profiles.map((p) => `${p.id}:${p.name}:${p.color}`).join("|"),
+      model.profiles
+        .map((p) => `${p.id}:${p.name}:${p.color}:${Boolean(p.hidden)}`)
+        .join("|"),
+      shownWhileActive,
       model.hvacModes.join(","),
       model.fanModes.join(","),
       model.swingModes.join(","),
@@ -563,7 +581,9 @@ class ClimateProfileCard extends HTMLElement {
     const wrap = this._el.profiles;
     wrap.innerHTML = "";
     wrap.setAttribute("aria-label", this._t("Profiles"));
-    const layout = this._layout(model.profiles.length);
+    // What is offered decides how much room it needs, not what is stored.
+    const offered = model.profiles.filter((profile) => !profile.hidden);
+    const layout = this._layout(offered.length);
     wrap.dataset.layout = layout;
 
     const all = [...model.profiles, { ...model.custom, virtual: true }];
@@ -581,11 +601,15 @@ class ClimateProfileCard extends HTMLElement {
       // Custom has no icon of its own, and a row of icons has no room for a
       // dashed box that says nothing: it joins only while it is what is on.
       if (iconsOnly && profile.virtual && profile.id !== model.activeId) continue;
+      // A hidden profile is not offered, but the card does not pretend the
+      // device is doing something else either: it is there while it is on.
+      if (profile.hidden && profile.id !== model.activeId) continue;
       const button = document.createElement("button");
       button.type = "button";
       button.className = iconsOnly ? "profile icon-only" : "profile";
       button.dataset.id = profile.id;
       if (profile.virtual) button.classList.add("virtual");
+      if (profile.hidden) button.classList.add("hidden-profile");
       const [r, g, b] = hexToRgb(profile.color);
       button.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
       button.style.setProperty("--profile-color", profile.color);
@@ -609,6 +633,9 @@ class ClimateProfileCard extends HTMLElement {
             "Shown when the current state matches none of your profiles."
           );
         }
+      } else if (profile.hidden) {
+        button.disabled = true;
+        if (!iconsOnly) button.title = this._t("Hidden on the card, set elsewhere.");
       } else {
         button.addEventListener("click", () => this._applyProfile(profile));
       }
@@ -680,20 +707,23 @@ class ClimateProfileCard extends HTMLElement {
     const options = new Map();
     for (const profile of all) {
       // Custom is a status, not something to pick: it is in the list while it
-      // is what the device is doing, and cannot be chosen.
-      if (profile.virtual && profile.id !== model.activeId) continue;
+      // is what the device is doing, and cannot be chosen. A hidden profile
+      // is treated the same way.
+      const onlyWhileActive = profile.virtual || profile.hidden;
+      if (onlyWhileActive && profile.id !== model.activeId) continue;
       const option = document.createElement("button");
       option.type = "button";
       option.className = "picker-option";
       option.setAttribute("role", "option");
       option.dataset.id = profile.id;
+      if (profile.hidden) option.classList.add("hidden-profile");
       option.style.setProperty("--profile-color", profile.color);
       option.innerHTML = `
         ${profileMark(profile)}
         <span class="picker-option-name"></span>
         <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
       option.querySelector(".picker-option-name").textContent = profile.name;
-      if (profile.virtual) {
+      if (onlyWhileActive) {
         option.disabled = true;
       } else {
         option.addEventListener("click", () => {
@@ -1068,9 +1098,10 @@ class ClimateProfileCard extends HTMLElement {
       const isActive = id === model.activeId;
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
-      if (!button.classList.contains("virtual")) {
-        button.disabled = model.unavailable;
-      }
+      const fixed =
+        button.classList.contains("virtual") ||
+        button.classList.contains("hidden-profile");
+      if (!fixed) button.disabled = model.unavailable;
     }
 
     // controls
@@ -1479,6 +1510,8 @@ const CARD_DE = {
   Temperature: "Temperatur",
   "Shown when the current state matches none of your profiles.":
     "Wird angezeigt, wenn der aktuelle Zustand zu keinem Profil passt.",
+  "Hidden on the card, set elsewhere.":
+    "In der Karte ausgeblendet, wird anderswo gesetzt.",
 };
 
 /* -------------------------------------------------------------------------
@@ -1963,6 +1996,16 @@ ha-card.unavailable { opacity: 0.6; }
   border-style: solid;
   color: var(--profile-contrast);
 }
+/* A hidden profile is disabled only so it cannot be picked here. It is a real
+   profile the device is running, not a status like custom, so it is not
+   faded the way every other disabled button is. */
+.profile.hidden-profile,
+.picker-option.hidden-profile:disabled {
+  opacity: 1;
+  color: var(--cp-text);
+  cursor: default;
+}
+.profile.hidden-profile.active { color: var(--profile-contrast); }
 
 /* capture offer */
 /* Every one of these is a flex container, and "display" beats the "hidden"

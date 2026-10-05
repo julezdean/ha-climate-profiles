@@ -895,15 +895,20 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_domain=DOMAIN, translation_key="nothing_to_capture"
             )
 
+        # Like a profile added in the options flow it is not recognised on
+        # its own - so saving it is choosing it, or the card would go on
+        # saying custom about the very state that was just saved.
         profile = ClimateProfile(
             id=new_profile_id(),
             name=name,
             color=normalise_color(color),
             values=values,
             icon=icon or None,
+            detect=False,
         )
         _LOGGER.debug("Saved the current state as %s", profile.name)
         self._renew_baseline = True
+        await self._async_remember_selection(profile.id)
         self._store(self.profiles.appended(profile))
         return profile
 

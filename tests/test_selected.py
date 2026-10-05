@@ -20,7 +20,7 @@ from custom_components.climate_profiles.const import (
 )
 
 from .conftest import set_device_state, settle
-from .test_integration import SENSOR, setup_entry
+from .test_integration import SELECT, SENSOR, setup_entry
 
 #: Two profiles that say exactly the same thing. Only a choice can tell them
 #: apart - with detection on, the second one is unreachable.
@@ -353,3 +353,38 @@ async def test_a_value_the_profile_does_not_define_is_taken_in(
     await hass.async_block_till_done()
 
     assert stored(entry, "Komfort")["values"]["fan_mode"] == "high"
+
+
+# --- hidden from the card ----------------------------------------------------
+
+
+async def test_a_hidden_profile_is_hidden_from_the_card_only(
+    hass: HomeAssistant, entry_data, calls
+):
+    """Hiding is about the card. Every other way of applying it keeps working.
+
+    The select keeps it among its options: its state has to be one of them,
+    or it would read "unknown" exactly while the hidden profile is active.
+    """
+    sommer = {
+        "id": "sommer",
+        "name": "Sommer",
+        "color": "#f59e0b",
+        "values": {"hvac_mode": "cool", "temperature": 26},
+        "detect": False,
+        "hidden": True,
+    }
+    set_device_state(hass, temperature=22)
+    await setup_entry(hass, entry_data, profiles=[*TWINS, sommer])
+
+    attributes = hass.states.get(SENSOR).attributes
+    flags = {profile["id"]: profile["hidden"] for profile in attributes["profiles"]}
+    assert flags == {"komfort": False, "emica": False, "sommer": True}
+    assert "Sommer" in hass.states.get(SELECT).attributes["options"]
+
+    await apply(hass, "Sommer")
+    set_device_state(hass, temperature=26)
+    await settle(hass)
+
+    assert hass.states.get(SENSOR).state == "Sommer"
+    assert hass.states.get(SELECT).state == "Sommer"

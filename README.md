@@ -102,7 +102,7 @@ Two lists, and everything about an entry happens in one of them.
 | List | One row is | The row holds |
 | --- | --- | --- |
 | **Manage values** | an additional value | name, the entity behind it, an icon |
-| **Manage profiles** | a profile | name, colour, icon, how it becomes active, what a change by hand does, and every value it sets |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, what a change by hand does, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
 button below the list adds one. The id a profile or a value is known by rides
@@ -202,6 +202,26 @@ what is on.
 
 `auto` chooses neither - it is grid up to six profiles and scroll beyond.
 
+### Hidden from the card
+
+A profile can be **hidden on the card** - a "Summer" that only an automation
+sets, and nobody should pick by hand. It is one switch in the profile's row,
+off by default, and it holds for every dashboard at once.
+
+Hidden means not offered, not invisible: while the hidden profile is what the
+device is doing, the card shows it like any active profile - it just cannot be
+picked there. The rest of the time it is not in the list, in any layout, and it
+does not count towards the six profiles `auto` decides by.
+
+It is about the card and nothing else. `apply_profile` and the select entity
+still reach it - the select has to keep it among its options, or its state
+would read "unknown" exactly while the hidden profile is active. And it is not
+write protection: change something by hand while it is active, and the card
+offers to store that into it like into any other profile, unless its row says
+**Write protected**.
+
+![A hidden profile while it is active](docs/images/card-hidden.png)
+
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
 | ![](docs/images/card-light.png) | ![](docs/images/card-custom.png) | ![](docs/images/card-dial.png) |
@@ -259,9 +279,16 @@ again. Name the profile explicitly in the service call if you need it anyway.
 ### Chosen or recognised
 
 Each profile says for itself whether it may be **recognised** from the device
-state. On by default, which is what the sections above describe: turn the air
+state. Switched on, that is what the sections above describe: turn the air
 conditioner off with its remote and the card says "Off" - nobody had to press
 anything.
+
+A new profile starts with it **off** - a profile is usually something you
+choose, and one that becomes active whenever the state happens to fit it is the
+exception, typically "Off". Profiles stored before 2.1 keep it on, so updating
+changes nothing about them; switch it off by hand where you want that. A
+profile saved from the card with **New profile** starts off as well, and is
+selected right away, since it is the state you are in.
 
 Switched off for a profile, it is active only while it is the one you selected,
 through the card, the select entity or `apply_profile`. Two consequences, and
@@ -431,7 +458,7 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, detect, capture, protected, values}, …]
+profiles: [{id, name, color, icon, order, detect, hidden, capture, protected, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}

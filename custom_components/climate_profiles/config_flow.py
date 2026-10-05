@@ -53,6 +53,7 @@ from .const import (
     CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
@@ -107,6 +108,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "icon": "Icon",
         "color": "Colour",
         "detect": "Recognise this profile automatically",
+        "hidden": "Hide on the card",
         "capture": "Changes by hand",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
@@ -119,6 +121,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "icon": "Symbol",
         "color": "Farbe",
         "detect": "Dieses Profil automatisch erkennen",
+        "hidden": "In der Karte ausblenden",
         "capture": "Änderungen von Hand",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
@@ -199,6 +202,7 @@ def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
             (CONF_PROFILE_COLOR, color_to_rgb(profile.color)),
             (CONF_PROFILE_ICON, profile.icon),
             (CONF_PROFILE_DETECT, profile.detect),
+            (CONF_PROFILE_HIDDEN, profile.hidden),
             (CONF_PROFILE_CAPTURE, profile.capture),
             (CONF_PROFILE_ID, profile.id),
         )
@@ -368,7 +372,13 @@ def profile_from_input(
         color=normalise_color(user_input.get(CONF_PROFILE_COLOR)),
         values=values,
         icon=user_input.get(CONF_PROFILE_ICON) or None,
-        detect=bool(user_input.get(CONF_PROFILE_DETECT, True)),
+        # Both switches are off unless the row says otherwise. Before Home
+        # Assistant 2026.10 a field cannot carry a default, so a new row shows
+        # every switch off - and what it shows has to be what is stored. Off
+        # is also the right answer: a new profile is active when it is chosen,
+        # not whenever the state happens to fit it.
+        detect=bool(user_input.get(CONF_PROFILE_DETECT, False)),
+        hidden=bool(user_input.get(CONF_PROFILE_HIDDEN, False)),
         capture=str(user_input.get(CONF_PROFILE_CAPTURE) or CAPTURE_ASK),
     )
 
@@ -680,6 +690,11 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             CONF_PROFILE_DETECT: {
                 "required": False,
                 "label": labels["detect"],
+                "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_HIDDEN: {
+                "required": False,
+                "label": labels["hidden"],
                 "selector": {"boolean": {}},
             },
             CONF_PROFILE_CAPTURE: {
