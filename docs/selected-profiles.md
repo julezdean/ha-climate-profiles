@@ -102,8 +102,9 @@ nothing until it matches again.
 
 ## What happens when the state deviates
 
-With a profile that takes changes: nothing to see for a few seconds, then the
-change is in the profile and the profile matches again. A change to a value a
+With a profile that takes changes: the profile stays active, and a few seconds
+later the change is in it and it matches again by itself. In between it is
+held - custom for those seconds would be a flap, not a fact. A change to a value a
 write protected profile defines makes the state custom; the profile stays as it
 was. Nothing is offered, and nothing expires.
 

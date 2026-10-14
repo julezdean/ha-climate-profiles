@@ -184,6 +184,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             hass, SELECTION_STORAGE_VERSION, SELECTION_STORAGE_KEY
         )
         self._auto_capture_timer: Any = None
+        #: Set from the moment the timer fires until the write is done - the
+        #: other half of "a change is on its way into the profile".
+        self._capturing = False
         self._unreached: Unreached | None = None
 
     # -- configuration ------------------------------------------------------
@@ -406,6 +409,18 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         last_matched = (
             profiles.get(self._baseline[0]) if self._baseline is not None else None
         )
+        if (
+            active is None
+            and changed
+            and last_matched is not None
+            and not last_matched.protected
+            and self._capture_pending
+        ):
+            # The change is about to be written into the profile it was made
+            # in, and then the profile matches again. Saying custom for the few
+            # seconds in between would claim something untrue - and make every
+            # automation on the state see a flap that is not one.
+            active = last_matched
         return ProfileState(
             active,
             values,
@@ -675,13 +690,32 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self.hass, AUTO_CAPTURE_QUIET_SECONDS, self._auto_capture_fired
         )
 
+    @property
+    def _capture_pending(self) -> bool:
+        """Return whether a change is waiting to be written, or being written."""
+        return self._auto_capture_timer is not None or self._capturing
+
     @callback
     def _auto_capture_fired(self, _now: Any) -> None:
         """Start the write on the event loop."""
         self._auto_capture_timer = None
+        self._capturing = True
         self.hass.async_create_task(self._async_auto_capture())
 
     async def _async_auto_capture(self) -> None:
+        """Write the change, then let go of the profile that was held for it.
+
+        Stored, the profile matches by itself from here on. Not stored - there
+        was nothing new in it after all - the state is what it is, custom
+        included, and has to be said again without the hold.
+        """
+        try:
+            await self._async_capture_change()
+        finally:
+            self._capturing = False
+            await self.async_refresh()
+
+    async def _async_capture_change(self) -> None:
         """Store the manual change in the profile it belongs to.
 
         The same thing ``capture_profile`` does: values the profile defines are

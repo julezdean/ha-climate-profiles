@@ -180,6 +180,64 @@ async def test_a_change_is_written_into_the_active_profile(
     assert hass.states.get(SENSOR).state == "Emica"
 
 
+def record(hass: HomeAssistant, entity_id: str) -> list[str]:
+    """Return a list that collects every state ``entity_id`` goes through."""
+    seen: list[str] = []
+
+    @callback
+    def _seen(event) -> None:
+        # A callback, so it runs in order on the loop - a plain function would
+        # be handed to the executor, and the list would come out shuffled.
+        if event.data["entity_id"] == entity_id and event.data["new_state"]:
+            seen.append(event.data["new_state"].state)
+
+    hass.bus.async_listen("state_changed", _seen)
+    return seen
+
+
+async def test_a_change_on_its_way_into_the_profile_does_not_flap(
+    hass: HomeAssistant, entry_data, calls
+):
+    """The profile stays active while the change waits to be written into it.
+
+    Custom for the few seconds in between would claim something untrue: the
+    change is about to become the profile.
+    """
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data, profiles=TWINS)
+    await apply(hass, "Emica")
+    sensor = record(hass, SENSOR)
+    select = record(hass, SELECT)
+
+    await set_value(hass, device={"temperature": 22}, temperature=22)
+    assert hass.states.get(SENSOR).state == "Emica", "before it was written"
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Emica")["values"]["temperature"] == 22
+    assert "Custom" not in sensor, f"the sensor went through {sensor}"
+    assert "Custom" not in select, f"the select went through {select}"
+
+
+async def test_a_change_made_elsewhere_does_not_flap_either(
+    hass: HomeAssistant, entry_data, calls
+):
+    """A recognised profile, moved on the device itself."""
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data)
+    assert hass.states.get(SENSOR).state == "Komfort"
+    sensor = record(hass, SENSOR)
+
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+    assert hass.states.get(SENSOR).state == "Komfort"
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Komfort")["values"]["temperature"] == 23
+    assert "Custom" not in sensor, f"the sensor went through {sensor}"
+
+
 async def test_a_value_the_profile_did_not_have_is_taken_into_it(
     hass: HomeAssistant, entry_data, calls
 ):

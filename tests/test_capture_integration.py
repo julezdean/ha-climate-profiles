@@ -43,7 +43,8 @@ async def test_a_manual_change_is_written_into_the_profile(hass, entry_data):
 
     set_device_state(hass, temperature=23)
     await settle(hass)
-    assert hass.states.get(SENSOR).state == "Custom"
+    # Before the automatic write - this is the service's doing.
+    assert by_name(entry, "Komfort")["values"]["temperature"] == 24
 
     await capture(hass, profile="Komfort")
 

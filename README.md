@@ -20,7 +20,7 @@ matching happens server side, and a custom Lovelace card renders it.
 * a profile only defines the values it cares about; applying it leaves
   everything else exactly where it is
 * the integration continuously reports which profile matches the current state
-  - and **Custom** as soon as you change anything by hand
+  - and **Custom** as soon as it matches none
 * custom is a status, never a preset: it has no stored values and never writes
   anything back
 * adjusted something by hand while a profile is active? It is written into that
@@ -262,7 +262,9 @@ tools, your automations and the card can never disagree.
 
 Change anything while a profile is active, and the change is **written into
 that profile** once the state has been quiet for a few seconds - so moving a
-slider in steps does not store every step. Values the profile already defines
+slider in steps does not store every step. The profile stays active
+meanwhile: the change is on its way into it, and custom for those seconds
+would claim something untrue. Values the profile already defines
 are updated; a value it did not define is added to it. That also holds while a
 *partial* profile is still active: a profile that says nothing about the fan
 keeps matching when you change the fan, and it gains the fan.

@@ -85,9 +85,14 @@ async def test_a_thermostat_gets_the_same_profiles(hass):
 
 
 async def test_half_degree_steps_are_compared_correctly(hass):
-    """Tolerance is half the device's step, so 0.5 apart is a different state."""
+    """Tolerance is half the device's step, so 0.5 apart is a different state.
+
+    Write protected, so the profile does not take the change and match again.
+    """
     set_heater(hass, temperature=21.5)
-    await setup_heater(hass)
+    await setup_heater(
+        hass, profiles=[{**p, "protected": True} for p in HEATING_PROFILES]
+    )
     assert hass.states.get(SENSOR).state == "Komfort"
 
     set_heater(hass, temperature=21.0)
