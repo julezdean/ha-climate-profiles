@@ -39,7 +39,8 @@
         "title": "Climate Profiles",
         "menu_options": {
           "values": "Werte verwalten",
-          "profiles": "Profile verwalten"
+          "profiles": "Profile verwalten",
+          "automatic": "Automatik"
         }
       },
       "values": {
@@ -66,6 +67,16 @@
         },
         "data_description": {
           "custom_profile_name": "Wird angezeigt, sobald der aktuelle Zustand zu keinem deiner Profile passt. Es hat keine eigenen Werte."
+        }
+      },
+      "automatic": {
+        "title": "Automatik",
+        "description": "Die Automatik wendet das Profil an, das ein Sensor von dir nennt. Sein Zustand muss der Name oder die ID eines Profils sein. Welches Profil das ist, entscheidet ein Template, ein Zeitplan oder eine Automation, nicht diese Integration. Solange die Automatik an ist, lassen sich Profile nicht von Hand wählen. Ein- und ausgeschaltet wird sie mit dem Schalter „Automatik“ des Geräts, den es nur gibt, solange hier ein Sensor eingetragen ist.",
+        "data": {
+          "profile_sensor": "Profilsensor"
+        },
+        "data_description": {
+          "profile_sensor": "Leer lassen entfernt die Automatik. Ein Zustand, der kein Profil nennt, oder gar keiner, schreibt nichts - das Gerät behält, was es hat, bis der Sensor wieder ein Profil nennt."
         }
       }
     },
@@ -109,6 +120,9 @@
     "switch": {
       "protected": {
         "name": "{profile} schreibgeschützt"
+      },
+      "automatic": {
+        "name": "Automatik"
       }
     }
   },
@@ -200,6 +214,12 @@
     },
     "profile_name_taken": {
       "message": "Ein Profil „{profile}“ gibt es schon, oder es ist der Name des benutzerdefinierten Profils. Profilnamen müssen eindeutig sein."
+    },
+    "automatic_mode_on": {
+      "message": "Die Automatik ist an, deshalb lässt sich „{profile}“ nicht von Hand wählen. Schalte die Automatik zuerst aus."
+    },
+    "automatic_needs_sensor": {
+      "message": "Die Automatik braucht einen Profilsensor. Trag einen in den Optionen des Geräts unter „Automatik“ ein."
     }
   }
 }

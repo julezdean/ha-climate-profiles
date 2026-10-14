@@ -32,18 +32,26 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     AUTO_CAPTURE_QUIET_SECONDS,
+    AUTOMATIC_FOLLOWING,
+    AUTOMATIC_OFF,
+    AUTOMATIC_STORAGE_KEY,
+    AUTOMATIC_STORAGE_VERSION,
+    AUTOMATIC_WAITING,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
     CONF_CUSTOM_COLOR,
     CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
+    CONF_PROFILE_SENSOR,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     CUSTOM_PROFILE_ID,
     DEFAULT_CUSTOM_COLOR,
     DEFAULT_CUSTOM_NAME,
     DOMAIN,
+    PROBLEM_SENSOR_UNAVAILABLE,
+    PROBLEM_UNKNOWN_PROFILE,
     REACH_MAX_SECONDS,
     REACH_QUIET_SECONDS,
     RECALC_DEBOUNCE_SECONDS,
@@ -139,6 +147,32 @@ class ProfileState:
         return self.active.id if self.active else CUSTOM_PROFILE_ID
 
 
+@dataclass(frozen=True, slots=True)
+class AutomaticState:
+    """What automatic mode is doing, and what the profile sensor asks for."""
+
+    #: ``AUTOMATIC_OFF``, ``AUTOMATIC_FOLLOWING`` or ``AUTOMATIC_WAITING``.
+    status: str
+    sensor: str
+    #: The profile the sensor names - read while automatic mode is off too,
+    #: so a card can show what switching it on would do.
+    target: ClimateProfile | None
+    sensor_state: str | None
+    #: Why there is no target: the sensor has no state, or names no profile.
+    problem: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a representation for the frontend and for automations."""
+        return {
+            "status": self.status,
+            "sensor": self.sensor,
+            "sensor_state": self.sensor_state,
+            "target": self.target.name if self.target else None,
+            "target_id": self.target.id if self.target else None,
+            "problem": self.problem,
+        }
+
+
 class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     """Keeps the active profile in sync with the underlying entities."""
 
@@ -189,6 +223,16 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         #: other half of "a change is on its way into the profile".
         self._capturing = False
         self._unreached: Unreached | None = None
+        #: Baked in like the entity map: a different sensor is a different
+        #: thing to listen to, which only a reload sets up.
+        self.profile_sensor: str | None = entry.options.get(CONF_PROFILE_SENSOR) or None
+        #: Whether automatic mode is on, and the profile it applied last - it
+        #: writes when the sensor names a different one, not on every report.
+        self._automatic = False
+        self._automatic_applied: str | None = None
+        self._automatic_store: Store[dict[str, Any]] = Store(
+            hass, AUTOMATIC_STORAGE_VERSION, AUTOMATIC_STORAGE_KEY
+        )
 
     # -- configuration ------------------------------------------------------
 
@@ -447,11 +491,26 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         stored = await self._selection_store.async_load() or {}
         self._selected = stored.get(self.config_entry.entry_id)
 
+        automatic = await self._automatic_store.async_load() or {}
+        mine = automatic.get(self.config_entry.entry_id) or {}
+        self._automatic_applied = mine.get("applied")
+        self._automatic = bool(mine.get("on")) and self.profile_sensor is not None
+        if mine.get("on") and not self._automatic:
+            # The sensor was taken out of the options: there is nothing left
+            # to follow, and switching it back in should not resume silently.
+            await self._async_store_automatic()
+
         self.config_entry.async_on_unload(
             async_track_state_change_event(
                 self.hass, self.entities.all_entities(), self._handle_state_change
             )
         )
+        if self.profile_sensor is not None:
+            self.config_entry.async_on_unload(
+                async_track_state_change_event(
+                    self.hass, [self.profile_sensor], self._handle_sensor_change
+                )
+            )
         self.config_entry.async_on_unload(self._cancel_running_apply)
 
     async def _async_remember_selection(self, profile_id: str | None) -> None:
@@ -625,7 +684,19 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_key="unknown_profile",
                 translation_placeholders={"profile": reference, "known": known},
             )
+        if self._automatic:
+            # One thing decides which profile is active. Taken here, every way
+            # in is refused alike - the card, the select entity, the service
+            # and a voice assistant.
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="automatic_mode_on",
+                translation_placeholders={"profile": profile.name},
+            )
+        await self._async_choose(profile)
 
+    async def _async_choose(self, profile: ClimateProfile) -> None:
+        """Make ``profile`` the chosen one and write it."""
         # Applying a profile leaves the one you were in. Whatever differs from
         # that one afterwards is not a hand edit of it - without this, a
         # profile the device cannot keep would be captured into the previous
@@ -684,6 +755,99 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # the timer fires.
         self._schedule_auto_capture()
         await self._async_run_apply(values, optimistic=None)
+
+    # -- automatic mode -------------------------------------------------------
+
+    @property
+    def automatic_on(self) -> bool:
+        """Return whether automatic mode is switched on."""
+        return self._automatic
+
+    @property
+    def automatic(self) -> AutomaticState | None:
+        """Return what automatic mode is doing, ``None`` without a sensor."""
+        if self.profile_sensor is None:
+            return None
+        state = self.hass.states.get(self.profile_sensor)
+        raw = state.state if state is not None else None
+        target: ClimateProfile | None = None
+        problem: str | None = None
+        if raw is None or raw in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            problem = PROBLEM_SENSOR_UNAVAILABLE
+        elif (target := self.profiles.resolve(raw)) is None:
+            problem = PROBLEM_UNKNOWN_PROFILE
+        if not self._automatic:
+            status = AUTOMATIC_OFF
+        elif target is None:
+            status = AUTOMATIC_WAITING
+        else:
+            status = AUTOMATIC_FOLLOWING
+        return AutomaticState(status, self.profile_sensor, target, raw, problem)
+
+    async def async_set_automatic(self, on: bool) -> None:
+        """Switch automatic mode on or off."""
+        if on and self.profile_sensor is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="automatic_needs_sensor"
+            )
+        if on == self._automatic:
+            return
+        self._automatic = on
+        # Switched on, the sensor's profile is applied even if it is the one
+        # applied last time: what happened in between was manual.
+        self._automatic_applied = None
+        await self._async_store_automatic()
+        self.async_update_listeners()
+        await self.async_follow_sensor()
+
+    @callback
+    def _handle_sensor_change(self, _event: Event[EventStateChangedData]) -> None:
+        """Show the new target, and follow it."""
+        self.async_update_listeners()
+        self.hass.async_create_task(self.async_follow_sensor(), eager_start=True)
+
+    async def async_follow_sensor(self) -> None:
+        """Apply the profile the sensor names, if it is not the one applied last.
+
+        Only a change of target writes. A sensor that reports the same name
+        again, a restart, or a change of the profile's values leave the device
+        alone - what was changed by hand since is not undone. Without a target
+        nothing is written either: no decision is made on a state that is not
+        there, and the device keeps what it has until there is one.
+        """
+        automatic = self.automatic
+        if automatic is None or automatic.status != AUTOMATIC_FOLLOWING:
+            return
+        target = automatic.target
+        if target is None or target.id == self._automatic_applied:
+            return
+        _LOGGER.debug("%s: automatic mode applies %s", self.name, target.name)
+        self._automatic_applied = target.id
+        await self._async_store_automatic()
+        try:
+            await self._async_choose(target)
+        except HomeAssistantError as err:
+            # Forgotten, so the next report of the sensor tries again.
+            self._automatic_applied = None
+            await self._async_store_automatic()
+            _LOGGER.warning(
+                "%s: automatic mode could not apply %s: %s",
+                self.name,
+                target.name,
+                err,
+            )
+
+    async def _async_store_automatic(self) -> None:
+        """Keep automatic mode across restarts, one key per entry."""
+        stored = await self._automatic_store.async_load() or {}
+        if self._automatic:
+            stored[self.config_entry.entry_id] = {
+                "on": True,
+                "applied": self._automatic_applied,
+            }
+        else:
+            stored.pop(self.config_entry.entry_id, None)
+        await self._automatic_store.async_save(stored)
 
     # -- capturing automatically ---------------------------------------------
 

@@ -19,6 +19,7 @@ from .const import (
     CONF_ADDITIONAL,
     CONF_CUSTOM_NAME,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_SENSOR,
     CONF_PROFILES,
     DEFAULT_CUSTOM_NAME,
     DOMAIN,
@@ -65,6 +66,11 @@ async def async_setup_entry(
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # After a restart this writes only if the sensor names another profile
+    # than the one applied before it.
+    entry.async_create_background_task(
+        hass, coordinator.async_follow_sensor(), "climate_profiles follow sensor"
+    )
 
     # Reconciled per entry, not once per run: async_setup does not run again
     # when an entry is added after the last one was removed.
@@ -132,7 +138,7 @@ async def async_reload_entry(
     The additional values live in the options but are part of that map: a
     different set of entities has to be listened to, which only a reload does.
     So the comparison has to read them from the options too, or every capture
-    would reload the entry.
+    would reload the entry. The profile sensor is the same case.
     """
     coordinator = getattr(entry, "runtime_data", None)
     if coordinator is None:
@@ -144,8 +150,14 @@ async def async_reload_entry(
     except ProfileError:
         additional = AdditionalValueSet()
 
-    if coordinator.entities == EntityMap.from_config(entry.data, additional):
+    sensor = entry.options.get(CONF_PROFILE_SENSOR) or None
+    if (
+        coordinator.entities == EntityMap.from_config(entry.data, additional)
+        and coordinator.profile_sensor == sensor
+    ):
         await coordinator.async_refresh()
+        # A renamed profile may be the one the sensor has been naming.
+        await coordinator.async_follow_sensor()
         return
     await hass.config_entries.async_reload(entry.entry_id)
 

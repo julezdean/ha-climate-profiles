@@ -36,6 +36,10 @@ CONF_VALUE_ORDER: Final = "value_order"
 # --- config entry options --------------------------------------------------
 
 CONF_PROFILES: Final = "profiles"
+#: A sensor of the user's whose state names the profile automatic mode is to
+#: apply. Which profile that is, is decided there - by a template, a schedule,
+#: anything - and nowhere in this integration.
+CONF_PROFILE_SENSOR: Final = "profile_sensor"
 CONF_CUSTOM_NAME: Final = "custom_profile_name"
 CONF_CUSTOM_COLOR: Final = "custom_profile_color"
 CONF_CUSTOM_ICON: Final = "custom_profile_icon"
@@ -144,6 +148,18 @@ ATTR_NAME: Final = "name"
 ATTR_COLOR: Final = "color"
 ATTR_ICON: Final = "icon"
 ATTR_PROTECTED: Final = "protected"
+ATTR_AUTOMATIC: Final = "automatic"
+
+# --- automatic mode --------------------------------------------------------
+
+#: What automatic mode is doing: switched off, following the profile sensor,
+#: or switched on but waiting for a state it can follow.
+AUTOMATIC_OFF: Final = "off"
+AUTOMATIC_FOLLOWING: Final = "following"
+AUTOMATIC_WAITING: Final = "waiting"
+#: Why it is waiting.
+PROBLEM_SENSOR_UNAVAILABLE: Final = "sensor_unavailable"
+PROBLEM_UNKNOWN_PROFILE: Final = "unknown_profile"
 
 # --- services --------------------------------------------------------------
 
@@ -177,6 +193,10 @@ REACH_MAX_SECONDS: Final = 30.0
 #: listener each time.
 SELECTION_STORAGE_VERSION: Final = 1
 SELECTION_STORAGE_KEY: Final = f"{DOMAIN}.selection"
+#: Whether automatic mode is on, and which profile it applied last - a store
+#: of its own, so the selection store keeps the shape older versions read.
+AUTOMATIC_STORAGE_VERSION: Final = 1
+AUTOMATIC_STORAGE_KEY: Final = f"{DOMAIN}.automatic"
 
 #: How long the state has to be quiet before a manual change is written into
 #: the active profile - otherwise every step of a slider lands in it.

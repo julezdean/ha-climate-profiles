@@ -6,6 +6,22 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Automatic mode.** Under Configure → Automatic mode a sensor of yours can be
+  set whose state names a profile, by name or id. Which profile that is, is
+  decided there - a template, a schedule, another device's profile - not in
+  this integration. The device then gets `switch.<name>_automatic_mode`, and
+  while it is on, the sensor decides: a profile it names is applied when the
+  name changes, and only then, so a restart or the same name reported again
+  does not undo what was changed by hand. Profiles cannot be chosen by hand
+  meanwhile - the card, the select entity, `apply_profile` and voice
+  assistants are refused alike - while `set_value` and the device's own
+  buttons still work. A sensor that is unavailable or names no profile writes
+  nothing; automatic mode waits for one it can follow. The sensor's new
+  `automatic` attribute says what it is doing, what the sensor names and why
+  that is no profile. The card does not show any of it yet.
+
 ### Changed
 
 - **Profile names are unique.** No two profiles may share a name - compared

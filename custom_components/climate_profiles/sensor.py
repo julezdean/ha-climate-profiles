@@ -18,6 +18,7 @@ from .const import (
     ATTR_ACTIVE_PROFILE_ID,
     ATTR_ADDITIONAL,
     ATTR_APPLYING,
+    ATTR_AUTOMATIC,
     ATTR_CAPABILITIES,
     ATTR_COLOR,
     ATTR_CURRENT_VALUES,
@@ -196,6 +197,11 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             # automation can react instead of guessing from a plain "custom".
             ATTR_UNREACHED: (
                 data.unreached.as_dict() if data and data.unreached else None
+            ),
+            # ``None`` without a profile sensor; otherwise whether automatic
+            # mode is on, what the sensor names and why that is no profile.
+            ATTR_AUTOMATIC: (
+                automatic.as_dict() if (automatic := coordinator.automatic) else None
             ),
         }
 

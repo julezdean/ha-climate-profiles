@@ -39,7 +39,8 @@
         "title": "Climate Profiles",
         "menu_options": {
           "values": "Manage values",
-          "profiles": "Manage profiles"
+          "profiles": "Manage profiles",
+          "automatic": "Automatic mode"
         }
       },
       "values": {
@@ -66,6 +67,16 @@
         },
         "data_description": {
           "custom_profile_name": "Shown whenever the current state matches none of your profiles. It has no values of its own."
+        }
+      },
+      "automatic": {
+        "title": "Automatic mode",
+        "description": "Automatic mode applies the profile a sensor of yours names. Its state has to be a profile's name or id - which profile that is, a template, a schedule or an automation decides, not this integration. While automatic mode is on, profiles cannot be chosen by hand. It is switched on and off with the device's \"Automatic mode\" switch, which exists only while a sensor is set here.",
+        "data": {
+          "profile_sensor": "Profile sensor"
+        },
+        "data_description": {
+          "profile_sensor": "Leave empty to remove automatic mode. A state that names no profile, or no state at all, writes nothing - the device keeps what it has until the sensor names a profile again."
         }
       }
     },
@@ -109,6 +120,9 @@
     "switch": {
       "protected": {
         "name": "{profile} write protected"
+      },
+      "automatic": {
+        "name": "Automatic mode"
       }
     }
   },
@@ -200,6 +214,12 @@
     },
     "profile_name_taken": {
       "message": "A profile called \"{profile}\" already exists, or it is the name of the custom profile. Profile names have to be unique."
+    },
+    "automatic_mode_on": {
+      "message": "Automatic mode is on, so \"{profile}\" cannot be chosen by hand. Switch automatic mode off first."
+    },
+    "automatic_needs_sensor": {
+      "message": "Automatic mode needs a profile sensor. Set one in the device's options under \"Automatic mode\"."
     }
   }
 }

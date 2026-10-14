@@ -128,6 +128,15 @@ So storing a change updates the options and refreshes, instead of
 reloading and making every entity blink. A change to the entities themselves
 still reloads - that is what `async_reload_entry` decides.
 
+**Automatic mode has no conditions.** A sensor of the user's names the
+profile, and the integration applies it - no rule engine, no priorities. Home
+Assistant already has templates, schedules and automations to decide such
+things, and a second, weaker set of them in the options would be one more
+place to look. Only a change of the named profile writes, so a restart or a
+sensor that repeats itself does not undo a change made by hand, and while
+automatic mode is on, `async_apply_profile` refuses every other caller in one
+place.
+
 ## What Home Assistant cannot do here
 
 **Drag & drop in a config flow.** Config flows are forms; there is no sortable

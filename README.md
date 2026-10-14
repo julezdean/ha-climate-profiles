@@ -99,10 +99,11 @@ Each config entry creates one device with these entities:
 | `sensor.<name>_climate_profile` | the active profile's name, plus everything the card needs as attributes |
 | `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
 | `switch.<name>_<profile>_write_protected` | one per profile: whether it keeps changes made by hand out |
+| `switch.<name>_automatic_mode` | only with a profile sensor: whether that sensor decides the profile - see [Automatic mode](#automatic-mode) |
 
 (The entity names are translated, so a German instance gets
 `sensor.<name>_klimaprofil`, `select.<name>_profil` and
-`switch.<name>_<profil>_schreibgeschutzt`.)
+`switch.<name>_<profil>_schreibgeschutzt` and `switch.<name>_automatik`.)
 
 The switches are configuration entities: they appear under the device's
 settings, not on an automatically generated dashboard. A profile added in the
@@ -388,6 +389,56 @@ reported rather than silently dropped.
 The first two are pinned down by tests in `tests/test_heating.py`. The humidity
 a device reports is shown on the card; it is just not something a profile sets.
 
+## Automatic mode
+
+Automatic mode applies the profile a sensor of yours names. The sensor's state
+is a profile's name (case does not matter) or its id; which profile that is,
+you decide there - with a template, a schedule, another device's profile
+sensor. The integration has no conditions of its own, it only applies what the
+sensor says.
+
+Set the sensor under **Configure → Automatic mode**. The device then gets the
+switch `switch.<name>_automatic_mode`; leaving the field empty removes it again.
+Only `sensor` entities can be picked, and not the device's own profile sensor.
+For an `input_select`, put a template sensor in between:
+
+```yaml
+template:
+  - sensor:
+      - name: Living room wanted profile
+        state: "{{ states('input_select.living_room_profile') }}"
+```
+
+While the switch is on:
+
+- **A new name writes, the same name does not.** When the sensor names a
+  different profile, it is applied. When it reports the same one again - or
+  Home Assistant restarts - nothing is written, so what was changed by hand
+  since stays. Switching automatic mode on applies the sensor's profile once.
+- **Profiles cannot be chosen by hand.** The card, the select entity,
+  `apply_profile` and voice assistants are refused with an error, all alike.
+  `set_value` and the device's own buttons still work: changing the device is
+  not choosing a profile.
+- **A change made by hand goes into the profile, as always** - unless it is
+  write protected; see [Changes made by hand](#changes-made-by-hand).
+- **No profile, no write.** A sensor that is unavailable, or names no profile,
+  makes automatic mode wait: the device keeps what it has, the switch stays
+  on, and the sensor's `automatic` attribute says why. Once the sensor names a
+  profile again, it is applied. To make automatic mode hold still, switch it
+  off.
+
+```yaml
+automatic:
+  status: following                  # off, following or waiting
+  sensor: sensor.living_room_wanted_profile
+  sensor_state: Comfort
+  target: Comfort                    # what the sensor names - also while off
+  target_id: 2b3c4d5e…
+  problem: null                      # sensor_unavailable or unknown_profile
+```
+
+`automatic` is `null` while no profile sensor is set.
+
 ## Services
 
 ### `climate_profiles.apply_profile`
@@ -472,6 +523,7 @@ entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 unreached:                           # a profile that was applied but did not take
   {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
+automatic: {status, sensor, sensor_state, target, target_id, problem}   # see Automatic mode
 ```
 
 Automations should trigger on `active_profile_id`. The state is the display

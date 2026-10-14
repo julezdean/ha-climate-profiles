@@ -263,13 +263,13 @@ async def submit_values(hass, entry, rows, **extra):
     )
 
 
-async def test_the_menu_has_the_two_lists(hass):
+async def test_the_menu_has_the_two_lists_and_automatic_mode(hass):
     entry = await setup_options(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["type"] is FlowResultType.MENU
-    assert set(result["menu_options"]) == {"values", "profiles"}
+    assert set(result["menu_options"]) == {"values", "profiles", "automatic"}
 
 
 async def test_adding_a_profile(hass):

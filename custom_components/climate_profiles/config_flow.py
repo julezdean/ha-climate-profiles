@@ -55,6 +55,7 @@ from .const import (
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
+    CONF_PROFILE_SENSOR,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_COLOR,
@@ -556,7 +557,9 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show the two things an entry is made of."""
-        return self.async_show_menu(step_id="init", menu_options=["values", "profiles"])
+        return self.async_show_menu(
+            step_id="init", menu_options=["values", "profiles", "automatic"]
+        )
 
     async def async_step_values(
         self, user_input: dict[str, Any] | None = None
@@ -696,6 +699,45 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             ),
             errors=errors,
             description_placeholders=placeholders,
+        )
+
+    async def async_step_automatic(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the sensor automatic mode follows - its state names the profile.
+
+        Which profile that is, is decided by the sensor: a template, a
+        schedule, another device's profile. The integration only applies it.
+        Its own profile sensor is left out, it would only follow itself.
+        """
+        options = self.config_entry.options
+        if user_input is not None:
+            data = {**options}
+            if sensor := user_input.get(CONF_PROFILE_SENSOR):
+                data[CONF_PROFILE_SENSOR] = sensor
+            else:
+                data.pop(CONF_PROFILE_SENSOR, None)
+            return self.async_create_entry(data=data)
+
+        own = er.async_get(self.hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{self.config_entry.entry_id}_active_profile"
+        )
+        return self.async_show_form(
+            step_id="automatic",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_PROFILE_SENSOR,
+                        description={
+                            "suggested_value": options.get(CONF_PROFILE_SENSOR)
+                        },
+                    ): EntitySelector(
+                        EntitySelectorConfig(
+                            domain="sensor", exclude_entities=[own] if own else []
+                        )
+                    ),
+                }
+            ),
         )
 
     # -- turning rows back into what is stored -------------------------------
