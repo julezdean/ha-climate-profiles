@@ -54,17 +54,16 @@ CONF_PROFILE_DETECT: Final = "detect"
 #: doing - and every other way of applying it keeps working.
 CONF_PROFILE_HIDDEN: Final = "hidden"
 
-#: What happens to a manual change while this profile is active. One question,
-#: one answer - write protection and automatic capture used to be two settings
-#: in two places that could contradict each other.
-CONF_PROFILE_CAPTURE: Final = "capture"
-CAPTURE_ASK: Final = "ask"
-CAPTURE_AUTO: Final = "auto"
-CAPTURE_NEVER: Final = "never"
-CAPTURE_MODES: Final[tuple[str, ...]] = (CAPTURE_ASK, CAPTURE_AUTO, CAPTURE_NEVER)
-
-#: Read from profiles stored by 1.x and the 2.0 betas.
+#: Whether a manual change is kept out of this profile. Off - the default - a
+#: change made while the profile is active is written into it once the state
+#: is quiet; on, nothing ever is. There used to be a third answer, "ask", that
+#: had the card offer to store the change; it went with the offer.
 CONF_PROFILE_PROTECTED: Final = "protected"
+
+#: Read from profiles stored by 2.0: "never" was write protection, "ask" and
+#: "auto" both mean a profile that takes changes now.
+CONF_PROFILE_CAPTURE: Final = "capture"
+LEGACY_CAPTURE_NEVER: Final = "never"
 
 # --- profile value keys ----------------------------------------------------
 
@@ -145,15 +144,12 @@ ATTR_NAME: Final = "name"
 ATTR_COLOR: Final = "color"
 ATTR_ICON: Final = "icon"
 ATTR_PROTECTED: Final = "protected"
-ATTR_LAST_MATCHED_PROFILE_ID: Final = "last_matched_profile_id"
-ATTR_CHANGED_VALUES: Final = "changed_values"
 
 # --- services --------------------------------------------------------------
 
 SERVICE_APPLY_PROFILE: Final = "apply_profile"
 SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
-SERVICE_DISMISS_CHANGE: Final = "dismiss_change"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
 
 # --- tuning ----------------------------------------------------------------
@@ -175,12 +171,6 @@ REACH_QUIET_SECONDS: Final = 3.0
 #: ... but never longer than this after the last call, so a device that keeps
 #: reporting does not postpone the verdict forever. PROVISIONAL as well.
 REACH_MAX_SECONDS: Final = 30.0
-
-#: How long the offer to capture a manual change stays up, counted from the
-#: last change. After that the reference point is dropped: the state is simply
-#: custom, the way it is after a restart. Every further change starts it over,
-#: so adjusting something in several steps keeps the offer alive.
-CAPTURE_TIMEOUT_SECONDS: Final = 60.0
 
 #: Where the selected profile is remembered across restarts. Not the config
 #: entry's options: writing those on every selection would run the options

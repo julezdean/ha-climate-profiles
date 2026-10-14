@@ -236,8 +236,16 @@ async def settle(hass) -> None:
 
 
 @pytest.fixture
-def calls(hass) -> dict:
-    """Record every service call the integration makes."""
+async def calls(hass) -> dict:
+    """Record every service call the integration makes.
+
+    The switch component is set up first: the integration brings switches of
+    its own, and loading the component after the mocks were registered would
+    put its real services back in their place.
+    """
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "switch", {})
     return {
         "set_hvac_mode": async_mock_service(hass, "climate", "set_hvac_mode"),
         "set_temperature": async_mock_service(hass, "climate", "set_temperature"),

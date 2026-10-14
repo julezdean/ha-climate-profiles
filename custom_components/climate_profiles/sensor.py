@@ -9,6 +9,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
@@ -18,12 +19,10 @@ from .const import (
     ATTR_ADDITIONAL,
     ATTR_APPLYING,
     ATTR_CAPABILITIES,
-    ATTR_CHANGED_VALUES,
     ATTR_COLOR,
     ATTR_CURRENT_VALUES,
     ATTR_ENTITIES,
     ATTR_ICON,
-    ATTR_LAST_MATCHED_PROFILE_ID,
     ATTR_NAME,
     ATTR_PROFILE,
     ATTR_PROFILES,
@@ -32,7 +31,6 @@ from .const import (
     CUSTOM_PROFILE_ID,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
-    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
     VALUE_FAN_MODE,
@@ -43,6 +41,7 @@ from .const import (
 from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
 from .matching import normalise_values
+from .switch import protection_entity_id
 
 #: Keys a service call carries that name its target, not a value.
 _TARGET_KEYS = frozenset({"entity_id", "device_id", "area_id", "floor_id", "label_id"})
@@ -75,7 +74,7 @@ SET_VALUE_SCHEMA = vol.All(
 
 CAPTURE_PROFILE_SCHEMA = cv.make_entity_service_schema(
     {
-        vol.Optional(ATTR_PROFILE): cv.string,
+        vol.Required(ATTR_PROFILE): cv.string,
         vol.Optional(ATTR_VALUES): vol.All(cv.ensure_list, [cv.string]),
     }
 )
@@ -110,11 +109,6 @@ async def async_setup_entry(
     )
     platform.async_register_entity_service(
         SERVICE_SAVE_AS_PROFILE, SAVE_AS_PROFILE_SCHEMA, "async_save_as_profile_service"
-    )
-    platform.async_register_entity_service(
-        SERVICE_DISMISS_CHANGE,
-        cv.make_entity_service_schema({}),
-        "async_dismiss_change_service",
     )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
@@ -155,6 +149,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         data = coordinator.data
         profiles = coordinator.profiles
         names = profiles.display_names()
+        registry = er.async_get(self.hass)
 
         active = data.active if data else None
         return {
@@ -170,8 +165,12 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "order": order,
                     "detect": profile.detect,
                     "hidden": profile.hidden,
-                    "capture": profile.capture,
                     "protected": profile.protected,
+                    # The switch that sets it, so the card can flip the same
+                    # thing an automation or the entity page does.
+                    "protection_entity": protection_entity_id(
+                        registry, coordinator.config_entry, profile.id
+                    ),
                     "values": dict(profile.values),
                 }
                 for order, profile in enumerate(profiles)
@@ -194,12 +193,6 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ),
             ATTR_ENTITIES: coordinator.entities.as_dict(),
             ATTR_APPLYING: bool(data and data.applying),
-            # What "capture" would write into, and what it would change.
-            # Both are empty right after a restart - see ProfileState.
-            ATTR_LAST_MATCHED_PROFILE_ID: (
-                data.last_matched.id if data and data.last_matched else None
-            ),
-            ATTR_CHANGED_VALUES: list(data.changed) if data else [],
             # A profile that was applied but did not take, and why - so an
             # automation can react instead of guessing from a plain "custom".
             ATTR_UNREACHED: (
@@ -219,12 +212,8 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             self.coordinator.resolve_value_keys(values)
         )
 
-    async def async_dismiss_change_service(self) -> None:
-        """Handle ``climate_profiles.dismiss_change``."""
-        await self.coordinator.async_dismiss_change()
-
     async def async_capture_profile_service(
-        self, profile: str | None = None, values: list[str] | None = None
+        self, profile: str, values: list[str] | None = None
     ) -> None:
         """Handle ``climate_profiles.capture_profile``."""
         await self.coordinator.async_capture_into_profile(profile, keys=values)

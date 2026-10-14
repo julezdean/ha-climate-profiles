@@ -81,13 +81,6 @@
         "display": "Display",
         "silent": "Silent mode"
       }
-    },
-    "capture": {
-      "options": {
-        "ask": "Ask before storing",
-        "auto": "Store automatically",
-        "never": "Write protected"
-      }
     }
   },
   "entity": {
@@ -99,6 +92,11 @@
     "select": {
       "profile": {
         "name": "Profile"
+      }
+    },
+    "switch": {
+      "protected": {
+        "name": "{profile} write protected"
       }
     }
   },
@@ -141,7 +139,7 @@
       "fields": {
         "profile": {
           "name": "Profile",
-          "description": "Name or id. Defaults to the profile that matched most recently."
+          "description": "Name or id of the profile to write into."
         },
         "values": {
           "name": "Values",
@@ -170,22 +168,14 @@
           "description": "Store only these values instead of the whole state."
         }
       }
-    },
-    "dismiss_change": {
-      "name": "Dismiss change",
-      "description": "Drop the offer to store the current manual change. The state stays as it is.",
-      "fields": {}
     }
   },
   "exceptions": {
     "unknown_profile": {
       "message": "Unknown profile \"{profile}\". Available profiles: {known}."
     },
-    "no_capture_target": {
-      "message": "There is no profile to capture into. No profile has matched since the last restart, so name the profile explicitly."
-    },
     "profile_protected": {
-      "message": "The profile \"{profile}\" is write protected. Remove the protection in the options, or save the state as a new profile."
+      "message": "The profile \"{profile}\" is write protected. Turn its write protection off, or save the state as a new profile."
     },
     "profile_needs_a_name": {
       "message": "A new profile needs a name."

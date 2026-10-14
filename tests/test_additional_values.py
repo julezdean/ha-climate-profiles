@@ -71,7 +71,6 @@ async def test_a_value_is_stored_in_a_profile_under_its_id(hass: HomeAssistant):
         {
             CONF_PROFILE_NAME: "Breezy",
             "color": [34, 197, 94],
-            "capture": "ask",
             "hvac_mode": "cool",
             value["id"]: 80,
         },
@@ -222,7 +221,6 @@ async def test_a_catch_all_profile_is_pointed_out(hass: HomeAssistant, caplog):
         {
             CONF_PROFILE_NAME: "Cooling",
             "color": [1, 2, 3],
-            "capture": "ask",
             "hvac_mode": "cool",
         },
     )
@@ -232,7 +230,6 @@ async def test_a_catch_all_profile_is_pointed_out(hass: HomeAssistant, caplog):
         {
             CONF_PROFILE_NAME: "Comfort",
             "color": [1, 2, 3],
-            "capture": "ask",
             "hvac_mode": "cool",
             "temperature": 24,
         },

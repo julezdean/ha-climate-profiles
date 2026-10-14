@@ -152,7 +152,6 @@ class ClimateProfileCard extends HTMLElement {
     //: One debounce timer per slider, keyed by the value it belongs to.
     this._sliderTimers = {};
     this._busy = 0;
-    this._naming = false;
     this._error = null;
     this._errorTimer = null;
   }
@@ -183,6 +182,7 @@ class ClimateProfileCard extends HTMLElement {
       hide: [],
       profile_layout: "auto",
       temperature_style: "bar",
+      show_protection: false,
       ...config,
     };
     this._built = false;
@@ -252,11 +252,6 @@ class ClimateProfileCard extends HTMLElement {
       },
       activeId: attrs.active_profile_id || CUSTOM_ID,
       applying: Boolean(attrs.applying) || this._busy > 0,
-      changed: attrs.changed_values || [],
-      lastMatched:
-        (attrs.profiles || []).find(
-          (profile) => profile.id === attrs.last_matched_profile_id
-        ) || null,
       hvacMode: climate ? climate.state : null,
       hvacModes: caps.hvac_modes || [],
       fanModes: caps.fan_modes || [],
@@ -446,9 +441,14 @@ class ClimateProfileCard extends HTMLElement {
             <h1 class="title"></h1>
             <p class="subtitle"></p>
           </div>
-          <button class="pill" type="button" title="">
-            <span class="dot"></span><span class="pill-text"></span>
-          </button>
+          <div class="header-actions">
+            <button class="lock" type="button" title="" hidden>
+              <ha-icon icon="mdi:lock-open-variant-outline"></ha-icon>
+            </button>
+            <button class="pill" type="button" title="">
+              <span class="dot"></span><span class="pill-text"></span>
+            </button>
+          </div>
         </header>
 
         ${this._tempSection()}
@@ -456,43 +456,13 @@ class ClimateProfileCard extends HTMLElement {
         <section class="profiles" role="group"></section>
 
         <section class="unreached" role="status" hidden>
-          <div class="capture-main">
+          <div class="notice-main">
             <ha-icon icon="mdi:alert-circle-outline"></ha-icon>
-            <div class="capture-text">
-              <span class="capture-title unreached-title"></span>
-              <span class="capture-values unreached-values"></span>
+            <div class="notice-text">
+              <span class="notice-title unreached-title"></span>
+              <span class="notice-values unreached-values"></span>
             </div>
           </div>
-        </section>
-
-        <section class="capture" hidden>
-          <button class="capture-dismiss" type="button" title="">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-          <div class="capture-main">
-            <ha-icon icon="mdi:pencil-outline"></ha-icon>
-            <div class="capture-text">
-              <span class="capture-title"></span>
-              <span class="capture-values"></span>
-            </div>
-          </div>
-          <div class="capture-actions">
-            <button class="capture-into" type="button">
-              <ha-icon icon="mdi:content-save-outline"></ha-icon><span></span>
-            </button>
-            <button class="capture-new" type="button">
-              <ha-icon icon="mdi:bookmark-plus-outline"></ha-icon><span></span>
-            </button>
-          </div>
-          <form class="capture-form" hidden>
-            <input class="capture-name" type="text" maxlength="40" />
-            <button class="capture-save" type="submit">
-              <ha-icon icon="mdi:check"></ha-icon>
-            </button>
-            <button class="capture-cancel" type="button">
-              <ha-icon icon="mdi:close"></ha-icon>
-            </button>
-          </form>
         </section>
 
         <section class="controls"></section>
@@ -507,6 +477,8 @@ class ClimateProfileCard extends HTMLElement {
       title: root.querySelector(".title"),
       subtitle: root.querySelector(".subtitle"),
       pill: root.querySelector(".pill"),
+      lock: root.querySelector(".lock"),
+      lockIcon: root.querySelector(".lock ha-icon"),
       pillText: root.querySelector(".pill-text"),
       temp: root.querySelector(".temp"),
       degrees: root.querySelector(".degrees"),
@@ -527,18 +499,6 @@ class ClimateProfileCard extends HTMLElement {
       unreached: root.querySelector(".unreached"),
       unreachedTitle: root.querySelector(".unreached-title"),
       unreachedValues: root.querySelector(".unreached-values"),
-      capture: root.querySelector(".capture"),
-      // Scoped to their section: the unreached hint reuses the same layout
-      // classes and comes first, so a bare selector would find it instead.
-      captureTitle: root.querySelector(".capture .capture-title"),
-      captureValues: root.querySelector(".capture .capture-values"),
-      captureActions: root.querySelector(".capture-actions"),
-      captureDismiss: root.querySelector(".capture-dismiss"),
-      captureInto: root.querySelector(".capture-into"),
-      captureNew: root.querySelector(".capture-new"),
-      captureForm: root.querySelector(".capture-form"),
-      captureName: root.querySelector(".capture-name"),
-      captureCancel: root.querySelector(".capture-cancel"),
     };
 
     root.querySelectorAll(".step").forEach((button) => {
@@ -571,8 +531,8 @@ class ClimateProfileCard extends HTMLElement {
       });
     }
     this._el.pill.addEventListener("click", () => this._togglePower());
+    this._el.lock.addEventListener("click", () => this._toggleProtection());
 
-    this._wireCapture();
     this._buildProfiles(model);
     this._buildControls(model);
   }
@@ -642,37 +602,6 @@ class ClimateProfileCard extends HTMLElement {
       wrap.appendChild(button);
       this._profileButtons.set(profile.id, button);
     }
-  }
-
-  _wireCapture() {
-    const el = this._el;
-    el.captureInto.addEventListener("click", () => this._captureIntoProfile());
-    el.captureDismiss.addEventListener("click", () => this._dismissChange());
-    el.captureNew.addEventListener("click", () => this._openNameField());
-    el.captureCancel.addEventListener("click", () => this._closeNameField());
-    el.captureForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      this._saveAsNewProfile(el.captureName.value);
-    });
-    el.captureName.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") this._closeNameField();
-    });
-  }
-
-  _openNameField() {
-    this._naming = true;
-    const el = this._el;
-    el.captureActions.hidden = true;
-    el.captureForm.hidden = false;
-    el.captureName.value = "";
-    el.captureName.focus();
-  }
-
-  _closeNameField() {
-    this._naming = false;
-    const el = this._el;
-    el.captureForm.hidden = true;
-    el.captureActions.hidden = false;
   }
 
   /**
@@ -1131,7 +1060,7 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     this._paintUnreached(model);
-    this._paintCapture(model);
+    this._paintProtection(model, activeProfile);
 
     el.progress.classList.toggle("busy", Boolean(model.applying));
     el.card.setAttribute("aria-busy", model.applying ? "true" : "false");
@@ -1182,63 +1111,34 @@ class ClimateProfileCard extends HTMLElement {
   }
 
   /**
-   * Offers to write the manual changes back into a profile.
-   *
-   * Shown whenever something was adjusted since a profile became active -
-   * including while a partial profile is still matching, because a value it
-   * does not define never unmatches it.
+   * The write protection of the active profile, as a lock next to the power
+   * button - only when the card asks for it, and only for a real profile:
+   * custom has nothing to protect. The lock flips the profile's own switch,
+   * so the card, the entity and the options cannot disagree.
    */
-  _paintCapture(model) {
+  _paintProtection(model, activeProfile) {
     const el = this._el;
-    const changed = model.changed || [];
-    const target = model.lastMatched;
-    // A profile that stores changes by itself asks nothing. The write is a
-    // few seconds away, so an offer here would be a question that answers
-    // itself - and "save as a new profile" is not what was asked for either.
-    const storesItself = Boolean(target && target.capture === "auto");
-    const show = changed.length > 0 && !model.unavailable && !storesItself;
-    el.capture.hidden = !show;
-    if (!show) {
-      if (this._naming) this._closeNameField();
-      return;
-    }
+    const entity = activeProfile.protection_entity;
+    const show =
+      Boolean(this._config.show_protection) &&
+      !activeProfile.virtual &&
+      activeProfile.id !== (model.custom.id || CUSTOM_ID) &&
+      Boolean(entity);
+    el.lock.hidden = !show;
+    this._protection = show ? { entity, on: Boolean(activeProfile.protected) } : null;
+    if (!show) return;
 
-    el.captureTitle.textContent = this._t("Changed by hand");
-    const dismiss = this._t("Do not store");
-    el.captureDismiss.title = dismiss;
-    el.captureDismiss.setAttribute("aria-label", dismiss);
-    // Changed values arrive as keys: four are the climate ones, the rest are
-    // ids only the definitions can name.
-    el.captureValues.textContent = changed
-      .map((key) => {
-        if (CLIMATE_LABELS[key]) return this._t(CLIMATE_LABELS[key]);
-        const value = model.additional.find((item) => item.id === key);
-        return value ? value.name : key;
-      })
-      .join(" · ");
-
-    const protectedTarget = Boolean(target && target.protected);
-    el.captureInto.hidden = !target || protectedTarget;
-    if (target && !protectedTarget) {
-      const label = `${this._t("Save into")} ${target.name}`;
-      el.captureInto.querySelector("span").textContent = label;
-      el.captureInto.setAttribute("aria-label", label);
-      el.captureInto.style.setProperty("--profile-color", target.color);
-      const [r, g, b] = hexToRgb(target.color);
-      el.captureInto.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
-    }
-
-    const newLabel = this._t("New profile");
-    el.captureNew.querySelector("span").textContent = newLabel;
-    el.captureNew.setAttribute("aria-label", newLabel);
-    el.captureName.placeholder = this._t("Name of the profile");
-    el.captureName.setAttribute("aria-label", this._t("Name of the profile"));
-
-    if (protectedTarget) {
-      el.captureTitle.textContent = `${this._t("Changed by hand")} · ${
-        target.name
-      } ${this._t("is write protected")}`;
-    }
+    const on = Boolean(activeProfile.protected);
+    el.lock.classList.toggle("on", on);
+    el.lock.setAttribute("aria-pressed", on ? "true" : "false");
+    el.lock.setAttribute("aria-label", this._t("Write protection"));
+    el.lock.title = `${activeProfile.name} ${
+      on ? this._t("is write protected") : this._t("takes changes made by hand")
+    }`;
+    el.lockIcon.setAttribute(
+      "icon",
+      on ? "mdi:lock" : "mdi:lock-open-variant-outline"
+    );
   }
 
   _paintGroup(key, current, disabled) {
@@ -1369,23 +1269,13 @@ class ClimateProfileCard extends HTMLElement {
     this._setValue({ hvac_mode: off });
   }
 
-  async _captureIntoProfile() {
-    await this._call("capture_profile", {});
-  }
-
-  /** Drop the offer without storing anything - what the timeout also does. */
-  async _dismissChange() {
-    await this._call("dismiss_change", {});
-  }
-
-  async _saveAsNewProfile(name) {
-    const trimmed = String(name || "").trim();
-    if (!trimmed) {
-      this._showError(this._t("Please enter a name."));
-      return;
-    }
-    this._closeNameField();
-    await this._call("save_as_profile", { name: trimmed });
+  /** Flip the active profile's write protection through its own switch. */
+  async _toggleProtection() {
+    const protection = this._protection;
+    if (!protection) return;
+    await this._callService("switch", protection.on ? "turn_off" : "turn_on", {
+      entity_id: protection.entity,
+    });
   }
 
   async _applyProfile(profile) {
@@ -1401,13 +1291,17 @@ class ClimateProfileCard extends HTMLElement {
   }
 
   async _call(service, data) {
+    await this._callService("climate_profiles", service, {
+      entity_id: this._config.entity,
+      ...data,
+    });
+  }
+
+  async _callService(domain, service, data) {
     this._busy += 1;
     this._update();
     try {
-      await this._hass.callService("climate_profiles", service, {
-        entity_id: this._config.entity,
-        ...data,
-      });
+      await this._hass.callService(domain, service, data);
       this._clearError();
     } catch (err) {
       this._pending.clear();
@@ -1498,15 +1392,11 @@ const CARD_DE = {
   "Turn on": "Einschalten",
   "Turn off": "Ausschalten",
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
-  "Changed by hand": "Von Hand geändert",
-  "Do not store": "Nicht speichern",
   "not reached": "nicht erreicht",
   "instead of": "statt",
-  "Save into": "Übernehmen in",
-  "New profile": "Neues Profil",
-  "Name of the profile": "Name des Profils",
-  "Please enter a name.": "Bitte gib einen Namen ein.",
+  "Write protection": "Schreibschutz",
   "is write protected": "ist schreibgeschützt",
+  "takes changes made by hand": "übernimmt Änderungen von Hand",
   Temperature: "Temperatur",
   "Shown when the current state matches none of your profiles.":
     "Wird angezeigt, wenn der aktuelle Zustand zu keinem Profil passt.",
@@ -1528,6 +1418,8 @@ const STYLES = `
   /* Home Assistant's warning colour as RGB, for tinted backgrounds. */
   --cp-warning-rgb: 255, 166, 0;
   --cp-line: var(--divider-color, rgba(127, 127, 127, 0.25));
+  /* The height of the buttons in the header: the power pill and the lock. */
+  --cp-header-control: 31px;
   --cp-fill: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
   --accent-color: var(--primary-color, #03a9f4);
   --accent-rgb: 3, 169, 244;
@@ -1635,7 +1527,9 @@ ha-card.unavailable { opacity: 0.6; }
   align-items: center;
   gap: 7px;
   flex: none;
-  padding: 7px 13px;
+  box-sizing: border-box;
+  height: var(--cp-header-control);
+  padding: 0 13px;
   border: 1px solid var(--cp-line);
   border-radius: 999px;
   background: transparent;
@@ -1659,6 +1553,37 @@ ha-card.unavailable { opacity: 0.6; }
   background: rgba(var(--accent-rgb), 0.12);
 }
 .pill.on .dot { opacity: 1; }
+/* The active profile's write protection. Same outline and height as the
+   power button beside it, filled in the profile's colour while the lock is
+   closed. */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.lock[hidden] { display: none; }
+.lock {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--cp-header-control);
+  height: var(--cp-header-control);
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--cp-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cp-muted);
+  cursor: pointer;
+  transition: color 200ms ease, background 200ms ease, border-color 200ms ease;
+}
+.lock ha-icon { --mdc-icon-size: 16px; }
+.lock.on {
+  color: var(--accent-color);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
+}
 
 /* temperature */
 .temp[hidden] { display: none; }
@@ -2007,28 +1932,11 @@ ha-card.unavailable { opacity: 0.6; }
 }
 .profile.hidden-profile.active { color: var(--profile-contrast); }
 
-/* capture offer */
-/* Every one of these is a flex container, and "display" beats the "hidden"
-   attribute - so each needs its own [hidden] rule. */
-.unreached[hidden],
-.capture[hidden],
-.capture-actions[hidden],
-.capture-form[hidden],
-.capture-into[hidden] { display: none; }
+/* notices */
+/* A flex container, and "display" beats the "hidden" attribute. */
+.unreached[hidden] { display: none; }
 
-.capture {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px dashed rgba(var(--accent-rgb), 0.5);
-  border-radius: 14px;
-  background: rgba(var(--accent-rgb), 0.06);
-}
-/* Same layout as the capture bar, but in the warning colour: this is not an
-   offer, it is a report that something did not happen. */
+/* A report that something did not happen, in the warning colour. */
 .unreached {
   display: flex;
   align-items: center;
@@ -2037,97 +1945,31 @@ ha-card.unavailable { opacity: 0.6; }
   border-radius: 14px;
   background: rgba(var(--cp-warning-rgb), 0.08);
 }
-.unreached .capture-main > ha-icon { color: var(--warning-color, #ffa600); }
-.capture-dismiss {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  color: var(--cp-muted);
-  cursor: pointer;
-}
-.capture-dismiss:hover { background: rgba(var(--accent-rgb), 0.12); }
-.capture-dismiss ha-icon { --mdc-icon-size: 16px; }
-.capture-main {
+.notice-main {
   display: flex;
   align-items: center;
   gap: 9px;
   flex: 1 1 140px;
   min-width: 0;
 }
-.capture-main > ha-icon { --mdc-icon-size: 18px; color: var(--cp-muted); flex: none; }
-.capture-text { display: grid; min-width: 0; }
-.capture-title {
+.notice-main > ha-icon {
+  --mdc-icon-size: 18px;
+  color: var(--warning-color, #ffa600);
+  flex: none;
+}
+.notice-text { display: grid; min-width: 0; }
+.notice-title {
   font-size: 0.8rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.capture-values {
+.notice-values {
   font-size: 0.74rem;
   color: var(--cp-muted);
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.capture-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.capture-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 11px;
-  border: 1px solid var(--cp-line);
-  border-radius: 10px;
-  background: var(--cp-surface);
-  color: var(--cp-text);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease;
-}
-.capture-actions button ha-icon { --mdc-icon-size: 16px; }
-.capture-actions button:hover:not(:disabled) { border-color: var(--accent-color); }
-.capture-into {
-  border-color: rgba(var(--profile-rgb, var(--accent-rgb)), 0.6) !important;
-  color: var(--profile-color, var(--accent-color));
-}
-
-.capture-form { display: flex; gap: 6px; flex: 1 1 100%; }
-.capture-name {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--cp-line);
-  border-radius: 10px;
-  background: var(--cp-surface);
-  color: var(--cp-text);
-  font: inherit;
-  font-size: 0.82rem;
-}
-.capture-name:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
-.capture-form button {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border: 1px solid var(--cp-line);
-  border-radius: 10px;
-  background: var(--cp-surface);
-  color: var(--cp-text);
-  cursor: pointer;
-}
-.capture-save { border-color: rgba(var(--accent-rgb), 0.6) !important; color: var(--accent-color); }
 
 /* controls */
 .controls { display: grid; gap: 12px; }
@@ -2451,6 +2293,7 @@ const SCHEMA = [
       },
     },
   },
+  { name: "show_protection", selector: { boolean: {} } },
 ];
 
 const EDITOR_LABELS = {
@@ -2458,6 +2301,7 @@ const EDITOR_LABELS = {
   name: "Name (optional)",
   profile_layout: "Profile layout",
   temperature_style: "Temperature control",
+  show_protection: "Show the write protection of the active profile",
 };
 
 /* -------------------------------------------------------------------------

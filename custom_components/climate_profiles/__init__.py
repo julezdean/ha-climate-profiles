@@ -22,7 +22,7 @@ from .models import AdditionalValueSet, EntityMap, ProfileError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 #: This integration is set up from the UI only. Saying so explicitly is what
 #: hassfest asks for, and it makes a stray `climate_profiles:` block in

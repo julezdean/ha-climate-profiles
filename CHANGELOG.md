@@ -15,19 +15,52 @@ versioning [Semantic Versioning](https://semver.org/).
   select entity still reach it: hiding is about the card, and the select has to
   keep it among its options, or its state would read "unknown" while it is
   active. Hiding is not write protection; that stays its own setting.
+- **Write protection is a switch per profile**,
+  `switch.<device>_<profile>_write_protected`, a configuration entity on the
+  device. A profile added in the options gets its switch at once, a deleted
+  one takes it along, and renaming a profile keeps the entity id. It is the
+  same setting as the profile's row, so a schedule or an automation can hold a
+  profile without anyone opening the options.
+- **The card can show it**: `show_protection: true` puts a lock next to the
+  power button for the active profile - closed while it is protected, and a
+  tap flips its switch. Off by default; custom has no lock.
 
 ### Changed
 
+- **A change made by hand goes into the active profile, unless it is write
+  protected.** What a change does used to have three answers per profile: ask
+  before storing (the default), store automatically, write protected. "Ask"
+  is gone, and with two answers left the field is a switch again, **Write
+  protected**, off for a new profile. Profiles stored by 2.0 as "ask" -
+  every profile nobody changed - now take changes: **after updating, a change
+  by hand is written into the active profile a few seconds later.** Protect
+  the profiles that should stay as they are. "Store automatically" and "write
+  protected" keep their meaning.
+- **`capture_profile` needs `profile`.** Without it, it wrote into the profile
+  that matched last - what the card's button needed. With the offer no longer
+  running out after a minute, that guess could land hours later in a profile
+  nobody is thinking of.
 - **A new profile is no longer recognised from the state by default.** A
   profile is usually something you choose; one that becomes active whenever the
   state fits it - "Off" - is the exception. Profiles stored before keep
   recognition on, so updating changes nothing about them. Before Home
   Assistant 2026.10 a new row shows every switch off anyway, and stored it as
   on: what the dialog showed and what was saved now agree.
-- A profile saved from the card with **New profile** (`save_as_profile`)
-  starts with recognition off too, and is selected right away - it is the
-  state you are in, and without that the card would have gone on saying
-  custom about it.
+- A profile stored with `save_as_profile` starts with recognition off too, and
+  is selected right away - it is the state you are in, and without that the
+  card would have gone on saying custom about it.
+
+### Removed
+
+- **The card no longer offers to store a change**, and no longer creates
+  profiles: the bar with "Save into", "New profile" and its name field is
+  gone. With "ask" gone there is nothing to ask - a profile takes the change
+  by itself or is protected against it. `save_as_profile` stays for
+  automations.
+- `climate_profiles.dismiss_change` - it dismissed that bar.
+- The sensor attributes `changed_values` and `last_matched_profile_id`, and
+  `capture` in `profiles`: they existed for the bar. `profiles` carries
+  `protected` and, new, `protection_entity`.
 
 ### Fixed
 

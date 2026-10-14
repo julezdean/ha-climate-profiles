@@ -23,10 +23,11 @@ matching happens server side, and a custom Lovelace card renders it.
   - and **Custom** as soon as you change anything by hand
 * custom is a status, never a preset: it has no stored values and never writes
   anything back
-* adjusted something by hand? Write it back into the profile it came from, or
-  save the state as a new profile - with a click, never behind your back
-* profiles can be write protected, so the ones you rely on cannot be
-  overwritten by accident
+* adjusted something by hand while a profile is active? It is written into that
+  profile once the state is quiet - unless the profile is write protected
+* write protection is one switch per profile, so the ones you rely on cannot be
+  overwritten by accident - on the device page, in automations, and as a lock
+  on the card if you ask for it
 * modes, temperature range, step widths and fan limits are read from the
   devices, never hard coded - a thermostat simply shows fewer controls
 * the temperature is a bar or a dial, whichever suits the dashboard, with what
@@ -83,15 +84,23 @@ switch in three ticks rather than three searches. Supported are `number`,
 domains whose state is a single value, which is what a profile can compare and
 write.
 
-Each config entry creates one device with two entities:
+Each config entry creates one device with these entities:
 
 | Entity | Purpose |
 | --- | --- |
 | `sensor.<name>_climate_profile` | the active profile's name, plus everything the card needs as attributes |
 | `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
+| `switch.<name>_<profile>_write_protected` | one per profile: whether it keeps changes made by hand out |
 
 (The entity names are translated, so a German instance gets
-`sensor.<name>_klimaprofil` and `select.<name>_profil`.)
+`sensor.<name>_klimaprofil`, `select.<name>_profil` and
+`switch.<name>_<profil>_schreibgeschutzt`.)
+
+The switches are configuration entities: they appear under the device's
+settings, not on an automatically generated dashboard. A profile added in the
+options gets its switch right away, a deleted one takes it along. Renaming a
+profile renames its switch but keeps the entity id, so automations pointing at
+it keep working.
 
 ## Managing profiles
 
@@ -102,7 +111,7 @@ Two lists, and everything about an entry happens in one of them.
 | List | One row is | The row holds |
 | --- | --- | --- |
 | **Manage values** | an additional value | name, the entity behind it, an icon |
-| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, what a change by hand does, and every value it sets |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
 button below the list adds one. The id a profile or a value is known by rides
@@ -128,16 +137,11 @@ leaves what profiles stored for it alone - it is simply skipped from then on.
 To point a value at a different entity, edit its row; adding it anew creates a
 new value with a new id, and every profile loses it.
 
-Each profile's row says what a **change by hand** should do while that profile
-is active, and the three answers are the whole story:
-
-| | |
-| --- | --- |
-| Ask before storing | the card offers to capture it - the default |
-| Store automatically | it is written straight into the profile, without an offer |
-| Write protected | nothing is ever stored over the quick path |
-
-The row itself always stays editable, whatever is chosen there.
+Each profile's row has a **Write protected** switch, off for a new profile. Off,
+a change made by hand while the profile is active is written into it; on,
+nothing is - see [Changes made by hand](#changes-made-by-hand). It is the same
+setting as the profile's switch entity. The row itself always stays editable,
+protected or not.
 
 Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
@@ -165,6 +169,7 @@ range - comes from the integration. Options, all optional:
 | `profile_layout` | `auto` | `auto`, `grid`, `scroll`, `dropdown` or `icons` |
 | `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
+| `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
 
 Everything configured is shown unless you hide it, so a value you add later
 appears without editing every dashboard. The list mixes the four climate keys
@@ -216,9 +221,9 @@ does not count towards the six profiles `auto` decides by.
 It is about the card and nothing else. `apply_profile` and the select entity
 still reach it - the select has to keep it among its options, or its state
 would read "unknown" exactly while the hidden profile is active. And it is not
-write protection: change something by hand while it is active, and the card
-offers to store that into it like into any other profile, unless its row says
-**Write protected**.
+write protection: change something by hand while it is active, and the change
+is stored into it like into any other profile, unless it is **write
+protected**.
 
 ![A hidden profile while it is active](docs/images/card-hidden.png)
 
@@ -230,51 +235,55 @@ offers to store that into it like into any other profile, unless its row says
 | --- | --- | --- |
 | ![](docs/images/card-dropdown.png) | ![](docs/images/card-dropdown-open.png) | ![](docs/images/card-icons.png) |
 
+### Write protection on the card
+
+`show_protection: true` puts a lock next to the power button. It belongs to
+the active profile: closed while that profile is write protected, open while
+it takes changes, and a tap flips it - through the profile's own switch, so the
+card, the entity and the options always say the same. Custom has nothing to
+protect, so the lock is not there while nothing matches. To protect a profile
+that is not active, use its switch.
+
+![The lock of a write protected profile](docs/images/card-protection.png)
+
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
 tools, your automations and the card can never disagree.
 
-## Taking manual changes into a profile
+## Changes made by hand
 
-Adjust anything while a profile is active and the card offers to keep it:
+Change anything while a profile is active, and the change is **written into
+that profile** once the state has been quiet for a few seconds - so moving a
+slider in steps does not store every step. Values the profile already defines
+are updated; a value it did not define is added to it. That also holds while a
+*partial* profile is still active: a profile that says nothing about the fan
+keeps matching when you change the fan, and it gains the fan.
 
-![The capture offer](docs/images/card-capture.png)
+It applies wherever the change was made: this card, another one, a script, or
+the thermostat's own buttons. Home Assistant cannot tell a hand on the device
+from the device changing a value by itself, so there is one exception - the
+moments right after a profile was applied, which is where a device's overrides
+happen. A value the device drops much later is stored like any other change;
+it stands in the profile and can be corrected there.
 
-* **Save into <profile>** updates the profile you were in. Values it already
-  defines are updated; a value you changed by hand is added to it.
-* **New profile** stores the state as a new profile - useful when the
-  deviation is worth keeping without bending an existing profile.
-* Doing nothing is a third option: the state simply stays custom.
+**Write protected** profiles keep changes out. Change a value a protected
+profile defines and it simply stops matching: the card shows custom, and the
+profile stays as it was. Protection is a switch per profile - on the device
+page, in the profile's row in the options, and as the lock on the card. It
+guards against changes made by hand, not against deliberate ones: the profile
+stays editable in the options.
 
-The offer also appears while a *partial* profile is still active. A profile
-that says nothing about the fan keeps matching when you change the fan - and
-that is exactly a change worth offering to capture.
+Lifting the protection takes changes from then on, not the ones made while it
+was on. If the profile is not active at that moment, nothing is stored until it
+matches again.
 
-Nothing is captured automatically unless that profile says so. **Store
-automatically** writes the change into the profile a few seconds after the
-state goes quiet, wherever it was made - and then the card asks nothing: no
-offer appears, not even the "new profile" route, because the question would
-answer itself while it stood there.
+**After a restart** nothing is assumed. What counts as a change is measured
+against the moment a profile became active, and that only exists while Home
+Assistant runs, so a fresh start with a deviating state stays custom.
 
-**Write protection** is set per profile in the options. A protected profile
-refuses to be captured into - the card then only offers the "new profile"
-route. It can still be edited deliberately in the options; protection guards
-the quick path, not the deliberate one.
-
-**The offer can be dismissed** with the × in its corner: the state stays as it
-is, it is simply no longer presented as something you just changed. The service
-behind it is `climate_profiles.dismiss_change`.
-
-**The offer runs out.** A minute after the last manual change the reference
-point is dropped: the card stops offering to capture, and the state is plainly
-custom. Every further change starts that minute over, so adjusting something in
-several steps does not lose the offer halfway. Capturing into a profile you
-name explicitly keeps working.
-
-**After a restart** nothing is assumed. The reference point for "what did you
-change" only exists while Home Assistant runs, so a fresh start with a
-deviating state stays custom and offers no target until a profile matches
-again. Name the profile explicitly in the service call if you need it anyway.
+Nothing asks before storing. To keep a deviation without bending the profile,
+protect the profile, or store the state as a new one with
+[`save_as_profile`](#climate_profilessave_as_profile).
 
 ### Chosen or recognised
 
@@ -287,8 +296,8 @@ A new profile starts with it **off** - a profile is usually something you
 choose, and one that becomes active whenever the state happens to fit it is the
 exception, typically "Off". Profiles stored before 2.1 keep it on, so updating
 changes nothing about them; switch it off by hand where you want that. A
-profile saved from the card with **New profile** starts off as well, and is
-selected right away, since it is the state you are in.
+profile stored with `save_as_profile` starts off as well, and is selected right
+away, since it is the state you are in.
 
 Switched off for a profile, it is active only while it is the one you selected,
 through the card, the select entity or `apply_profile`. Two consequences, and
@@ -316,16 +325,9 @@ The selection survives a restart. It counts only while its values still hold,
 so a device that moved in the meantime leaves the card on custom rather than
 claiming a profile that stopped applying hours ago.
 
-Storing a change without asking is the profile's other setting, "Changes by
-hand". It applies wherever the change was made: this card, another one, a
-script, or the thermostat's own buttons. Home Assistant cannot tell a hand on
-the device from the device changing a value by itself, so there is one
-exception - the moments right after a profile was applied, which is where a
-device's overrides happen. A value the device drops much later is stored like
-any other change; it stands in the profile and can be corrected there.
-
-Writing waits until the state has been quiet for a moment, so moving a slider
-in steps does not store every step.
+A change made by hand is stored into the profile it was made in - the selected
+one too, as long as it is not write protected; see
+[Changes made by hand](#changes-made-by-hand).
 
 ### When a profile does not take
 
@@ -421,9 +423,14 @@ action: climate_profiles.capture_profile
 target:
   entity_id: sensor.living_room_climate_profile
 data:
-  profile: Comfort        # optional - defaults to the profile that last matched
+  profile: Comfort        # required - name or id
   values: [temperature]   # optional - defaults to deciding automatically
 ```
+
+Writes the current state into the profile you name - what happens on its own
+after a change by hand, for when an automation wants to decide. The profile is
+always named: guessing the one that matched last would write, hours later,
+into a profile nobody is thinking of. A write protected profile refuses.
 
 ### `climate_profiles.save_as_profile`
 
@@ -438,18 +445,6 @@ data:
   values: [temperature]   # optional - defaults to the whole state
 ```
 
-### `climate_profiles.dismiss_change`
-
-```yaml
-action: climate_profiles.dismiss_change
-target:
-  entity_id: sensor.living_room_climate_profile
-```
-
-Drops the offer to store the current manual change - what the × on the card
-calls, and what the offer's own timeout does after a minute. The state itself
-is untouched.
-
 More: [`examples/automations.yaml`](examples/automations.yaml).
 
 ## Sensor attributes
@@ -458,15 +453,13 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, detect, hidden, capture, protected, values}, …]
+profiles: [{id, name, color, icon, order, detect, hidden, protected, protection_entity, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
 capabilities: {hvac_modes: […], min_temp: 16, target_temp_step: 1, …}
 entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
-last_matched_profile_id: 2b3c4d5e…   # what "capture" would write into
-changed_values: [temperature]        # what it would change; empty after a restart
 unreached:                           # a profile that was applied but did not take
   {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
 ```
@@ -474,8 +467,7 @@ unreached:                           # a profile that was applied but did not ta
 Automations should trigger on `active_profile_id`. The state is the display
 name and changes when you rename a profile; the id does not.
 
-The same holds for the additional values: `current_values` and `changed_values`
-carry their ids, and `additional_values` says what each id is called and which
+The same holds for the additional values: `current_values` carries their ids, and `additional_values` says what each id is called and which
 entity is behind it. Renaming a value or pointing it at a different entity
 leaves every profile that sets it intact.
 

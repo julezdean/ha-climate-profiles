@@ -41,6 +41,31 @@ def test_a_hidden_profile_round_trips():
     assert ClimateProfile.from_dict(hidden.as_dict()).hidden is True
 
 
+@pytest.mark.parametrize(
+    ("stored", "protected"),
+    [
+        ({}, False),
+        # 1.x stored the boolean that is stored again now.
+        ({"protected": True}, True),
+        ({"protected": False}, False),
+        # 2.0 stored one of three answers; only "never" kept changes out.
+        ({"capture": "never"}, True),
+        ({"capture": "ask"}, False),
+        ({"capture": "auto"}, False),
+    ],
+)
+def test_write_protection_is_read_from_every_older_shape(stored, protected):
+    restored = ClimateProfile.from_dict(
+        {"id": "p", "name": "Komfort", "values": {"hvac_mode": "cool"}, **stored}
+    )
+    assert restored.protected is protected
+    # Written back in one shape only, and only when it is on.
+    data = restored.as_dict()
+    assert "capture" not in data
+    assert data.get("protected", False) is protected
+    assert ("protected" in data) is protected
+
+
 def test_ids_stay_stable_when_a_profile_is_renamed():
     original = ClimateProfile(id="abc", name="Komfort", values={"hvac_mode": "cool"})
     renamed = ClimateProfile(

@@ -39,8 +39,6 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     ADDITIONAL_DOMAINS,
-    CAPTURE_ASK,
-    CAPTURE_MODES,
     CONF_ADDITIONAL,
     CONF_ADDITIONAL_ENTITY,
     CONF_ADDITIONAL_ICON,
@@ -50,13 +48,13 @@ from .const import (
     CONF_CUSTOM_COLOR,
     CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
-    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
     CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PROTECTED,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_COLOR,
@@ -109,7 +107,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "color": "Colour",
         "detect": "Recognise this profile automatically",
         "hidden": "Hide on the card",
-        "capture": "Changes by hand",
+        "protected": "Write protected",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
         VALUE_SWING_MODE: "Swing",
@@ -122,7 +120,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "color": "Farbe",
         "detect": "Dieses Profil automatisch erkennen",
         "hidden": "In der Karte ausblenden",
-        "capture": "Änderungen von Hand",
+        "protected": "Schreibgeschützt",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
         VALUE_SWING_MODE: "Swing",
@@ -203,7 +201,7 @@ def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
             (CONF_PROFILE_ICON, profile.icon),
             (CONF_PROFILE_DETECT, profile.detect),
             (CONF_PROFILE_HIDDEN, profile.hidden),
-            (CONF_PROFILE_CAPTURE, profile.capture),
+            (CONF_PROFILE_PROTECTED, profile.protected),
             (CONF_PROFILE_ID, profile.id),
         )
         if value is not None
@@ -372,14 +370,14 @@ def profile_from_input(
         color=normalise_color(user_input.get(CONF_PROFILE_COLOR)),
         values=values,
         icon=user_input.get(CONF_PROFILE_ICON) or None,
-        # Both switches are off unless the row says otherwise. Before Home
+        # The switches are off unless the row says otherwise. Before Home
         # Assistant 2026.10 a field cannot carry a default, so a new row shows
         # every switch off - and what it shows has to be what is stored. Off
         # is also the right answer: a new profile is active when it is chosen,
         # not whenever the state happens to fit it.
         detect=bool(user_input.get(CONF_PROFILE_DETECT, False)),
         hidden=bool(user_input.get(CONF_PROFILE_HIDDEN, False)),
-        capture=str(user_input.get(CONF_PROFILE_CAPTURE) or CAPTURE_ASK),
+        protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
     )
 
 
@@ -697,19 +695,10 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "label": labels["hidden"],
                 "selector": {"boolean": {}},
             },
-            CONF_PROFILE_CAPTURE: {
-                # Required, so a new row opens with "ask" already picked: the
-                # frontend fills a required select with its first option, and
-                # an empty field that silently means "ask" is a riddle.
-                "required": True,
-                "label": labels["capture"],
-                "selector": {
-                    "select": {
-                        "options": list(CAPTURE_MODES),
-                        "mode": "dropdown",
-                        "translation_key": "capture",
-                    }
-                },
+            CONF_PROFILE_PROTECTED: {
+                "required": False,
+                "label": labels["protected"],
+                "selector": {"boolean": {}},
             },
         }
 

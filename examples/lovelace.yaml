@@ -12,6 +12,7 @@ entity: sensor.living_room_climate_profile
 name: Living room           # overrides the entity's friendly name
 profile_layout: auto        # auto | grid | scroll | dropdown | icons
 temperature_style: bar      # bar | dial
+show_protection: false      # a lock for the active profile's write protection
 # Everything is shown unless it is hidden. The list mixes the four climate
 # keys with the ids of your additional values - the editor writes it for you.
 hide: []

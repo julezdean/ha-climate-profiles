@@ -32,7 +32,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     AUTO_CAPTURE_QUIET_SECONDS,
-    CAPTURE_TIMEOUT_SECONDS,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL,
@@ -126,8 +125,9 @@ class ProfileState:
     available: bool
     applying: bool = False
     #: The profile that matched most recently in this session, and which of
-    #: its values have been changed by hand since. Both are runtime only -
-    #: after a restart there is no reference point, and "custom" stays custom.
+    #: its values have been changed by hand since - what automatic capture
+    #: writes into, and what it writes. Both are runtime only: after a restart
+    #: there is no reference point, and "custom" stays custom.
     last_matched: ClimateProfile | None = None
     changed: tuple[str, ...] = ()
     unreached: Unreached | None = None
@@ -176,11 +176,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._last_change = 0.0
         self._reached = False
         self._reach_timer: Any = None
-        #: When the manual change the capture offer is about was last made,
-        #: and the timer that lets the offer expire on its own.
-        self._changed_at = 0.0
-        self._changed_keys: tuple[str, ...] = ()
-        self._expiry_timer: Any = None
         #: The profile that was chosen - by the card, the select entity or the
         #: service. Remembered across restarts, but only counted while its
         #: values still hold.
@@ -402,15 +397,12 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
         # Also reported while a profile is still active: a partial profile
         # keeps matching while you adjust a value it does not define, and that
-        # is precisely a change worth offering to capture.
+        # is precisely a change worth capturing.
         changed = (
             changed_keys(self._baseline[1], values, vocabulary, unavailable)
             if self._baseline is not None
             else ()
         )
-        # Expiring drops the reference point, so what it would capture into
-        # has to be read afterwards.
-        changed = self._expire_offer(changed)
         last_matched = (
             profiles.get(self._baseline[0]) if self._baseline is not None else None
         )
@@ -426,61 +418,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             changed,
             self._unreached,
         )
-
-    @callback
-    def _expire_offer(self, changed: tuple[str, ...]) -> tuple[str, ...]:
-        """Let the capture offer run out, and say what is left of it.
-
-        An offer that never expires keeps claiming hours later that something
-        was just changed. Once it is gone the state is plainly custom - the
-        same place a restart leaves it - and capturing still works by naming
-        the profile.
-        """
-        now = self.hass.loop.time()
-        if not changed:
-            self._changed_keys = ()
-            self._cancel_expiry()
-            return changed
-
-        if changed != self._changed_keys:
-            # A new change, or another one on top: start the clock over.
-            self._changed_keys = changed
-            self._changed_at = now
-
-        if now - self._changed_at >= CAPTURE_TIMEOUT_SECONDS:
-            _LOGGER.debug(
-                "%s: the offer to capture %s expired", self.name, ", ".join(changed)
-            )
-            self._baseline = None
-            self._changed_keys = ()
-            self._cancel_expiry()
-            return ()
-
-        # Nothing else may happen for a while, so the expiry has to come from
-        # a timer rather than from the next state change.
-        self._schedule_expiry(CAPTURE_TIMEOUT_SECONDS - (now - self._changed_at))
-        return changed
-
-    @callback
-    def _cancel_expiry(self) -> None:
-        """Stop the timer that lets the capture offer run out."""
-        if self._expiry_timer is not None:
-            self._expiry_timer()
-            self._expiry_timer = None
-
-    @callback
-    def _schedule_expiry(self, delay: float) -> None:
-        """Recalculate once the offer is due to expire."""
-        self._cancel_expiry()
-        self._expiry_timer = async_call_later(
-            self.hass, max(delay, 0.0), self._expiry_timer_fired
-        )
-
-    @callback
-    def _expiry_timer_fired(self, _now: Any) -> None:
-        """Ask for a recalculation on the event loop."""
-        self._expiry_timer = None
-        self.hass.async_create_task(self.async_refresh())
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -544,7 +481,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         if self._apply_task is not None and not self._apply_task.done():
             self._apply_task.cancel()
         self._clear_target()
-        self._cancel_expiry()
         if self._auto_capture_timer is not None:
             self._auto_capture_timer()
             self._auto_capture_timer = None
@@ -671,8 +607,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
         # Applying a profile leaves the one you were in. Whatever differs from
         # that one afterwards is not a hand edit of it - without this, a
-        # profile the device cannot keep would be offered for capture into the
-        # previous profile.
+        # profile the device cannot keep would be captured into the previous
+        # profile.
         self._baseline = None
         self._unreached = None
         self._clear_target()
@@ -728,21 +664,6 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._schedule_auto_capture()
         await self._async_run_apply(values, optimistic=None)
 
-    async def async_dismiss_change(self) -> None:
-        """Drop the offer to capture the current deviation.
-
-        The same thing the offer's own timeout does, only now and on purpose:
-        the state stays as it is, it is simply no longer presented as something
-        that was just changed.
-        """
-        if self._baseline is None:
-            return
-        _LOGGER.debug("%s: the offer to capture was dismissed", self.name)
-        self._baseline = None
-        self._changed_keys = ()
-        self._cancel_expiry()
-        await self.async_refresh()
-
     # -- capturing automatically ---------------------------------------------
 
     @callback
@@ -763,10 +684,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     async def _async_auto_capture(self) -> None:
         """Store the manual change in the profile it belongs to.
 
-        The same thing the "save into" button does, without asking: values the
-        profile defines are updated, and a value you adjusted on top is taken
-        into it - so the profile grows by what was changed, which is exactly
-        what the button would have stored.
+        The same thing ``capture_profile`` does: values the profile defines are
+        updated, and a value you adjusted on top is taken into it - so the
+        profile grows by what was changed.
 
         Every change counts, wherever it was made: this card, another one, a
         script, or the thermostat's own buttons. Home Assistant cannot tell a
@@ -774,8 +694,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         one exception is the window right after a profile was applied, which is
         where a device's overrides happen.
 
-        Whether anything is stored at all is the profile's own setting. A
-        profile that asks, or one that is write protected, is never touched.
+        Whether anything is stored at all is the profile's own setting: a
+        write protected profile is never touched.
         """
         # Read the world first: the recalculation is debounced, so what the
         # coordinator holds right now may predate the change this was
@@ -791,7 +711,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             target.name if target else None,
             ", ".join(state.changed) or "-",
         )
-        if target is None or not target.captures_automatically:
+        if target is None or target.protected:
             return
 
         if not state.changed:
@@ -816,24 +736,22 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
     # -- capturing ----------------------------------------------------------
 
     async def async_capture_into_profile(
-        self, reference: str | None = None, keys: list[str] | None = None
+        self, reference: str, keys: list[str] | None = None
     ) -> ClimateProfile:
-        """Write the current state into a stored profile.
+        """Write the current state into the stored profile ``reference``.
 
-        Without ``reference`` the profile that matched most recently in this
-        session is used - the one you were "in" before adjusting something.
+        The profile is always named. Guessing it - the one that matched last -
+        was what the card's button needed; without the offer expiring, a guess
+        made hours later writes into a profile nobody is thinking of.
         """
         profiles = self.profiles
         state = self.data or await self._async_update_data()
 
-        target = profiles.resolve(reference) if reference else state.last_matched
-
+        target = profiles.resolve(reference)
         if target is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="no_capture_target"
-                if not reference
-                else "unknown_profile",
+                translation_key="unknown_profile",
                 translation_placeholders={
                     "profile": reference or "-",
                     "known": ", ".join(p.name for p in profiles) or "-",
@@ -911,6 +829,30 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         await self._async_remember_selection(profile.id)
         self._store(self.profiles.appended(profile))
         return profile
+
+    async def async_set_protected(self, profile_id: str, protected: bool) -> None:
+        """Write protect a profile, or lift the protection."""
+        profile = self.profiles.get(profile_id)
+        if profile is None or profile.protected == protected:
+            return
+        _LOGGER.debug(
+            "%s: %s is %s",
+            self.name,
+            profile.name,
+            "write protected" if protected else "no longer write protected",
+        )
+        if (
+            not protected
+            and self._baseline is not None
+            and self._baseline[0] == profile.id
+        ):
+            # Lifting the protection takes changes from now on, not the ones
+            # made while it was on: a reference point that old would hand the
+            # next capture everything that changed since.
+            self._renew_baseline = True
+            if self.data is None or self.data.active is None:
+                self._baseline = None
+        self._store(self.profiles.replaced(replace(profile, protected=protected)))
 
     @callback
     def _store(self, profiles: ProfileSet) -> None:
@@ -998,7 +940,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             # Only applying a profile makes a new reference point. A single
             # value written by hand must not: a profile that does not define
             # that value keeps matching, and renewing here would erase the very
-            # change the capture offer - and automatic capture - are about.
+            # change automatic capture is about.
             # Devices that answer within the call made this invisible until a
             # real one did.
             self._renew_baseline = optimistic is not None
