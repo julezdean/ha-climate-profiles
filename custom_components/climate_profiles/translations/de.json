@@ -13,13 +13,24 @@
           "name": "Wird für das Device und die Entity-Namen verwendet, z. B. „Wohnzimmer“.",
           "climate_entity": "Unterstützte Modi, Temperaturbereich und Schrittweite werden aus dieser Entity gelesen."
         }
+      },
+      "reconfigure": {
+        "title": "Climate Entity",
+        "description": "Dieses Device auf eine andere Climate Entity umstellen. Profile, Werte und die Entities dieses Devices bleiben, wie sie sind.",
+        "data": {
+          "climate_entity": "Climate Entity"
+        },
+        "data_description": {
+          "climate_entity": "Profile werden nicht an das neue Gerät angepasst. Werte, die es nicht kennt – etwa ein Lüftermodus an einem Thermostat ohne Lüfter –, aus den Profilen entfernen, sonst passt das Profil nie."
+        }
       }
     },
     "error": {
       "entity_not_found": "Diese Entity gibt es (nicht mehr)."
     },
     "abort": {
-      "already_configured": "Diese Climate Entity ist bereits eingerichtet."
+      "already_configured": "Diese Climate Entity ist bereits eingerichtet.",
+      "reconfigure_successful": "Die Climate Entity wurde geändert."
     }
   },
   "options": {
@@ -81,13 +92,6 @@
         "display": "Geräteanzeige",
         "silent": "Flüstermodus"
       }
-    },
-    "capture": {
-      "options": {
-        "ask": "Nach Rückfrage übernehmen",
-        "auto": "Automatisch übernehmen",
-        "never": "Schreibgeschützt"
-      }
     }
   },
   "entity": {
@@ -99,6 +103,11 @@
     "select": {
       "profile": {
         "name": "Profil"
+      }
+    },
+    "switch": {
+      "protected": {
+        "name": "{profile} schreibgeschützt"
       }
     }
   },
@@ -141,7 +150,7 @@
       "fields": {
         "profile": {
           "name": "Profil",
-          "description": "Name oder ID. Ohne Angabe das Profil, das zuletzt gepasst hat."
+          "description": "Name oder ID des Profils, in das geschrieben wird."
         },
         "values": {
           "name": "Werte",
@@ -170,22 +179,14 @@
           "description": "Nur diese Werte speichern, statt den ganzen Zustand."
         }
       }
-    },
-    "dismiss_change": {
-      "name": "Änderung verwerfen",
-      "description": "Das Angebot, die Änderung von Hand zu speichern, fallen lassen. Der Zustand bleibt, wie er ist.",
-      "fields": {}
     }
   },
   "exceptions": {
     "unknown_profile": {
       "message": "Unbekanntes Profil „{profile}“. Verfügbare Profile: {known}."
     },
-    "no_capture_target": {
-      "message": "Es gibt kein Profil, in das übernommen werden könnte. Seit dem letzten Neustart hat kein Profil gepasst – gib das Profil ausdrücklich an."
-    },
     "profile_protected": {
-      "message": "Das Profil „{profile}“ ist schreibgeschützt. Hebe den Schutz in den Optionen auf oder sichere den Zustand als neues Profil."
+      "message": "Das Profil „{profile}“ ist schreibgeschützt. Schalte seinen Schreibschutz aus oder sichere den Zustand als neues Profil."
     },
     "profile_needs_a_name": {
       "message": "Ein neues Profil braucht einen Namen."

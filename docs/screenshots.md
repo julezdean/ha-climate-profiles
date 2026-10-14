@@ -60,7 +60,16 @@ special cases - do not "fix" them into a normal state:
 | `card-dropdown-open.png` | the same, with the profile list open |
 | `card-icons.png` | the thermostat with `profile_layout: icons` |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
-| `card-capture.png` | something was changed by hand, the capture offer is up |
+| `card-protection.png` | `show_protection: true`, "Comfort+" is active and write protected - the lock is closed |
+| `card-hidden.png` | "Summer", hidden from the card, is active - shown, but not offered |
+
+"Comfort+" is write protected in every shot, but only `card-protection.png`
+asks the card to show it; without `show_protection` there is no lock, so the
+other pictures do not change with it.
+
+"Summer" is in the air conditioner's profiles in every shot. It is hidden from
+the card, so it shows up only in `card-hidden.png`, where it is active; the
+other pictures must not change when it is added or edited.
 
 To look at a state interactively:
 

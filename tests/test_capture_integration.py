@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
+import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.climate_profiles.const import (
@@ -37,32 +36,21 @@ async def capture(hass, **data):
 # --- capturing into the profile you were in --------------------------------
 
 
-async def test_a_manual_change_is_written_into_the_active_profile(hass, entry_data):
+async def test_a_manual_change_is_written_into_the_profile(hass, entry_data):
     set_device_state(hass)
     entry = await setup_entry(hass, entry_data)
     assert hass.states.get(SENSOR).state == "Komfort"
 
     set_device_state(hass, temperature=23)
     await settle(hass)
-    assert hass.states.get(SENSOR).state == "Custom"
+    # Before the automatic write - this is the service's doing.
+    assert by_name(entry, "Komfort")["values"]["temperature"] == 24
 
-    await capture(hass)
+    await capture(hass, profile="Komfort")
 
     assert by_name(entry, "Komfort")["values"]["temperature"] == 23
     # And because the profile now matches again, it is active once more.
     assert hass.states.get(SENSOR).state == "Komfort"
-
-
-async def test_the_sensor_says_what_would_be_captured(hass, entry_data):
-    set_device_state(hass)
-    await setup_entry(hass, entry_data)
-
-    set_device_state(hass, temperature=23, fan_mode="high")
-    await settle(hass)
-
-    attrs = hass.states.get(SENSOR).attributes
-    assert attrs["last_matched_profile_id"] == "komfort"
-    assert set(attrs["changed_values"]) == {"temperature", "fan_mode"}
 
 
 async def test_a_partial_profile_grows_only_by_what_changed(hass, entry_data):
@@ -73,7 +61,10 @@ async def test_a_partial_profile_grows_only_by_what_changed(hass, entry_data):
 
     set_device_state(hass, hvac_mode="cool", temperature=22, fan_mode="high")
     await settle(hass)
-    await capture(hass)
+    assert hass.states.get(SENSOR).state == "Kuehlung", (
+        "a value it does not define cannot unmatch it"
+    )
+    await capture(hass, profile="Kuehlung")
 
     values = by_name(entry, "Kuehlung")["values"]
     assert values == {"hvac_mode": "cool", "temperature": 22, "fan_mode": "high"}
@@ -95,22 +86,35 @@ async def test_capturing_only_selected_values(hass, entry_data):
 
     set_device_state(hass, temperature=23, fan_mode="high")
     await settle(hass)
-    await capture(hass, values=["temperature"])
+    await capture(hass, profile="Komfort", values=["temperature"])
 
     values = by_name(entry, "Komfort")["values"]
     assert values["temperature"] == 23
     assert values["fan_mode"] == "auto", "fan_mode was not asked for"
 
 
-async def test_after_a_restart_nothing_is_assumed(hass, entry_data):
-    """No profile has matched yet, so there is no target to capture into."""
-    set_device_state(hass, temperature=23)
+async def test_the_profile_has_to_be_named(hass, entry_data):
+    """Nothing is guessed: the profile that matched last may be long gone."""
+    set_device_state(hass)
     await setup_entry(hass, entry_data)
-    assert hass.states.get(SENSOR).state == "Custom"
-    assert hass.states.get(SENSOR).attributes["last_matched_profile_id"] is None
+    set_device_state(hass, temperature=23)
+    await settle(hass)
 
-    with pytest.raises(ServiceValidationError):
+    with pytest.raises(vol.Invalid):
         await capture(hass)
+
+
+async def test_the_sensor_no_longer_offers_a_capture(hass, entry_data):
+    """What the card's offer read is gone with the offer."""
+    set_device_state(hass)
+    await setup_entry(hass, entry_data)
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+
+    attributes = hass.states.get(SENSOR).attributes
+    assert "changed_values" not in attributes
+    assert "last_matched_profile_id" not in attributes
+    assert not hass.services.has_service(DOMAIN, "dismiss_change")
 
 
 async def test_an_unknown_profile_is_refused(hass, entry_data):
@@ -133,7 +137,7 @@ async def test_a_protected_profile_refuses_to_be_overwritten(hass, entry_data):
     await settle(hass)
 
     with pytest.raises(ServiceValidationError):
-        await capture(hass)
+        await capture(hass, profile="Komfort")
     assert by_name(entry, "Komfort")["values"]["temperature"] == 24
 
 
@@ -175,7 +179,10 @@ async def test_saving_the_state_as_a_new_profile(hass, entry_data):
     assert created["values"]["temperature"] == 23
     assert created["values"]["fan_mode"] == "high"
     assert created["values"]["display"] == "off"
-    # It is the last one, and it matches right away.
+    # It is the last one, and it is active right away - not because the state
+    # fits it, since a new profile is not recognised on its own, but because
+    # saving it is choosing it.
+    assert created["detect"] is False
     assert stored(entry)[-1]["name"] == "Mittagshitze"
     assert hass.states.get(SENSOR).state == "Mittagshitze"
 
@@ -228,94 +235,6 @@ async def test_capturing_does_not_reload_the_entities(hass, entry_data):
         ),
     )
 
-    await capture(hass)
+    await capture(hass, profile="Komfort")
     assert "unavailable" not in seen, f"the sensor went through {seen}"
     assert hass.states.get(SENSOR).state == "Komfort"
-
-
-async def test_changes_are_reported_while_a_partial_profile_stays_active(
-    hass, entry_data
-):
-    """The fan moved, "Kuehlung" still matches - and still offers to capture."""
-    set_device_state(hass, hvac_mode="cool", temperature=22)
-    await setup_entry(hass, entry_data)
-    assert hass.states.get(SENSOR).state == "Kuehlung"
-
-    set_device_state(hass, hvac_mode="cool", temperature=22, fan_mode="high")
-    await settle(hass)
-
-    state = hass.states.get(SENSOR)
-    assert state.state == "Kuehlung", "a value it does not define cannot unmatch it"
-    assert state.attributes["changed_values"] == ["fan_mode"]
-    assert state.attributes["last_matched_profile_id"] == "kuehlung"
-
-
-# --- the offer runs out ----------------------------------------------------
-
-
-async def test_the_capture_offer_expires(hass, entry_data, monkeypatch):
-    """An offer that never expires claims hours later that you just changed it."""
-    from custom_components.climate_profiles import coordinator as coordinator_module
-
-    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 0.4)
-
-    set_device_state(hass)
-    await setup_entry(hass, entry_data)
-    set_device_state(hass, temperature=23)
-    await settle(hass)
-
-    attributes = hass.states.get(SENSOR).attributes
-    assert attributes["changed_values"] == ["temperature"]
-    assert attributes["last_matched_profile_id"] == "komfort"
-
-    await asyncio.sleep(0.6)
-    await hass.async_block_till_done()
-
-    attributes = hass.states.get(SENSOR).attributes
-    assert hass.states.get(SENSOR).state == "Custom"
-    assert attributes["changed_values"] == []
-    assert attributes["last_matched_profile_id"] is None
-
-
-async def test_another_change_starts_the_clock_over(hass, entry_data, monkeypatch):
-    from custom_components.climate_profiles import coordinator as coordinator_module
-
-    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 2.0)
-
-    set_device_state(hass)
-    await setup_entry(hass, entry_data)
-    set_device_state(hass, temperature=23)
-    await settle(hass)
-
-    await asyncio.sleep(1.0)
-    set_device_state(hass, temperature=23, fan_mode="high")
-    await settle(hass)
-    await asyncio.sleep(0.8)
-    await hass.async_block_till_done()
-
-    # More than 2 s after the first change, less than 2 s after the second:
-    # without the restart the offer would be gone.
-    assert set(hass.states.get(SENSOR).attributes["changed_values"]) == {
-        "temperature",
-        "fan_mode",
-    }
-
-
-async def test_capturing_into_a_named_profile_still_works_after_expiry(
-    hass, entry_data, monkeypatch
-):
-    """Only the silent "into the one from before" goes away."""
-    from custom_components.climate_profiles import coordinator as coordinator_module
-
-    monkeypatch.setattr(coordinator_module, "CAPTURE_TIMEOUT_SECONDS", 0.3)
-
-    set_device_state(hass)
-    entry = await setup_entry(hass, entry_data)
-    set_device_state(hass, temperature=23)
-    await settle(hass)
-    await asyncio.sleep(0.5)
-    await hass.async_block_till_done()
-
-    await capture(hass, profile="Komfort")
-
-    assert by_name(entry, "Komfort")["values"]["temperature"] == 23

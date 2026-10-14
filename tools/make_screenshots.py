@@ -100,17 +100,29 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
-    # The offer to write a manual change back into the profile it came from.
-    "card-capture": {
+    # A profile hidden from the card, set by an automation: shown while it is
+    # what the device is doing, and not offered otherwise.
+    "card-hidden": {
         "theme": "light",
         "state": {
-            "temperature": 23,
-            "fan_mode": "high",
-            "active_profile": "Custom",
-            "active_profile_id": "__custom__",
-            "active_profile_color": "#78909c",
-            "changed_values": ["temperature", "fan_mode"],
-            "last_matched_profile_id": "p3",
+            "temperature": 25,
+            "silent": "on",
+            "active_profile": "Summer",
+            "active_profile_id": "p7",
+            "active_profile_color": "#f59e0b",
+        },
+    },
+    # The lock of the active profile, closed: "Comfort+" is write protected,
+    # and the card was asked to show it. Without show_protection nothing of
+    # this is in any other picture.
+    "card-protection": {
+        "theme": "light",
+        "card": {"show_protection": True},
+        "state": {
+            "temperature": 22,
+            "active_profile": "Comfort+",
+            "active_profile_id": "p4",
+            "active_profile_color": "#10b981",
         },
     },
 }

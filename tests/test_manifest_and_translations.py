@@ -13,7 +13,6 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
-    SERVICE_DISMISS_CHANGE,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
 )
@@ -76,12 +75,14 @@ def test_services_match_the_code():
         SERVICE_SET_VALUE,
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
-        SERVICE_DISMISS_CHANGE,
     }
     # Only the climate keys are documented: an additional value is named by
     # the user, so it cannot appear in a static service definition.
     assert set(services[SERVICE_SET_VALUE]["fields"]) == set(CLIMATE_KEYS)
     assert services[SERVICE_APPLY_PROFILE]["fields"]["profile"]["required"] is True
+    # Capturing names its profile: guessing one is what the card's offer did,
+    # and the offer is gone.
+    assert services[SERVICE_CAPTURE_PROFILE]["fields"]["profile"]["required"] is True
 
 
 def test_every_service_field_is_documented():

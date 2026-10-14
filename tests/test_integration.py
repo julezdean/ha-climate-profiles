@@ -101,8 +101,10 @@ async def test_entities_report_the_matching_profile(hass, entry_data):
 
 
 async def test_a_manual_change_switches_to_custom(hass, entry_data):
+    """Only for a write protected profile - any other one takes the change."""
+    protected = [{**p, "protected": True} for p in PROFILES]
     set_device_state(hass)
-    await setup_entry(hass, entry_data)
+    await setup_entry(hass, entry_data, profiles=protected)
     assert hass.states.get(SENSOR).state == "Komfort"
 
     set_device_state(hass, temperature=23)

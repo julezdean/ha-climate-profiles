@@ -14,12 +14,13 @@ from custom_components.climate_profiles.const import (
     CONF_CUSTOM_COLOR,
     CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
-    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PROTECTED,
     CONF_PROFILE_VALUES,
     CONF_PROFILES,
     DOMAIN,
@@ -104,6 +105,112 @@ async def test_a_new_entry_for_the_same_entity_starts_empty(hass):
     assert result["options"][CONF_PROFILES] == []
 
 
+# --- reconfigure -----------------------------------------------------------
+
+BEDROOM = "climate.bedroom"
+
+
+def set_bedroom_state(hass) -> None:
+    """Put a second device in place, cooling to 22 - what "Kuehlung" says."""
+    hass.states.async_set(
+        BEDROOM,
+        "cool",
+        {
+            "temperature": 22,
+            "hvac_modes": ["off", "cool"],
+            "min_temp": 16,
+            "max_temp": 30,
+            "target_temp_step": 1,
+        },
+    )
+
+
+async def reconfigure(hass, entry, entity_id: str) -> dict:
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_CLIMATE_ENTITY: entity_id}
+    )
+    await hass.async_block_till_done()
+    return result
+
+
+async def test_the_climate_entity_can_be_changed(hass, monkeypatch):
+    """Profiles and values stay; the entry simply reads another device."""
+    import custom_components.climate_profiles as integration
+
+    from .test_integration import PROFILES, SENSOR, setup_entry
+
+    set_device_state(hass)
+    set_bedroom_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+    assert hass.states.get(SENSOR).state == "Komfort"
+
+    setups: list[str] = []
+    original = integration.async_setup_entry
+
+    async def counting(hass, entry):
+        setups.append(entry.entry_id)
+        return await original(hass, entry)
+
+    monkeypatch.setattr(integration, "async_setup_entry", counting)
+
+    result = await reconfigure(hass, entry, BEDROOM)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_CLIMATE_ENTITY] == BEDROOM
+    assert entry.unique_id == BEDROOM
+    assert entry.options[CONF_PROFILES] == PROFILES
+    # Reloaded once, by the entry's own listener - not a second time on top.
+    assert setups == [entry.entry_id]
+    assert hass.states.get(SENSOR).attributes["entities"]["climate"] == BEDROOM
+    assert hass.states.get(SENSOR).state == "Kuehlung"
+
+
+async def test_keeping_the_climate_entity_changes_nothing(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, CLIMATE)
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == CLIMATE
+
+
+async def test_an_entity_another_entry_has_is_refused(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    set_bedroom_state(hass)
+    MockConfigEntry(
+        domain=DOMAIN, data={CONF_CLIMATE_ENTITY: BEDROOM}, unique_id=BEDROOM
+    ).add_to_hass(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, BEDROOM)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_CLIMATE_ENTITY] == CLIMATE
+
+
+async def test_reconfiguring_to_an_unknown_entity_is_rejected(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, "climate.gibt_es_nicht")
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_CLIMATE_ENTITY: "entity_not_found"}
+    assert entry.data[CONF_CLIMATE_ENTITY] == CLIMATE
+
+
 # --- options flow ----------------------------------------------------------
 
 
@@ -176,7 +283,6 @@ async def test_adding_a_profile(hass):
             {
                 CONF_PROFILE_NAME: "Nacht",
                 CONF_PROFILE_COLOR: [139, 92, 246],
-                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
                 "temperature": 26,
                 "silent": "on",
@@ -196,6 +302,45 @@ async def test_adding_a_profile(hass):
         "temperature": 26,
         "silent": "on",
     }
+
+
+async def test_a_new_profile_is_neither_recognised_nor_hidden(hass):
+    """A new row shows every switch off, so that is what is stored.
+
+    Before Home Assistant 2026.10 a row field cannot carry a default: the +
+    button opens the row with every switch off, and an absent switch has to
+    mean what the dialog showed.
+    """
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [{CONF_PROFILE_NAME: "Neu", "hvac_mode": "cool"}],
+    )
+
+    stored = result["data"][CONF_PROFILES][0]
+    assert stored[CONF_PROFILE_DETECT] is False
+    assert CONF_PROFILE_HIDDEN not in stored
+    assert CONF_PROFILE_PROTECTED not in stored
+
+
+async def test_hiding_a_profile_from_the_card(hass):
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [
+            {
+                CONF_PROFILE_NAME: "Sommer",
+                CONF_PROFILE_HIDDEN: True,
+                "hvac_mode": "cool",
+            }
+        ],
+    )
+
+    assert result["data"][CONF_PROFILES][0][CONF_PROFILE_HIDDEN] is True
 
 
 async def test_the_list_shows_what_is_stored(hass):
@@ -223,7 +368,8 @@ async def test_the_list_shows_what_is_stored(hass):
             CONF_PROFILE_COLOR: [34, 197, 94],
             CONF_PROFILE_ICON: "mdi:sofa",
             CONF_PROFILE_DETECT: True,
-            CONF_PROFILE_CAPTURE: "ask",
+            CONF_PROFILE_HIDDEN: False,
+            CONF_PROFILE_PROTECTED: False,
             CONF_PROFILE_ID: "keep-me",
             "hvac_mode": "cool",
             "temperature": 24,
@@ -233,9 +379,10 @@ async def test_the_list_shows_what_is_stored(hass):
     fields = schema[CONF_PROFILES].config["fields"]
     assert "fan" in fields
     assert fields["hvac_mode"]["required"] is True
-    # Required, so a new row opens with the first option - "ask" - picked.
-    assert fields[CONF_PROFILE_CAPTURE]["required"] is True
-    assert fields[CONF_PROFILE_CAPTURE]["selector"]["select"]["options"][0] == "ask"
+    # A switch like the other two: a new row opens with it off, and off is
+    # what is stored - a profile that takes changes made by hand.
+    assert fields[CONF_PROFILE_PROTECTED]["required"] is False
+    assert fields[CONF_PROFILE_PROTECTED]["selector"] == {"boolean": {}}
     # The id rides along in the row but has no field: nothing to edit, and
     # nothing to mistype. `read_only` would not help - the frontend's text
     # selector ignores it and draws an ordinary box.
@@ -284,7 +431,6 @@ async def test_editing_keeps_the_id_and_can_clear_a_value(hass):
                 CONF_PROFILE_ID: "keep-me",
                 CONF_PROFILE_NAME: "Wohlfuehlen",
                 CONF_PROFILE_COLOR: [34, 197, 94],
-                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
                 "temperature": 24,
             }
@@ -311,7 +457,6 @@ async def test_deleting_a_profile_is_a_row_that_is_gone(hass):
                 CONF_PROFILE_ID: "b",
                 CONF_PROFILE_NAME: "B",
                 CONF_PROFILE_COLOR: [34, 34, 34],
-                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": "cool",
             }
         ],
@@ -335,7 +480,6 @@ async def test_the_order_of_the_rows_is_the_order(hass):
                 CONF_PROFILE_ID: pid,
                 CONF_PROFILE_NAME: pid.upper(),
                 CONF_PROFILE_COLOR: [17, 17, 17],
-                CONF_PROFILE_CAPTURE: "ask",
                 "hvac_mode": mode,
             }
             for pid, mode in (("c", "dry"), ("b", "cool"), ("a", "off"))
@@ -364,7 +508,6 @@ async def test_a_row_without_a_mode_is_refused(hass):
                 {
                     CONF_PROFILE_NAME: "Leer",
                     CONF_PROFILE_COLOR: [1, 2, 3],
-                    CONF_PROFILE_CAPTURE: "ask",
                 }
             ],
         )

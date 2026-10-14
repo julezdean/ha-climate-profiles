@@ -102,7 +102,7 @@ step widths and the number entity's limits are all read from the devices. A
 profile value the device does not advertise is reported as unsupported instead
 of being sent and silently failing.
 
-**The baseline is runtime only.** Capturing needs to know what you changed,
+**The baseline is runtime only.** Capturing needs to know what was changed,
 which means knowing what the state looked like before. That snapshot is taken
 when a profile *becomes* active - not on every recalculation, because a
 partial profile keeps matching while you adjust a value it does not define,
@@ -111,14 +111,18 @@ It is renewed after the integration writes the state itself. Nothing of it is
 persisted: after a restart there is no reference point, and saying so is
 better than guessing.
 
-**Capturing never happens on its own.** A profile that rewrites itself would
-need an echo guard - a way to tell the integration's own writes from the
-user's - and, worse, it could never report "custom" again, because every
-deviation would be swallowed. The explicit route needs neither.
+**Capturing happens on its own, unless the profile is write protected.** A
+profile that rewrites itself needs an echo guard - a way to tell the
+integration's own writes from a change - and has it twice: the baseline is
+renewed after the integration wrote the state itself, and the window right
+after a profile was applied belongs to the device's answer, not to anybody's
+decision. Such a profile reports "custom" only for the few seconds until the
+change is in it; that is the point of it. A profile that should keep reporting
+deviations is write protected.
 
 **Options changes do not reload the entry.** Only the entity map is baked into
 the coordinator; profiles and the custom name are read fresh on each access.
-So capturing from the card updates the options and refreshes, instead of
+So storing a change updates the options and refreshes, instead of
 reloading and making every entity blink. A change to the entities themselves
 still reloads - that is what `async_reload_entry` decides.
 

@@ -4,6 +4,80 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-14
+
+### Added
+
+- **Profiles can be hidden on the card.** A switch in the profile's row, for
+  a profile only an automation is meant to set. The card leaves it out of what
+  it offers, in every layout, and shows it only while it is what the device is
+  doing - as the active profile, but not one to pick. `apply_profile` and the
+  select entity still reach it: hiding is about the card, and the select has to
+  keep it among its options, or its state would read "unknown" while it is
+  active. Hiding is not write protection; that stays its own setting.
+- **Write protection is a switch per profile**,
+  `switch.<device>_<profile>_write_protected`, a configuration entity on the
+  device. A profile added in the options gets its switch at once, a deleted
+  one takes it along, and renaming a profile keeps the entity id. It is the
+  same setting as the profile's row, so a schedule or an automation can hold a
+  profile without anyone opening the options.
+- **The card can show it**: `show_protection: true` puts a lock next to the
+  power button for the active profile - closed while it is protected, and a
+  tap flips its switch. Off by default; custom has no lock.
+- **The climate entity can be changed after setup**, under Reconfigure on the
+  entry - for a replaced device, without setting everything up again.
+  Profiles, additional values, the selection and the entry's entities stay;
+  the entry is reloaded once to listen to the new device.
+
+### Changed
+
+- **A change made by hand goes into the active profile, unless it is write
+  protected.** What a change does used to have three answers per profile: ask
+  before storing (the default), store automatically, write protected. "Ask"
+  is gone, and with two answers left the field is a switch again, **Write
+  protected**, off for a new profile. Profiles stored by 2.0 as "ask" -
+  every profile nobody changed - now take changes: **after updating, a change
+  by hand is written into the active profile a few seconds later.** Protect
+  the profiles that should stay as they are. "Store automatically" and "write
+  protected" keep their meaning.
+- **`capture_profile` needs `profile`.** Without it, it wrote into the profile
+  that matched last - what the card's button needed. With the offer no longer
+  running out after a minute, that guess could land hours later in a profile
+  nobody is thinking of.
+- **A new profile is no longer recognised from the state by default.** A
+  profile is usually something you choose; one that becomes active whenever the
+  state fits it - "Off" - is the exception. Profiles stored before keep
+  recognition on, so updating changes nothing about them. Before Home
+  Assistant 2026.10 a new row shows every switch off anyway, and stored it as
+  on: what the dialog showed and what was saved now agree.
+- A profile stored with `save_as_profile` starts with recognition off too, and
+  is selected right away - it is the state you are in, and without that the
+  card would have gone on saying custom about it.
+
+### Removed
+
+- **The card no longer offers to store a change**, and no longer creates
+  profiles: the bar with "Save into", "New profile" and its name field is
+  gone. With "ask" gone there is nothing to ask - a profile takes the change
+  by itself or is protected against it. `save_as_profile` stays for
+  automations.
+- `climate_profiles.dismiss_change` - it dismissed that bar.
+- The sensor attributes `changed_values` and `last_matched_profile_id`, and
+  `capture` in `profiles`: they existed for the bar. `profiles` carries
+  `protected` and, new, `protection_entity`.
+
+### Fixed
+
+- **A change on its way into a profile no longer flaps to custom.** For the
+  few seconds until the change was written, the profile no longer matched and
+  the sensor and the select said custom, then the profile again - a flap every
+  automation on the state saw. The profile now stays active while the change
+  waits to be written. A write protected profile still goes to custom: it does
+  not take the change.
+- Custom joined the `icons` and `dropdown` layouts only if it was active when
+  the card was built. A change by hand afterwards left the icons without any
+  active one; the card now follows the device.
+
 ## [2.0.0] - 2026-10-04
 
 ### Changed

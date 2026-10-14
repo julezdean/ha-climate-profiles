@@ -20,13 +20,11 @@ from custom_components.climate_profiles.const import (
 )
 
 from .conftest import set_device_state, settle
-from .test_integration import SENSOR, setup_entry
+from .test_integration import SELECT, SENSOR, setup_entry
 
-#: Two profiles that say exactly the same thing. Only a choice can tell them
-#: apart - with detection on, the second one is unreachable.
 #: Two profiles that say exactly the same thing. Neither wants to be
-#: recognised from the state - only the choice tells them apart - and both take
-#: a change in without asking.
+#: recognised from the state - only the choice tells them apart - and, not
+#: being write protected, both take a change in.
 TWINS = [
     {
         "id": "komfort",
@@ -34,7 +32,6 @@ TWINS = [
         "color": "#22c55e",
         "values": {"hvac_mode": "cool", "temperature": 24},
         "detect": False,
-        "capture": "auto",
     },
     {
         "id": "emica",
@@ -42,7 +39,6 @@ TWINS = [
         "color": "#8b5cf6",
         "values": {"hvac_mode": "cool", "temperature": 24},
         "detect": False,
-        "capture": "auto",
     },
 ]
 
@@ -184,10 +180,68 @@ async def test_a_change_is_written_into_the_active_profile(
     assert hass.states.get(SENSOR).state == "Emica"
 
 
+def record(hass: HomeAssistant, entity_id: str) -> list[str]:
+    """Return a list that collects every state ``entity_id`` goes through."""
+    seen: list[str] = []
+
+    @callback
+    def _seen(event) -> None:
+        # A callback, so it runs in order on the loop - a plain function would
+        # be handed to the executor, and the list would come out shuffled.
+        if event.data["entity_id"] == entity_id and event.data["new_state"]:
+            seen.append(event.data["new_state"].state)
+
+    hass.bus.async_listen("state_changed", _seen)
+    return seen
+
+
+async def test_a_change_on_its_way_into_the_profile_does_not_flap(
+    hass: HomeAssistant, entry_data, calls
+):
+    """The profile stays active while the change waits to be written into it.
+
+    Custom for the few seconds in between would claim something untrue: the
+    change is about to become the profile.
+    """
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data, profiles=TWINS)
+    await apply(hass, "Emica")
+    sensor = record(hass, SENSOR)
+    select = record(hass, SELECT)
+
+    await set_value(hass, device={"temperature": 22}, temperature=22)
+    assert hass.states.get(SENSOR).state == "Emica", "before it was written"
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Emica")["values"]["temperature"] == 22
+    assert "Custom" not in sensor, f"the sensor went through {sensor}"
+    assert "Custom" not in select, f"the select went through {select}"
+
+
+async def test_a_change_made_elsewhere_does_not_flap_either(
+    hass: HomeAssistant, entry_data, calls
+):
+    """A recognised profile, moved on the device itself."""
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data)
+    assert hass.states.get(SENSOR).state == "Komfort"
+    sensor = record(hass, SENSOR)
+
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+    assert hass.states.get(SENSOR).state == "Komfort"
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    assert stored(entry, "Komfort")["values"]["temperature"] == 23
+    assert "Custom" not in sensor, f"the sensor went through {sensor}"
+
+
 async def test_a_value_the_profile_did_not_have_is_taken_into_it(
     hass: HomeAssistant, entry_data, calls
 ):
-    """The same thing the "save into" button stores, without asking."""
+    """The same thing ``capture_profile`` stores."""
     set_device_state(hass)
     entry = await setup_entry(
         hass,
@@ -209,7 +263,7 @@ async def test_a_protected_profile_is_never_written_to(
     hass: HomeAssistant, entry_data, calls
 ):
     set_device_state(hass)
-    protected = [{**TWINS[0], "capture": "never"}]
+    protected = [{**TWINS[0], "protected": True}]
     entry = await setup_entry(
         hass,
         entry_data,
@@ -273,28 +327,6 @@ async def test_a_recognisable_profile_still_shows_without_a_choice(
     assert hass.states.get(SENSOR).state == "Off"
 
 
-async def test_dismissing_drops_the_offer(hass: HomeAssistant, entry_data, calls):
-    """The same thing the timeout does, only now and on purpose."""
-    set_device_state(hass)
-    await setup_entry(hass, entry_data, profiles=TWINS)
-    await apply(hass, "Komfort")
-
-    set_device_state(hass, temperature=23)
-    await settle(hass)
-    assert hass.states.get(SENSOR).attributes["changed_values"] == ["temperature"]
-
-    await hass.services.async_call(
-        DOMAIN, "dismiss_change", {"entity_id": SENSOR}, blocking=True
-    )
-    await settle(hass)
-
-    attributes = hass.states.get(SENSOR).attributes
-    assert attributes["changed_values"] == []
-    assert attributes["last_matched_profile_id"] is None
-    # The state itself is untouched - only the offer is gone.
-    assert hass.states.get(SENSOR).state == "Custom"
-
-
 async def test_a_change_made_elsewhere_is_written_too(
     hass: HomeAssistant, entry_data, calls, monkeypatch
 ):
@@ -331,7 +363,6 @@ async def test_a_value_the_profile_does_not_define_is_taken_in(
             "color": "#22c55e",
             "values": {"hvac_mode": "cool", "temperature": 24},
             "detect": False,
-            "capture": "auto",
         }
     ]
     entry = await setup_entry(hass, entry_data, profiles=partial)
@@ -353,3 +384,100 @@ async def test_a_value_the_profile_does_not_define_is_taken_in(
     await hass.async_block_till_done()
 
     assert stored(entry, "Komfort")["values"]["fan_mode"] == "high"
+
+
+async def test_lifting_the_protection_takes_nothing_from_before(
+    hass: HomeAssistant, entry_data, calls
+):
+    """What was changed while it was protected stays out of it.
+
+    The reference point is the moment the profile was last active. Kept, the
+    next change after lifting the protection would hand automatic capture
+    everything that differs since - hours of it, perhaps.
+    """
+    set_device_state(hass)
+    protected = [{**TWINS[0], "protected": True}]
+    entry = await setup_entry(hass, entry_data, profiles=protected)
+    await apply(hass, "Komfort")
+
+    await set_value(hass, device={"temperature": 22}, temperature=22)
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+    assert hass.states.get(SENSOR).state == "Custom"
+
+    await entry.runtime_data.async_set_protected("komfort", False)
+    await settle(hass)
+    # The mocked device forgets what it is not told, so it is told again.
+    await set_value(
+        hass, device={"temperature": 22, "fan_mode": "high"}, fan_mode="high"
+    )
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    values = stored(entry, "Komfort")["values"]
+    assert values == {"hvac_mode": "cool", "temperature": 24}
+    assert "protected" not in stored(entry, "Komfort")
+
+
+async def test_lifting_the_protection_of_the_active_profile_takes_what_follows(
+    hass: HomeAssistant, entry_data, calls
+):
+    """A partial profile stays active - from now on it takes changes again."""
+    set_device_state(hass)
+    protected = [{**TWINS[0], "protected": True}]
+    entry = await setup_entry(hass, entry_data, profiles=protected)
+    await apply(hass, "Komfort")
+
+    # Not defined by the profile, so it stays active - and protected, it
+    # keeps the change out.
+    await set_value(hass, device={"swing_mode": "vertical"}, swing_mode="vertical")
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+    assert hass.states.get(SENSOR).state == "Komfort"
+
+    await entry.runtime_data.async_set_protected("komfort", False)
+    await settle(hass)
+    await set_value(
+        hass, device={"swing_mode": "vertical", "fan_mode": "high"}, fan_mode="high"
+    )
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
+
+    values = stored(entry, "Komfort")["values"]
+    assert values["fan_mode"] == "high"
+    assert "swing_mode" not in values, "changed while it was protected"
+
+
+# --- hidden from the card ----------------------------------------------------
+
+
+async def test_a_hidden_profile_is_hidden_from_the_card_only(
+    hass: HomeAssistant, entry_data, calls
+):
+    """Hiding is about the card. Every other way of applying it keeps working.
+
+    The select keeps it among its options: its state has to be one of them,
+    or it would read "unknown" exactly while the hidden profile is active.
+    """
+    sommer = {
+        "id": "sommer",
+        "name": "Sommer",
+        "color": "#f59e0b",
+        "values": {"hvac_mode": "cool", "temperature": 26},
+        "detect": False,
+        "hidden": True,
+    }
+    set_device_state(hass, temperature=22)
+    await setup_entry(hass, entry_data, profiles=[*TWINS, sommer])
+
+    attributes = hass.states.get(SENSOR).attributes
+    flags = {profile["id"]: profile["hidden"] for profile in attributes["profiles"]}
+    assert flags == {"komfort": False, "emica": False, "sommer": True}
+    assert "Sommer" in hass.states.get(SELECT).attributes["options"]
+
+    await apply(hass, "Sommer")
+    set_device_state(hass, temperature=26)
+    await settle(hass)
+
+    assert hass.states.get(SENSOR).state == "Sommer"
+    assert hass.states.get(SELECT).state == "Sommer"

@@ -13,7 +13,7 @@ import asyncio
 import pytest
 
 from custom_components.climate_profiles import coordinator as coordinator_module
-from custom_components.climate_profiles.const import DOMAIN
+from custom_components.climate_profiles.const import CONF_PROFILES, DOMAIN
 
 from .conftest import set_device_state, settle
 from .test_integration import PROFILES, SENSOR, setup_entry
@@ -38,25 +38,29 @@ async def apply(hass, profile: str) -> None:
     )
 
 
-async def test_an_unreached_profile_is_not_offered_as_a_manual_change(
-    hass, entry_data, calls
+async def test_an_unreached_profile_is_not_taken_as_a_manual_change(
+    hass, entry_data, calls, monkeypatch
 ):
-    """What the device did with Max is not a hand edit of the profile before."""
+    """What the device did with Max is not a hand edit of anything.
+
+    Not of the profile before - applying Max left it - and not of Max either:
+    the device answering right after the apply is its override, not a choice.
+    """
+    monkeypatch.setattr(coordinator_module, "AUTO_CAPTURE_QUIET_SECONDS", 0.2)
     set_device_state(hass)
-    await setup_entry(hass, entry_data, profiles=[*PROFILES, MAX])
+    entry = await setup_entry(hass, entry_data, profiles=[*PROFILES, MAX])
     assert hass.states.get(SENSOR).state == "Komfort"
+    before = [dict(p) for p in entry.options[CONF_PROFILES]]
 
     await apply(hass, "Max")
     # The device takes silent mode and overrides the fan with its own speed.
     set_device_state(hass, fan_mode="silent", silent="on")
     await settle(hass)
+    await asyncio.sleep(0.4)
+    await hass.async_block_till_done()
 
-    attributes = hass.states.get(SENSOR).attributes
     assert hass.states.get(SENSOR).state == "Custom"
-    assert attributes["changed_values"] == [], (
-        "the capture bar would offer to write Max's result into "
-        f"{attributes['last_matched_profile_id']!r}"
-    )
+    assert entry.options[CONF_PROFILES] == before
 
 
 # --- the verdict -----------------------------------------------------------

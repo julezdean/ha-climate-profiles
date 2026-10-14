@@ -124,7 +124,7 @@
       /* --- a fake Home Assistant --- */
       const PROFILES = [
         { id: "p1", name: "Off", color: "#64748b", icon: "mdi:power", order: 0,
-          protected: true, capture: "never", values: { hvac_mode: "off" } },
+          protected: true, values: { hvac_mode: "off" } },
         { id: "p2", name: "Away", color: "#3b82f6", icon: null, order: 1,
           protected: false,
           values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
@@ -132,8 +132,9 @@
         { id: "p3", name: "Comfort", color: "#22c55e", icon: null, order: 2,
           values: { hvac_mode: "cool", temperature: 24, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
+        /* Write protected: the closed lock in card-protection.png. */
         { id: "p4", name: "Comfort+", color: "#10b981", icon: null, order: 3,
-          capture: "auto",
+          protected: true,
           values: { hvac_mode: "cool", temperature: 22, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
         { id: "p5", name: "Night", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,
@@ -142,7 +143,19 @@
         { id: "p6", name: "Max", color: "#ef4444", icon: null, order: 5,
           values: { hvac_mode: "cool", temperature: 16, swing_mode: "vertical",
                     fan: 100, display: "off", silent: "off" } },
+        /* Hidden from the card: only an automation sets it. It stays out of
+           every picture unless it is the active profile. */
+        { id: "p7", name: "Summer", color: "#f59e0b", icon: null, order: 6,
+          hidden: true, detect: false,
+          values: { hvac_mode: "cool", temperature: 25, swing_mode: "off",
+                    fan_mode: "auto", display: "off", silent: "on" } },
       ];
+      /* Each profile's write protection is a switch, and the sensor names it. */
+      for (const profile of PROFILES) {
+        profile.protected = Boolean(profile.protected);
+        profile.protection_entity =
+          `switch.living_room_${profile.name.toLowerCase().replace(/\W+/g, "_")}_write_protected`;
+      }
 
       /* The additional values, exactly as the integration reports them. The
          ids are speaking here so the fixture stays readable; production hands
@@ -200,8 +213,6 @@
           active_profile_id: "p3",
           active_profile_color: "#22c55e",
           applying: false,
-          changed_values: [],
-          last_matched_profile_id: "p3",
           ...overrides,
         };
 
@@ -222,8 +233,6 @@
                 active_profile_id: state.active_profile_id,
                 active_profile_color: state.active_profile_color,
                 applying: state.applying,
-                changed_values: state.changed_values,
-                last_matched_profile_id: state.last_matched_profile_id,
                 unreached: state.unreached || null,
                 profiles: PROFILES,
                 additional_values: ADDITIONAL,

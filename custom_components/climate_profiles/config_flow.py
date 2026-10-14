@@ -39,8 +39,6 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     ADDITIONAL_DOMAINS,
-    CAPTURE_ASK,
-    CAPTURE_MODES,
     CONF_ADDITIONAL,
     CONF_ADDITIONAL_ENTITY,
     CONF_ADDITIONAL_ICON,
@@ -50,12 +48,13 @@ from .const import (
     CONF_CUSTOM_COLOR,
     CONF_CUSTOM_ICON,
     CONF_CUSTOM_NAME,
-    CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PROTECTED,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_COLOR,
@@ -107,7 +106,8 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "icon": "Icon",
         "color": "Colour",
         "detect": "Recognise this profile automatically",
-        "capture": "Changes by hand",
+        "hidden": "Hide on the card",
+        "protected": "Write protected",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
         VALUE_SWING_MODE: "Swing",
@@ -119,7 +119,8 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "icon": "Symbol",
         "color": "Farbe",
         "detect": "Dieses Profil automatisch erkennen",
-        "capture": "Änderungen von Hand",
+        "hidden": "In der Karte ausblenden",
+        "protected": "Schreibgeschützt",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
         VALUE_SWING_MODE: "Swing",
@@ -199,7 +200,8 @@ def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
             (CONF_PROFILE_COLOR, color_to_rgb(profile.color)),
             (CONF_PROFILE_ICON, profile.icon),
             (CONF_PROFILE_DETECT, profile.detect),
-            (CONF_PROFILE_CAPTURE, profile.capture),
+            (CONF_PROFILE_HIDDEN, profile.hidden),
+            (CONF_PROFILE_PROTECTED, profile.protected),
             (CONF_PROFILE_ID, profile.id),
         )
         if value is not None
@@ -368,8 +370,14 @@ def profile_from_input(
         color=normalise_color(user_input.get(CONF_PROFILE_COLOR)),
         values=values,
         icon=user_input.get(CONF_PROFILE_ICON) or None,
-        detect=bool(user_input.get(CONF_PROFILE_DETECT, True)),
-        capture=str(user_input.get(CONF_PROFILE_CAPTURE) or CAPTURE_ASK),
+        # The switches are off unless the row says otherwise. Before Home
+        # Assistant 2026.10 a field cannot carry a default, so a new row shows
+        # every switch off - and what it shows has to be what is stored. Off
+        # is also the right answer: a new profile is active when it is chosen,
+        # not whenever the state happens to fit it.
+        detect=bool(user_input.get(CONF_PROFILE_DETECT, False)),
+        hidden=bool(user_input.get(CONF_PROFILE_HIDDEN, False)),
+        protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
     )
 
 
@@ -416,6 +424,53 @@ class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=_device_schema(user_input), errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Point an existing entry at a different climate entity.
+
+        Everything else stays: profiles, additional values and the selection
+        belong to the entry, not to the entity, and the entities of the entry
+        are keyed by it too - automations keep pointing at them. Profiles are
+        not adapted to the new device: a value it cannot take stays in them
+        until somebody clears it.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entity_id = user_input[CONF_CLIMATE_ENTITY]
+            if self.hass.states.get(entity_id) is None:
+                errors[CONF_CLIMATE_ENTITY] = "entity_not_found"
+            else:
+                if entity_id != entry.unique_id:
+                    await self.async_set_unique_id(entity_id)
+                    self._abort_if_unique_id_configured()
+                # Not async_update_reload_and_abort: the entry's own update
+                # listener reloads it when the climate entity changes, and a
+                # second, scheduled reload on top would make every entity
+                # blink twice.
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    unique_id=entity_id,
+                    data={**entry.data, CONF_CLIMATE_ENTITY: entity_id},
+                )
+                return self.async_abort(reason="reconfigure_successful")
+
+        current = (user_input or {}).get(CONF_CLIMATE_ENTITY) or entry.data.get(
+            CONF_CLIMATE_ENTITY
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_CLIMATE_ENTITY, default=current): EntitySelector(
+                        EntitySelectorConfig(domain="climate")
+                    )
+                }
+            ),
+            errors=errors,
         )
 
     @staticmethod
@@ -682,19 +737,15 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "label": labels["detect"],
                 "selector": {"boolean": {}},
             },
-            CONF_PROFILE_CAPTURE: {
-                # Required, so a new row opens with "ask" already picked: the
-                # frontend fills a required select with its first option, and
-                # an empty field that silently means "ask" is a riddle.
-                "required": True,
-                "label": labels["capture"],
-                "selector": {
-                    "select": {
-                        "options": list(CAPTURE_MODES),
-                        "mode": "dropdown",
-                        "translation_key": "capture",
-                    }
-                },
+            CONF_PROFILE_HIDDEN: {
+                "required": False,
+                "label": labels["hidden"],
+                "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_PROTECTED: {
+                "required": False,
+                "label": labels["protected"],
+                "selector": {"boolean": {}},
             },
         }
 

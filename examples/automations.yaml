@@ -52,10 +52,26 @@
       data:
         option: Comfort
 
-# --- keep a manual change ----------------------------------------------------
-# Nothing is captured automatically. If you want that behaviour anyway, this is
-# the honest way to build it: only after the state has been stable for a while,
-# and only into a profile you named.
+# --- hold a profile for the night -------------------------------------------
+# A change made by hand goes into the active profile on its own. Write
+# protection keeps it out - here only at night, through the profile's switch.
+- alias: Protect the night profile at night
+  triggers:
+    - trigger: time
+      at: "22:00:00"
+      id: evening
+    - trigger: time
+      at: "06:00:00"
+      id: morning
+  actions:
+    - action: "switch.turn_{{ 'on' if trigger.id == 'evening' else 'off' }}"
+      target:
+        entity_id: switch.living_room_night_write_protected
+
+# --- keep a deviation in another profile --------------------------------------
+# Changes land in the profile that was active. When the state has drifted to
+# custom and stayed there, this stores it into a profile you name instead -
+# capture_profile always names its profile, and refuses a protected one.
 - alias: Save a deviation into the night profile after an hour
   triggers:
     - trigger: state

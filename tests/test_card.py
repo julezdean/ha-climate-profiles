@@ -38,14 +38,21 @@ hass.callService = async (domain, service, data) => {
 card.hass = hass;
 """
 
+#: Changed by hand, so nothing matches any more.
 CHANGED = {
     "temperature": 23,
     "fan_mode": "high",
     "active_profile": "Custom",
     "active_profile_id": "__custom__",
     "active_profile_color": "#78909c",
-    "changed_values": ["temperature", "fan_mode"],
-    "last_matched_profile_id": "p3",
+}
+
+#: The fixture's "Off" is write protected and active here.
+OFF = {
+    "hvac_mode": "off",
+    "active_profile": "Off",
+    "active_profile_id": "p1",
+    "active_profile_color": "#64748b",
 }
 
 
@@ -108,114 +115,79 @@ async def calls(page) -> list[dict]:
     return await page.evaluate("window.__calls")
 
 
-# --- the capture bar -------------------------------------------------------
+# --- write protection -------------------------------------------------------
 
 
-async def test_the_capture_bar_stays_hidden_without_changes(open_card):
+async def test_a_change_by_hand_offers_nothing(open_card):
+    """Changes are stored by the profile itself, or not at all - never asked."""
+    page = await open_card(CHANGED)
+    card = page.locator("climate-profile-card")
+    assert await card.locator(".capture").count() == 0
+    assert await card.locator("input[type=text]").count() == 0, "no name field"
+
+
+async def test_the_lock_is_left_out_unless_asked_for(open_card):
     page = await open_card()
-    assert await page.locator("climate-profile-card .capture").is_hidden()
+    assert await page.locator("climate-profile-card .lock").is_hidden()
 
 
-async def test_the_capture_bar_names_what_changed(open_card):
-    page = await open_card(CHANGED)
-    capture = page.locator("climate-profile-card .capture")
-    assert await capture.is_visible()
+async def test_the_lock_shows_whether_the_active_profile_is_protected(open_card):
+    page = await open_card(card={"show_protection": True})
+    lock = page.locator("climate-profile-card .lock")
+    assert await lock.is_visible()
+    assert await lock.get_attribute("aria-pressed") == "false"
+    assert await lock.get_attribute("title") == "Comfort takes changes made by hand"
 
-    values = await capture.locator(".capture-values").inner_text()
-    assert "Temperature" in values
-    assert "Fan mode" in values
-    assert "Comfort" in await capture.locator(".capture-into").inner_text()
+    await page.evaluate(f"setCardState({json.dumps(OFF)})")
+    assert await lock.get_attribute("aria-pressed") == "true"
+    assert await lock.get_attribute("title") == "Off is write protected"
 
 
-async def test_capturing_calls_the_service(open_card):
-    page = await open_card(CHANGED)
-    await page.locator("climate-profile-card .capture-into").click()
+async def test_the_lock_flips_the_profiles_switch(open_card):
+    page = await open_card(card={"show_protection": True})
+    await page.locator("climate-profile-card .lock").click()
     await page.wait_for_timeout(200)
 
     assert await calls(page) == [
         {
-            "domain": "climate_profiles",
-            "service": "capture_profile",
-            "data": {"entity_id": "sensor.living_room_climate_profile"},
+            "domain": "switch",
+            "service": "turn_on",
+            "data": {"entity_id": "switch.living_room_comfort_write_protected"},
         }
     ]
 
 
-async def test_saving_as_a_new_profile_asks_for_a_name(open_card):
-    page = await open_card(CHANGED)
-    await page.locator("climate-profile-card .capture-new").click()
-
-    assert await page.locator("climate-profile-card .capture-form").is_visible()
-    assert await page.locator("climate-profile-card .capture-actions").is_hidden()
-    assert await calls(page) == [], "nothing is saved before a name is given"
-
-    await page.locator("climate-profile-card .capture-name").fill("Mittagshitze")
-    await page.locator("climate-profile-card .capture-name").press("Enter")
+async def test_the_lock_opens_a_protected_profile(open_card):
+    page = await open_card(OFF, card={"show_protection": True})
+    await page.locator("climate-profile-card .lock").click()
     await page.wait_for_timeout(200)
 
     assert await calls(page) == [
         {
-            "domain": "climate_profiles",
-            "service": "save_as_profile",
-            "data": {
-                "entity_id": "sensor.living_room_climate_profile",
-                "name": "Mittagshitze",
-            },
+            "domain": "switch",
+            "service": "turn_off",
+            "data": {"entity_id": "switch.living_room_off_write_protected"},
         }
     ]
 
 
-async def test_an_empty_name_is_refused_without_a_service_call(open_card):
-    page = await open_card(CHANGED)
-    await page.locator("climate-profile-card .capture-new").click()
-    await page.locator("climate-profile-card .capture-name").fill("   ")
-    await page.locator("climate-profile-card .capture-name").press("Enter")
-    await page.wait_for_timeout(200)
-
-    assert await calls(page) == []
-    assert await page.locator("climate-profile-card .alert").is_visible()
+async def test_custom_has_no_lock(open_card):
+    """Custom stores nothing, so there is nothing to protect."""
+    page = await open_card(CHANGED, card={"show_protection": True})
+    assert await page.locator("climate-profile-card .lock").is_hidden()
 
 
-async def test_escape_closes_the_name_field(open_card):
-    page = await open_card(CHANGED)
-    await page.locator("climate-profile-card .capture-new").click()
-    await page.locator("climate-profile-card .capture-name").press("Escape")
-
-    assert await page.locator("climate-profile-card .capture-form").is_hidden()
-    assert await page.locator("climate-profile-card .capture-actions").is_visible()
-
-
-async def test_a_protected_profile_offers_only_the_new_profile_route(open_card):
-    """The "Off" profile is protected in the preview fixture."""
-    page = await open_card(
-        {
-            **CHANGED,
-            "hvac_mode": "off",
-            "last_matched_profile_id": "p1",
-            "changed_values": ["temperature"],
-        }
+async def test_the_editor_offers_the_lock(open_card):
+    page = await open_card()
+    labels = await page.evaluate(
+        """() => {
+            const editor = document.createElement("climate-profile-card-editor");
+            editor.hass = document.querySelector("climate-profile-card")._hass;
+            editor.setConfig({ entity: "sensor.living_room_climate_profile" });
+            return editor._schema().map((field) => field.name);
+        }"""
     )
-    capture = page.locator("climate-profile-card .capture")
-    assert await capture.is_visible()
-    assert await capture.locator(".capture-into").is_hidden()
-    assert await capture.locator(".capture-new").is_visible()
-    assert "write protected" in await capture.locator(".capture-title").inner_text()
-
-
-async def test_a_profile_that_stores_by_itself_asks_nothing(open_card):
-    """The "Comfort+" profile captures automatically in the preview fixture."""
-    page = await open_card(
-        {
-            **CHANGED,
-            "temperature": 23,
-            "last_matched_profile_id": "p4",
-            "changed_values": ["temperature"],
-        }
-    )
-
-    # Not the bar without its buttons: nothing at all, the way it looks once
-    # the write has happened a few seconds later.
-    assert await page.locator("climate-profile-card .capture").is_hidden()
+    assert "show_protection" in labels
 
 
 # --- regressions -----------------------------------------------------------
@@ -318,16 +290,6 @@ async def test_an_unreached_profile_is_reported_not_offered(open_card):
         == "Fan mode: Silent instead of Full"
     )
     assert await hint.locator("button").count() == 0
-
-
-async def test_the_offer_can_be_dismissed(open_card):
-    """A minute is long: the x says "not this time" right away."""
-    page = await open_card(CHANGED)
-    card = page.locator("climate-profile-card")
-
-    await card.locator(".capture-dismiss").click()
-
-    assert [call["service"] for call in await calls(page)] == ["dismiss_change"]
 
 
 # --- what the room reports --------------------------------------------------
@@ -615,3 +577,113 @@ async def test_custom_joins_the_icons_while_it_is_what_is_on(open_card):
     assert await custom.count() == 1
     assert await custom.is_disabled()
     assert "active" in (await custom.get_attribute("class"))
+
+
+async def test_custom_joins_when_it_becomes_what_is_on(open_card):
+    """Not only when the card is built: the list follows the device.
+
+    Custom used to be in the list only if it was active when the card was
+    built - a manual change afterwards left the icons without an active one.
+    """
+    for layout, selector in (
+        ("icons", ".profile[data-id='__custom__']"),
+        ("dropdown", ".picker-option[data-id='__custom__']"),
+    ):
+        page = await open_card(card={"profile_layout": layout})
+        custom = page.locator(f"climate-profile-card {selector}")
+        assert await custom.count() == 0
+
+        await page.evaluate(f"setCardState({json.dumps(CHANGED)})")
+        await page.wait_for_timeout(100)
+        assert await custom.count() == 1, layout
+
+        await page.evaluate("setCardState({})")
+        await page.wait_for_timeout(100)
+        assert await custom.count() == 0, layout
+
+
+# --- profiles hidden from the card ------------------------------------------
+
+#: The fixture's "Summer" is hidden from the card and active here.
+SUMMER = {
+    "temperature": 25,
+    "silent": "on",
+    "active_profile": "Summer",
+    "active_profile_id": "p7",
+    "active_profile_color": "#f59e0b",
+}
+
+
+@pytest.mark.parametrize(
+    ("layout", "selector"),
+    [
+        ("grid", ".profile"),
+        ("scroll", ".profile"),
+        ("icons", ".profile"),
+        ("dropdown", ".picker-option"),
+    ],
+)
+async def test_a_hidden_profile_is_not_offered(open_card, layout, selector):
+    page = await open_card(card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(f"{selector}[data-id='p7']").count() == 0
+    # The six others are all still there.
+    for profile_id in ("p1", "p2", "p3", "p4", "p5", "p6"):
+        assert await card.locator(f"{selector}[data-id='{profile_id}']").count() == 1
+
+
+@pytest.mark.parametrize(
+    ("layout", "selector"),
+    [
+        ("grid", ".profile"),
+        ("scroll", ".profile"),
+        ("icons", ".profile"),
+        ("dropdown", ".picker-option"),
+    ],
+)
+async def test_a_hidden_profile_is_shown_while_it_is_on(open_card, layout, selector):
+    """The card does not pretend the device is doing something else."""
+    page = await open_card(SUMMER, card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+
+    summer = card.locator(f"{selector}[data-id='p7']")
+    assert await summer.count() == 1
+    assert await summer.is_disabled(), "it is shown, not offered"
+    if layout == "dropdown":
+        assert await summer.get_attribute("aria-selected") == "true"
+        assert await card.locator(".picker-name").inner_text() == "Summer"
+    else:
+        assert "active" in (await summer.get_attribute("class"))
+
+
+async def test_a_hidden_profile_comes_and_goes_with_the_state(open_card):
+    page = await open_card()
+    summer = page.locator("climate-profile-card .profile[data-id='p7']")
+    assert await summer.count() == 0
+
+    await page.evaluate(f"setCardState({json.dumps(SUMMER)})")
+    await page.wait_for_timeout(100)
+    assert await summer.count() == 1
+
+    await page.evaluate("setCardState({})")
+    await page.wait_for_timeout(100)
+    assert await summer.count() == 0
+
+
+async def test_a_hidden_profile_does_not_count_towards_the_layout(open_card):
+    """Six offered profiles fit a grid; the hidden seventh does not tip it."""
+    page = await open_card()
+    layout = await page.locator("climate-profile-card .profiles").get_attribute(
+        "data-layout"
+    )
+    assert layout == "grid"
+
+
+async def test_a_hidden_active_profile_cannot_be_applied_from_the_card(open_card):
+    page = await open_card(SUMMER)
+
+    await page.locator("climate-profile-card .profile[data-id='p7']").click(force=True)
+    await page.wait_for_timeout(200)
+
+    assert await calls(page) == []
