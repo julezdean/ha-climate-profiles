@@ -12,6 +12,7 @@ import logging
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -25,10 +26,12 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
     async_call_later,
+    async_track_point_in_utc_time,
     async_track_state_change_event,
 )
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .const import (
     AUTO_CAPTURE_QUIET_SECONDS,
@@ -36,6 +39,7 @@ from .const import (
     AUTOMATIC_OFF,
     AUTOMATIC_STORAGE_KEY,
     AUTOMATIC_STORAGE_VERSION,
+    AUTOMATIC_TEMPORARY,
     AUTOMATIC_WAITING,
     CLIMATE_KEYS,
     CLIMATE_KINDS,
@@ -151,7 +155,8 @@ class ProfileState:
 class AutomaticState:
     """What automatic mode is doing, and what the profile sensor asks for."""
 
-    #: ``AUTOMATIC_OFF``, ``AUTOMATIC_FOLLOWING`` or ``AUTOMATIC_WAITING``.
+    #: ``AUTOMATIC_OFF``, ``AUTOMATIC_FOLLOWING``, ``AUTOMATIC_WAITING`` or
+    #: ``AUTOMATIC_TEMPORARY``.
     status: str
     sensor: str
     #: The profile the sensor names - read while automatic mode is off too,
@@ -160,6 +165,9 @@ class AutomaticState:
     sensor_state: str | None
     #: Why there is no target: the sensor has no state, or names no profile.
     problem: str | None
+    #: The profile started by hand that overrides the sensor, and until when.
+    temporary: ClimateProfile | None = None
+    until: datetime | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a representation for the frontend and for automations."""
@@ -170,6 +178,15 @@ class AutomaticState:
             "target": self.target.name if self.target else None,
             "target_id": self.target.id if self.target else None,
             "problem": self.problem,
+            "temporary": (
+                {
+                    "profile": self.temporary.name if self.temporary else None,
+                    "profile_id": self.temporary.id if self.temporary else None,
+                    "until": self.until.isoformat(),
+                }
+                if self.until is not None
+                else None
+            ),
         }
 
 
@@ -233,6 +250,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._automatic_store: Store[dict[str, Any]] = Store(
             hass, AUTOMATIC_STORAGE_VERSION, AUTOMATIC_STORAGE_KEY
         )
+        #: (profile id, end) of a temporary profile started by hand.
+        self._temporary: tuple[str, datetime] | None = None
+        self._temporary_timer: Any = None
 
     # -- configuration ------------------------------------------------------
 
@@ -499,6 +519,14 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             # The sensor was taken out of the options: there is nothing left
             # to follow, and switching it back in should not resume silently.
             await self._async_store_automatic()
+        temporary = mine.get("temporary") or {}
+        until = dt_util.parse_datetime(str(temporary.get("until") or ""))
+        if self._automatic and temporary.get("id") and until is not None:
+            # Its end is kept, not what was left: a restart does not lengthen
+            # it, and one that ended while Home Assistant was down ends now.
+            self._temporary = (str(temporary["id"]), until)
+            self._schedule_temporary_end()
+        self.config_entry.async_on_unload(self._clear_temporary)
 
         self.config_entry.async_on_unload(
             async_track_state_change_event(
@@ -684,6 +712,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_key="unknown_profile",
                 translation_placeholders={"profile": reference, "known": known},
             )
+        if self._automatic and profile.temporary:
+            await self._async_start_temporary(profile)
+            return
         if self._automatic:
             # One thing decides which profile is active. Taken here, every way
             # in is refused alike - the card, the select entity, the service
@@ -776,13 +807,22 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             problem = PROBLEM_SENSOR_UNAVAILABLE
         elif (target := self.profiles.resolve(raw)) is None:
             problem = PROBLEM_UNKNOWN_PROFILE
+        temporary: ClimateProfile | None = None
+        until: datetime | None = None
+        if self._temporary is not None:
+            temporary = self.profiles.get(self._temporary[0])
+            until = self._temporary[1]
         if not self._automatic:
             status = AUTOMATIC_OFF
+        elif until is not None:
+            status = AUTOMATIC_TEMPORARY
         elif target is None:
             status = AUTOMATIC_WAITING
         else:
             status = AUTOMATIC_FOLLOWING
-        return AutomaticState(status, self.profile_sensor, target, raw, problem)
+        return AutomaticState(
+            status, self.profile_sensor, target, raw, problem, temporary, until
+        )
 
     async def async_set_automatic(self, on: bool) -> None:
         """Switch automatic mode on or off."""
@@ -794,8 +834,10 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             return
         self._automatic = on
         # Switched on, the sensor's profile is applied even if it is the one
-        # applied last time: what happened in between was manual.
+        # applied last time: what happened in between was manual. Switched
+        # off, a temporary profile ends with it and its values stay.
         self._automatic_applied = None
+        self._clear_temporary()
         await self._async_store_automatic()
         self.async_update_listeners()
         await self.async_follow_sensor()
@@ -837,6 +879,61 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 err,
             )
 
+    async def _async_start_temporary(self, profile: ClimateProfile) -> None:
+        """Override the sensor with ``profile`` for its duration.
+
+        A second one replaces the first, with its own duration - so does the
+        same one started again. The sensor's profile is applied once it ends,
+        even if that is the one applied before: the temporary one changed the
+        device in between.
+        """
+        until = dt_util.utcnow() + timedelta(minutes=profile.duration)
+        _LOGGER.debug("%s: %s until %s", self.name, profile.name, until)
+        self._clear_temporary()
+        self._temporary = (profile.id, until)
+        self._schedule_temporary_end()
+        self._automatic_applied = None
+        await self._async_store_automatic()
+        self.async_update_listeners()
+        await self._async_choose(profile)
+
+    async def async_end_temporary(self) -> None:
+        """End the temporary profile now, and let the sensor decide again.
+
+        Without a profile the sensor can name, nothing is written: the device
+        keeps the temporary profile's values until the sensor names one.
+        """
+        if self._temporary is None:
+            return
+        _LOGGER.debug("%s: temporary profile ends", self.name)
+        self._clear_temporary()
+        await self._async_store_automatic()
+        self.async_update_listeners()
+        await self.async_follow_sensor()
+
+    @callback
+    def _schedule_temporary_end(self) -> None:
+        """End the temporary profile when its time is up."""
+        if self._temporary is None:
+            return
+        self._temporary_timer = async_track_point_in_utc_time(
+            self.hass, self._temporary_ended, self._temporary[1]
+        )
+
+    @callback
+    def _temporary_ended(self, _now: datetime) -> None:
+        """Start the end on the event loop."""
+        self._temporary_timer = None
+        self.hass.async_create_task(self.async_end_temporary())
+
+    @callback
+    def _clear_temporary(self) -> None:
+        """Forget the temporary profile, and its timer."""
+        if self._temporary_timer is not None:
+            self._temporary_timer()
+            self._temporary_timer = None
+        self._temporary = None
+
     async def _async_store_automatic(self) -> None:
         """Keep automatic mode across restarts, one key per entry."""
         stored = await self._automatic_store.async_load() or {}
@@ -845,6 +942,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 "on": True,
                 "applied": self._automatic_applied,
             }
+            if self._temporary is not None:
+                stored[self.config_entry.entry_id]["temporary"] = {
+                    "id": self._temporary[0],
+                    "until": self._temporary[1].isoformat(),
+                }
         else:
             stored.pop(self.config_entry.entry_id, None)
         await self._automatic_store.async_save(stored)

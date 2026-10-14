@@ -73,6 +73,7 @@ async def test_the_target_is_shown_while_automatic_mode_is_off(hass, entry_data,
         "target": "Kuehlung",
         "target_id": "kuehlung",
         "problem": None,
+        "temporary": None,
     }
     # Off is off: nothing is written for it.
     assert not calls["set_temperature"]

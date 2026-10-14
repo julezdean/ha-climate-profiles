@@ -135,7 +135,9 @@ things, and a second, weaker set of them in the options would be one more
 place to look. Only a change of the named profile writes, so a restart or a
 sensor that repeats itself does not undo a change made by hand, and while
 automatic mode is on, `async_apply_profile` refuses every other caller in one
-place.
+place - except for a temporary profile, which it starts instead. A temporary
+profile stores its end, not what is left of it, so a restart neither
+lengthens it nor forgets it.
 
 ## What Home Assistant cannot do here
 

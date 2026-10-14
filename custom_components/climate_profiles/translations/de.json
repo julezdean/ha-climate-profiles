@@ -194,6 +194,10 @@
           "description": "Nur diese Werte speichern, statt den ganzen Zustand."
         }
       }
+    },
+    "end_temporary": {
+      "name": "Temporäres Profil beenden",
+      "description": "Beendet ein in der Automatik gestartetes temporäres Profil vor Ablauf seiner Zeit. Danach entscheidet wieder der Profilsensor; nennt er kein Profil, wird nichts geschrieben."
     }
   },
   "exceptions": {

@@ -427,14 +427,40 @@ While the switch is on:
   profile again, it is applied. To make automatic mode hold still, switch it
   off.
 
+### Temporary profiles
+
+A profile can be marked **Can be started for a while in automatic mode**, with
+a duration in minutes (an hour unless you set one). While automatic mode is
+on, such a profile is the one exception to "cannot be chosen by hand": started
+from the card, the select entity or `apply_profile`, it overrides the sensor
+until its time is up.
+
+- **The sensor does not end it.** Whatever the sensor names meanwhile is
+  shown as the target, and applied once the temporary profile ends - even if
+  it is the profile that was applied before.
+- **It ends early** with `climate_profiles.end_temporary`. Starting another
+  temporary profile replaces it, with that one's duration; starting the same
+  one again starts its time anew. Switching automatic mode off ends it too,
+  and its values stay.
+- **Its end survives a restart.** One that ran out while Home Assistant was
+  down ends right after it starts.
+- **Nothing to hand back to, nothing written.** If the sensor names no profile
+  when the time is up, the device keeps the temporary profile's values and
+  automatic mode waits, as above.
+
+Outside automatic mode the mark has no effect: the profile is chosen like any
+other and stays until something else is.
+
 ```yaml
 automatic:
-  status: following                  # off, following or waiting
+  status: following                  # off, following, waiting or temporary
   sensor: sensor.living_room_wanted_profile
   sensor_state: Comfort
   target: Comfort                    # what the sensor names - also while off
   target_id: 2b3c4d5e…
   problem: null                      # sensor_unavailable or unknown_profile
+  temporary:                         # null unless one is running
+    {profile: Comfort, profile_id: 2b3c4d5e…, until: "2026-10-14T18:30:00+00:00"}
 ```
 
 `automatic` is `null` while no profile sensor is set.
@@ -506,6 +532,17 @@ data:
   values: [temperature]   # optional - defaults to the whole state
 ```
 
+### `climate_profiles.end_temporary`
+
+Ends a [temporary profile](#temporary-profiles) before its time is up; the
+profile sensor decides again. Without one running it does nothing.
+
+```yaml
+action: climate_profiles.end_temporary
+target:
+  entity_id: sensor.living_room_climate_profile
+```
+
 More: [`examples/automations.yaml`](examples/automations.yaml).
 
 ## Sensor attributes
@@ -514,7 +551,7 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, detect, hidden, protected, protection_entity, values}, …]
+profiles: [{id, name, color, icon, order, detect, hidden, protected, temporary, duration, protection_entity, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
@@ -523,7 +560,7 @@ entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 unreached:                           # a profile that was applied but did not take
   {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
-automatic: {status, sensor, sensor_state, target, target_id, problem}   # see Automatic mode
+automatic: {status, sensor, sensor_state, target, target_id, problem, temporary}   # see Automatic mode
 ```
 
 Automations should trigger on `active_profile_id`. The state is the display

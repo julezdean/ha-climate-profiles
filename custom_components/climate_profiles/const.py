@@ -64,6 +64,14 @@ CONF_PROFILE_HIDDEN: Final = "hidden"
 #: had the card offer to store the change; it went with the offer.
 CONF_PROFILE_PROTECTED: Final = "protected"
 
+#: Whether this profile may be started by hand while automatic mode is on, and
+#: for how many minutes it then overrides it. Outside automatic mode neither
+#: has any effect: a profile is chosen as it always was.
+CONF_PROFILE_TEMPORARY: Final = "temporary"
+CONF_PROFILE_DURATION: Final = "duration"
+DEFAULT_TEMPORARY_MINUTES: Final = 60
+MAX_TEMPORARY_MINUTES: Final = 24 * 60
+
 #: Read from profiles stored by 2.0: "never" was write protection, "ask" and
 #: "auto" both mean a profile that takes changes now.
 CONF_PROFILE_CAPTURE: Final = "capture"
@@ -157,6 +165,8 @@ ATTR_AUTOMATIC: Final = "automatic"
 AUTOMATIC_OFF: Final = "off"
 AUTOMATIC_FOLLOWING: Final = "following"
 AUTOMATIC_WAITING: Final = "waiting"
+#: ... or overridden by a temporary profile started by hand.
+AUTOMATIC_TEMPORARY: Final = "temporary"
 #: Why it is waiting.
 PROBLEM_SENSOR_UNAVAILABLE: Final = "sensor_unavailable"
 PROBLEM_UNKNOWN_PROFILE: Final = "unknown_profile"
@@ -167,6 +177,7 @@ SERVICE_APPLY_PROFILE: Final = "apply_profile"
 SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
+SERVICE_END_TEMPORARY: Final = "end_temporary"
 
 # --- tuning ----------------------------------------------------------------
 

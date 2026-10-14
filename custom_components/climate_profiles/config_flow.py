@@ -50,12 +50,14 @@ from .const import (
     CONF_CUSTOM_NAME,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_DURATION,
     CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILE_SENSOR,
+    CONF_PROFILE_TEMPORARY,
     CONF_PROFILES,
     CONF_VALUE_ORDER,
     DEFAULT_CUSTOM_COLOR,
@@ -63,6 +65,7 @@ from .const import (
     DOMAIN,
     KIND_NUMBER,
     KIND_OPTION,
+    MAX_TEMPORARY_MINUTES,
     VALUE_FAN_MODE,
     VALUE_HVAC_MODE,
     VALUE_SWING_MODE,
@@ -81,6 +84,7 @@ from .models import (
     new_profile_id,
     new_value_id,
     normalise_color,
+    parse_minutes,
     reserved_profile_names,
 )
 
@@ -110,6 +114,8 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "detect": "Recognise this profile automatically",
         "hidden": "Hide on the card",
         "protected": "Write protected",
+        "temporary": "Can be started for a while in automatic mode",
+        "duration": "For how long (minutes)",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
         VALUE_SWING_MODE: "Swing",
@@ -123,6 +129,8 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "detect": "Dieses Profil automatisch erkennen",
         "hidden": "In der Karte ausblenden",
         "protected": "Schreibgeschützt",
+        "temporary": "In der Automatik für eine Weile startbar",
+        "duration": "Wie lange (Minuten)",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
         VALUE_SWING_MODE: "Swing",
@@ -204,6 +212,8 @@ def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
             (CONF_PROFILE_DETECT, profile.detect),
             (CONF_PROFILE_HIDDEN, profile.hidden),
             (CONF_PROFILE_PROTECTED, profile.protected),
+            (CONF_PROFILE_TEMPORARY, profile.temporary),
+            (CONF_PROFILE_DURATION, profile.duration),
             (CONF_PROFILE_ID, profile.id),
         )
         if value is not None
@@ -393,6 +403,8 @@ def profile_from_input(
         detect=bool(user_input.get(CONF_PROFILE_DETECT, False)),
         hidden=bool(user_input.get(CONF_PROFILE_HIDDEN, False)),
         protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
+        temporary=bool(user_input.get(CONF_PROFILE_TEMPORARY, False)),
+        duration=parse_minutes(user_input.get(CONF_PROFILE_DURATION)),
     )
 
 
@@ -809,6 +821,24 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 "required": False,
                 "label": labels["protected"],
                 "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_TEMPORARY: {
+                "required": False,
+                "label": labels["temporary"],
+                "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_DURATION: {
+                "required": False,
+                "label": labels["duration"],
+                "selector": {
+                    "number": {
+                        "min": 1,
+                        "max": MAX_TEMPORARY_MINUTES,
+                        "step": 1,
+                        "mode": "box",
+                        "unit_of_measurement": "min",
+                    }
+                },
             },
         }
 

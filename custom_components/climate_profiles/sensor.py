@@ -32,6 +32,7 @@ from .const import (
     CUSTOM_PROFILE_ID,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_END_TEMPORARY,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
     VALUE_FAN_MODE,
@@ -111,6 +112,9 @@ async def async_setup_entry(
     platform.async_register_entity_service(
         SERVICE_SAVE_AS_PROFILE, SAVE_AS_PROFILE_SCHEMA, "async_save_as_profile_service"
     )
+    platform.async_register_entity_service(
+        SERVICE_END_TEMPORARY, None, "async_end_temporary_service"
+    )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
 
@@ -166,6 +170,8 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "detect": profile.detect,
                     "hidden": profile.hidden,
                     "protected": profile.protected,
+                    "temporary": profile.temporary,
+                    "duration": profile.duration,
                     # The switch that sets it, so the card can flip the same
                     # thing an automation or the entity page does.
                     "protection_entity": protection_entity_id(
@@ -222,6 +228,10 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
     ) -> None:
         """Handle ``climate_profiles.capture_profile``."""
         await self.coordinator.async_capture_into_profile(profile, keys=values)
+
+    async def async_end_temporary_service(self) -> None:
+        """Handle ``climate_profiles.end_temporary``."""
+        await self.coordinator.async_end_temporary()
 
     async def async_save_as_profile_service(
         self,

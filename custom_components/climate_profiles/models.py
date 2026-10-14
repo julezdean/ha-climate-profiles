@@ -25,18 +25,22 @@ from .const import (
     CONF_PROFILE_CAPTURE,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_DURATION,
     CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
+    CONF_PROFILE_TEMPORARY,
     CONF_PROFILE_VALUES,
     CUSTOM_PROFILE_ID,
     DEFAULT_CUSTOM_NAME,
     DEFAULT_PROFILE_COLOR,
+    DEFAULT_TEMPORARY_MINUTES,
     KIND_NUMBER,
     KIND_OPTION,
     LEGACY_CAPTURE_NEVER,
+    MAX_TEMPORARY_MINUTES,
     VALUE_HVAC_MODE,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
@@ -107,6 +111,10 @@ class ClimateProfile:
     #: be frozen forever. Unprotected, a change made while the profile is
     #: active is written into it.
     protected: bool = False
+    #: Whether it may be started by hand while automatic mode is on - for
+    #: ``duration`` minutes, after which the profile sensor decides again.
+    temporary: bool = False
+    duration: int = DEFAULT_TEMPORARY_MINUTES
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ClimateProfile:
@@ -142,6 +150,8 @@ class ClimateProfile:
             detect=bool(raw.get(CONF_PROFILE_DETECT, True)),
             hidden=bool(raw.get(CONF_PROFILE_HIDDEN, False)),
             protected=_protected(raw),
+            temporary=bool(raw.get(CONF_PROFILE_TEMPORARY, False)),
+            duration=parse_minutes(raw.get(CONF_PROFILE_DURATION)),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -160,11 +170,28 @@ class ClimateProfile:
             data[CONF_PROFILE_HIDDEN] = True
         if self.protected:
             data[CONF_PROFILE_PROTECTED] = True
+        if self.temporary:
+            data[CONF_PROFILE_TEMPORARY] = True
+        if self.duration != DEFAULT_TEMPORARY_MINUTES:
+            data[CONF_PROFILE_DURATION] = self.duration
         return data
 
     def with_values(self, values: dict[str, Any]) -> ClimateProfile:
         """Return a copy carrying ``values``, everything else unchanged."""
         return replace(self, values=dict(values))
+
+
+def parse_minutes(raw: Any) -> int:
+    """Return a stored duration in whole minutes, within what is allowed.
+
+    Before Home Assistant 2026.10 a row field cannot carry a default, so a
+    profile switched to temporary without a duration arrives without one.
+    """
+    try:
+        minutes = int(float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_TEMPORARY_MINUTES
+    return min(max(minutes, 1), MAX_TEMPORARY_MINUTES)
 
 
 def _protected(raw: dict[str, Any]) -> bool:

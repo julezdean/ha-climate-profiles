@@ -99,3 +99,9 @@ save_as_profile:
             - fan
             - display
             - silent
+
+end_temporary:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor

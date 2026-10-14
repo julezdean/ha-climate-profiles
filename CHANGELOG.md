@@ -21,6 +21,15 @@ versioning [Semantic Versioning](https://semver.org/).
   nothing; automatic mode waits for one it can follow. The sensor's new
   `automatic` attribute says what it is doing, what the sensor names and why
   that is no profile. The card does not show any of it yet.
+- **Temporary profiles.** A profile can be marked as one that may be started
+  for a while in automatic mode, with a duration in minutes - an hour if none
+  is set. Started by hand while automatic mode is on, it overrides the sensor
+  until its time is up; the sensor does not end it, and what the sensor names
+  meanwhile is applied afterwards. `climate_profiles.end_temporary` ends it
+  early, another one replaces it, switching automatic mode off ends it with
+  its values kept. Its end is stored, so a restart neither lengthens nor
+  forgets it. Outside automatic mode the mark changes nothing. The sensor's
+  `automatic` attribute names it and its end; the card does not show it yet.
 
 ### Changed
 
