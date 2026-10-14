@@ -4,15 +4,6 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-
-- **The climate entity can be changed after setup**, under Reconfigure on the
-  entry - for a replaced device, without setting everything up again.
-  Profiles, additional values, the selection and the entry's entities stay;
-  the entry is reloaded once to listen to the new device.
-
 ## [2.1.0] - 2026-10-14
 
 ### Added
@@ -33,6 +24,10 @@ versioning [Semantic Versioning](https://semver.org/).
 - **The card can show it**: `show_protection: true` puts a lock next to the
   power button for the active profile - closed while it is protected, and a
   tap flips its switch. Off by default; custom has no lock.
+- **The climate entity can be changed after setup**, under Reconfigure on the
+  entry - for a replaced device, without setting everything up again.
+  Profiles, additional values, the selection and the entry's entities stay;
+  the entry is reloaded once to listen to the new device.
 
 ### Changed
 
