@@ -13,13 +13,24 @@
           "name": "Used for the device and the entity names, e.g. \"Living room\".",
           "climate_entity": "Supported modes, temperature range and step width are read from this entity."
         }
+      },
+      "reconfigure": {
+        "title": "Climate entity",
+        "description": "Point this device at a different climate entity. Profiles, values and the entities of this device stay as they are.",
+        "data": {
+          "climate_entity": "Climate entity"
+        },
+        "data_description": {
+          "climate_entity": "Profiles are not adapted to the new device. Clear values it cannot take - a fan mode on a thermostat without a fan - or the profile never matches."
+        }
       }
     },
     "error": {
       "entity_not_found": "This entity does not exist (any more)."
     },
     "abort": {
-      "already_configured": "This climate entity is already configured."
+      "already_configured": "This climate entity is already configured.",
+      "reconfigure_successful": "The climate entity was changed."
     }
   },
   "options": {

@@ -105,6 +105,112 @@ async def test_a_new_entry_for_the_same_entity_starts_empty(hass):
     assert result["options"][CONF_PROFILES] == []
 
 
+# --- reconfigure -----------------------------------------------------------
+
+BEDROOM = "climate.bedroom"
+
+
+def set_bedroom_state(hass) -> None:
+    """Put a second device in place, cooling to 22 - what "Kuehlung" says."""
+    hass.states.async_set(
+        BEDROOM,
+        "cool",
+        {
+            "temperature": 22,
+            "hvac_modes": ["off", "cool"],
+            "min_temp": 16,
+            "max_temp": 30,
+            "target_temp_step": 1,
+        },
+    )
+
+
+async def reconfigure(hass, entry, entity_id: str) -> dict:
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_CLIMATE_ENTITY: entity_id}
+    )
+    await hass.async_block_till_done()
+    return result
+
+
+async def test_the_climate_entity_can_be_changed(hass, monkeypatch):
+    """Profiles and values stay; the entry simply reads another device."""
+    import custom_components.climate_profiles as integration
+
+    from .test_integration import PROFILES, SENSOR, setup_entry
+
+    set_device_state(hass)
+    set_bedroom_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+    assert hass.states.get(SENSOR).state == "Komfort"
+
+    setups: list[str] = []
+    original = integration.async_setup_entry
+
+    async def counting(hass, entry):
+        setups.append(entry.entry_id)
+        return await original(hass, entry)
+
+    monkeypatch.setattr(integration, "async_setup_entry", counting)
+
+    result = await reconfigure(hass, entry, BEDROOM)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_CLIMATE_ENTITY] == BEDROOM
+    assert entry.unique_id == BEDROOM
+    assert entry.options[CONF_PROFILES] == PROFILES
+    # Reloaded once, by the entry's own listener - not a second time on top.
+    assert setups == [entry.entry_id]
+    assert hass.states.get(SENSOR).attributes["entities"]["climate"] == BEDROOM
+    assert hass.states.get(SENSOR).state == "Kuehlung"
+
+
+async def test_keeping_the_climate_entity_changes_nothing(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, CLIMATE)
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == CLIMATE
+
+
+async def test_an_entity_another_entry_has_is_refused(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    set_bedroom_state(hass)
+    MockConfigEntry(
+        domain=DOMAIN, data={CONF_CLIMATE_ENTITY: BEDROOM}, unique_id=BEDROOM
+    ).add_to_hass(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, BEDROOM)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert entry.data[CONF_CLIMATE_ENTITY] == CLIMATE
+
+
+async def test_reconfiguring_to_an_unknown_entity_is_rejected(hass):
+    from .test_integration import setup_entry
+
+    set_device_state(hass)
+    entry = await setup_entry(hass, {CONF_CLIMATE_ENTITY: CLIMATE})
+
+    result = await reconfigure(hass, entry, "climate.gibt_es_nicht")
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_CLIMATE_ENTITY: "entity_not_found"}
+    assert entry.data[CONF_CLIMATE_ENTITY] == CLIMATE
+
+
 # --- options flow ----------------------------------------------------------
 
 

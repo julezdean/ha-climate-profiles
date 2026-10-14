@@ -75,6 +75,14 @@ thermostat, and everybody ends up rewriting it anyway. Add yours under
 **Configure → Manage profiles**, and give the ones you rely on write
 protection.
 
+The climate entity can be changed later - a new air conditioner, a
+replacement thermostat - under **⋮ → Reconfigure** on the entry. Profiles,
+values, the selection and the entry's own entities stay as they are, so
+automations and dashboards keep working. Profiles are not adapted to the new
+device, so look through them afterwards: a value it cannot take - a fan mode
+on a thermostat without a fan - should be cleared, or the profile never
+matches.
+
 Everything your device has beyond the climate entity is added afterwards, under
 **Configure → Manage values**: add a row, pick the entity, done. If your
 climate entity sits on a Home Assistant device, the same form offers its

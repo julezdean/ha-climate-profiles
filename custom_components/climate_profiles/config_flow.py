@@ -426,6 +426,53 @@ class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=_device_schema(user_input), errors=errors
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Point an existing entry at a different climate entity.
+
+        Everything else stays: profiles, additional values and the selection
+        belong to the entry, not to the entity, and the entities of the entry
+        are keyed by it too - automations keep pointing at them. Profiles are
+        not adapted to the new device: a value it cannot take stays in them
+        until somebody clears it.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entity_id = user_input[CONF_CLIMATE_ENTITY]
+            if self.hass.states.get(entity_id) is None:
+                errors[CONF_CLIMATE_ENTITY] = "entity_not_found"
+            else:
+                if entity_id != entry.unique_id:
+                    await self.async_set_unique_id(entity_id)
+                    self._abort_if_unique_id_configured()
+                # Not async_update_reload_and_abort: the entry's own update
+                # listener reloads it when the climate entity changes, and a
+                # second, scheduled reload on top would make every entity
+                # blink twice.
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    unique_id=entity_id,
+                    data={**entry.data, CONF_CLIMATE_ENTITY: entity_id},
+                )
+                return self.async_abort(reason="reconfigure_successful")
+
+        current = (user_input or {}).get(CONF_CLIMATE_ENTITY) or entry.data.get(
+            CONF_CLIMATE_ENTITY
+        )
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_CLIMATE_ENTITY, default=current): EntitySelector(
+                        EntitySelectorConfig(domain="climate")
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry) -> ClimateProfilesOptionsFlow:

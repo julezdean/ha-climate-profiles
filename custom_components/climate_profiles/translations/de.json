@@ -13,13 +13,24 @@
           "name": "Wird für das Device und die Entity-Namen verwendet, z. B. „Wohnzimmer“.",
           "climate_entity": "Unterstützte Modi, Temperaturbereich und Schrittweite werden aus dieser Entity gelesen."
         }
+      },
+      "reconfigure": {
+        "title": "Climate Entity",
+        "description": "Dieses Device auf eine andere Climate Entity umstellen. Profile, Werte und die Entities dieses Devices bleiben, wie sie sind.",
+        "data": {
+          "climate_entity": "Climate Entity"
+        },
+        "data_description": {
+          "climate_entity": "Profile werden nicht an das neue Gerät angepasst. Werte, die es nicht kennt – etwa ein Lüftermodus an einem Thermostat ohne Lüfter –, aus den Profilen entfernen, sonst passt das Profil nie."
+        }
       }
     },
     "error": {
       "entity_not_found": "Diese Entity gibt es (nicht mehr)."
     },
     "abort": {
-      "already_configured": "Diese Climate Entity ist bereits eingerichtet."
+      "already_configured": "Diese Climate Entity ist bereits eingerichtet.",
+      "reconfigure_successful": "Die Climate Entity wurde geändert."
     }
   },
   "options": {
