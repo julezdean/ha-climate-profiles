@@ -4,17 +4,6 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Fixed
-
-- **A change on its way into a profile no longer flaps to custom.** For the
-  few seconds until the change was written, the profile no longer matched and
-  the sensor and the select said custom, then the profile again - a flap every
-  automation on the state saw. The profile now stays active while the change
-  waits to be written. A write protected profile still goes to custom: it does
-  not take the change.
-
 ## [2.1.0] - 2026-10-14
 
 ### Added
@@ -79,6 +68,12 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A change on its way into a profile no longer flaps to custom.** For the
+  few seconds until the change was written, the profile no longer matched and
+  the sensor and the select said custom, then the profile again - a flap every
+  automation on the state saw. The profile now stays active while the change
+  waits to be written. A write protected profile still goes to custom: it does
+  not take the change.
 - Custom joined the `icons` and `dropdown` layouts only if it was active when
   the card was built. A change by hand afterwards left the icons without any
   active one; the card now follows the device.
