@@ -15,10 +15,23 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_ADDITIONAL, DOMAIN
+from .const import (
+    CONF_ADDITIONAL,
+    CONF_CUSTOM_NAME,
+    CONF_PROFILE_NAME,
+    CONF_PROFILES,
+    DEFAULT_CUSTOM_NAME,
+    DOMAIN,
+)
 from .coordinator import ClimateProfilesConfigEntry, ClimateProfilesCoordinator
 from .frontend import async_register_card, async_remove_card
-from .models import AdditionalValueSet, EntityMap, ProfileError
+from .models import (
+    AdditionalValueSet,
+    EntityMap,
+    ProfileError,
+    ProfileSet,
+    reserved_profile_names,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +53,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ClimateProfilesConfigEntry
 ) -> bool:
     """Set up one configured device."""
+    _store_unique_names(hass, entry)
     try:
         coordinator = ClimateProfilesCoordinator(hass, entry)
     except ProfileError as err:
@@ -56,6 +70,46 @@ async def async_setup_entry(
     # when an entry is added after the last one was removed.
     await async_register_card(hass)
     return True
+
+
+def _store_unique_names(hass: HomeAssistant, entry: ClimateProfilesConfigEntry) -> None:
+    """Rename profiles stored before names had to be unique, once.
+
+    Loading repairs duplicates too, but only in memory: which of two
+    "Komfort" gets the counter depends on the order, and a name that changes
+    when the order does is no name to rely on. Stored, it stays put. Done
+    before the update listener is attached, so no listener reacts to it.
+    """
+    raw = entry.options.get(CONF_PROFILES)
+    try:
+        stored = ProfileSet.from_list(raw)
+    except ProfileError:
+        return  # the coordinator reports it
+    custom_name = str(entry.options.get(CONF_CUSTOM_NAME) or "").strip()
+    unique = stored.with_unique_names(
+        reserved_profile_names(custom_name or DEFAULT_CUSTOM_NAME)
+    )
+    renamed = [
+        (before, after.name)
+        for before, after in zip(
+            (str(item[CONF_PROFILE_NAME]).strip() for item in raw or []),
+            unique,
+            strict=True,
+        )
+        if before != after.name
+    ]
+    if not renamed:
+        return
+    for before, after in renamed:
+        _LOGGER.warning(
+            "%s: profile %r renamed to %r - profile names have to be unique",
+            entry.title,
+            before,
+            after,
+        )
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_PROFILES: unique.as_list()}
+    )
 
 
 async def async_unload_entry(

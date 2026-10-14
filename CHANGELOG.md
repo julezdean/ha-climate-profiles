@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Profile names are unique.** No two profiles may share a name - compared
+  without regard to case or surrounding spaces, the way `apply_profile` finds
+  one - and none may take the custom profile's name, "Custom" or
+  `__custom__`. The options refuse such a name at the form, and
+  `save_as_profile` refuses it with an error. A name two profiles shared
+  pointed at whichever came first, and a profile named like custom could not
+  be reached by name at all.
+- **Profiles stored with such a name are renamed once** when the entry is set
+  up: the later one gets a counter, "Komfort (2)" - in the usual case the
+  option the select entity already showed for it. The log names every renamed
+  profile. Automations that call `apply_profile` with the old, shared name
+  reach the same profile as before; ones that used the select option keep
+  working too.
+
 ## [2.1.0] - 2026-10-14
 
 ### Added

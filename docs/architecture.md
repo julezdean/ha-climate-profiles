@@ -89,8 +89,10 @@ list position cannot disagree with itself.
 
 **Ids, not names.** Profiles have opaque ids. Renaming a profile keeps
 automations working, and `active_profile_id` is the attribute automations
-should trigger on. Names may even collide - the select entity disambiguates
-them for its options.
+should trigger on. Names are unique all the same - no two profiles share one, and
+none takes the custom profile's - because a name is what a person, a voice
+assistant or a sensor hands in, and a name two profiles share points at
+neither. Profiles stored before that rule are renamed once, with a counter.
 
 **Options, not a custom store.** Profiles live in the config entry's options,
 so Home Assistant persists them, and multiple instances cannot mix. Changing

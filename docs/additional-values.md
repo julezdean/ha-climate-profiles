@@ -66,16 +66,15 @@ touching the entity.
 
 ### Names are unique, enforced when they are set
 
-Profile names are free text and may collide; `display_names()` appends a
-counter when the select entity needs distinct options. Additional values are
-handled the other way round: the config flow keeps names unique when they are
-created and when they are renamed, appending a counter to a pre-filled name
-that is already taken.
+Both lists keep their names unique, but they react differently to a name that
+is taken. The config flow appends a counter to an additional value's
+pre-filled name, while a taken profile name is refused with an error at the
+form.
 
 The difference is where the collision comes from. A duplicate profile name is
-typed by the user. A duplicate additional value name arrives on its own, as
-soon as two device switches are both called "Silent" - and a problem the user
-did not cause should not be theirs to untangle in an automation at runtime.
+typed by the user, who can pick another one. A duplicate additional value name
+arrives on its own, as soon as two device switches are both called "Silent" -
+and a problem the user did not cause should not be theirs to untangle.
 
 The payoff is that resolving a name in `set_value` and `capture_profile` stays
 as simple as it is for profiles: id first, then name, done. No ambiguous case

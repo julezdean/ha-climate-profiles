@@ -31,6 +31,8 @@ from .const import (
     CONF_PROFILE_NAME,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILE_VALUES,
+    CUSTOM_PROFILE_ID,
+    DEFAULT_CUSTOM_NAME,
     DEFAULT_PROFILE_COLOR,
     KIND_NUMBER,
     KIND_OPTION,
@@ -178,6 +180,15 @@ def _protected(raw: dict[str, Any]) -> bool:
     return mode == LEGACY_CAPTURE_NEVER
 
 
+def reserved_profile_names(custom_name: str) -> tuple[str, ...]:
+    """Return the names no stored profile may carry.
+
+    Each of them is read as the virtual custom profile, so a profile carrying
+    one could not be reached by name.
+    """
+    return (custom_name, DEFAULT_CUSTOM_NAME, CUSTOM_PROFILE_ID)
+
+
 def new_profile_id() -> str:
     """Return a fresh, stable profile id."""
     return uuid4().hex
@@ -207,7 +218,32 @@ class ProfileSet:
                 profile = replace(profile, id=new_profile_id())
             seen.add(profile.id)
             profiles.append(profile)
-        return cls(tuple(profiles))
+        return cls(tuple(profiles)).with_unique_names()
+
+    def with_unique_names(self, reserved: Sequence[str] = ()) -> ProfileSet:
+        """Return a set in which no two profiles share a name.
+
+        Names are unique since 2.2 - a profile sensor names the profile it
+        wants, and a name two profiles share points at neither. Profiles
+        stored before keep their names where they can; a later duplicate, or
+        a name taken by ``reserved`` (the custom profile's), gets a counter -
+        in the usual case the one the select entity already showed for it.
+        """
+        taken = {name.strip().casefold() for name in reserved}
+        every = taken | {p.name.casefold() for p in self.profiles}
+        profiles: list[ClimateProfile] = []
+        for profile in self.profiles:
+            name = profile.name
+            if name.casefold() in taken:
+                count = 2
+                while f"{name} ({count})".casefold() in every:
+                    count += 1
+                name = f"{name} ({count})"
+                every.add(name.casefold())
+                profile = replace(profile, name=name)
+            taken.add(name.casefold())
+            profiles.append(profile)
+        return ProfileSet(tuple(profiles))
 
     def as_list(self) -> list[dict[str, Any]]:
         """Return the storage representation."""
@@ -251,21 +287,24 @@ class ProfileSet:
         """Return the profiles that may be recognised from the state alone."""
         return ProfileSet(tuple(p for p in self.profiles if p.detect))
 
-    def display_names(self) -> dict[str, str]:
-        """Return ``{profile_id: unique display name}``.
+    def name_taken(
+        self,
+        name: str,
+        *,
+        ignoring: str | None = None,
+        reserved: Sequence[str] = (),
+    ) -> bool:
+        """Return whether ``name`` is another profile's, or one of ``reserved``.
 
-        Names are free text and may collide; a ``select`` entity needs distinct
-        options, so duplicates get a numeric suffix.
+        Compared the way ``resolve`` finds a name - stripped, ignoring case -
+        because two names ``resolve`` cannot tell apart are the same name.
         """
-        used: dict[str, int] = {}
-        names: dict[str, str] = {}
-        for profile in self.profiles:
-            count = used.get(profile.name.casefold(), 0) + 1
-            used[profile.name.casefold()] = count
-            names[profile.id] = (
-                profile.name if count == 1 else f"{profile.name} ({count})"
-            )
-        return names
+        wanted = name.strip().casefold()
+        if wanted in {item.strip().casefold() for item in reserved}:
+            return True
+        return any(
+            p.name.casefold() == wanted for p in self.profiles if p.id != ignoring
+        )
 
     def __iter__(self):
         """Iterate over the profiles in order."""

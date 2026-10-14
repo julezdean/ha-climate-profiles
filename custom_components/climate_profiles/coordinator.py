@@ -75,6 +75,7 @@ from .models import (
     Vocabulary,
     new_profile_id,
     normalise_color,
+    reserved_profile_names,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -235,6 +236,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         ).strip() or DEFAULT_CUSTOM_NAME
 
     @property
+    def reserved_names(self) -> tuple[str, ...]:
+        """Return the names no stored profile may carry."""
+        return reserved_profile_names(self.custom_name)
+
+    @property
     def custom_color(self) -> str:
         """Return the colour of the virtual "custom" profile."""
         return normalise_color(
@@ -250,7 +256,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """Return the display name of ``profile`` (custom when ``None``)."""
         if profile is None:
             return self.custom_name
-        return self.profiles.display_names().get(profile.id, profile.name)
+        return profile.name
 
     def profile_color(self, profile: ClimateProfile | None) -> str:
         """Return the colour of ``profile`` (the custom one's when custom)."""
@@ -833,6 +839,12 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         if not name:
             raise ServiceValidationError(
                 translation_domain=DOMAIN, translation_key="profile_needs_a_name"
+            )
+        if self.profiles.name_taken(name, reserved=self.reserved_names):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="profile_name_taken",
+                translation_placeholders={"profile": name},
             )
 
         state = self.data or await self._async_update_data()

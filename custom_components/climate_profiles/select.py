@@ -36,8 +36,8 @@ class ProfileSelect(ClimateProfilesEntity, SelectEntity):
     @property
     def options(self) -> list[str]:
         """Return the stored profiles plus the virtual custom entry."""
-        names = self.coordinator.profiles.display_names()
-        return [*names.values(), self.coordinator.custom_name]
+        names = [profile.name for profile in self.coordinator.profiles]
+        return [*names, self.coordinator.custom_name]
 
     @property
     def current_option(self) -> str:

@@ -105,8 +105,8 @@ class ProtectedSwitch(ClimateProfilesEntity, SwitchEntity):
     @property
     def translation_placeholders(self) -> Mapping[str, str]:
         """Name the profile in the switch's name - read anew, it can be renamed."""
-        names = self.coordinator.profiles.display_names()
-        return {"profile": names.get(self._profile_id, self._profile_id)}
+        profile = self._profile
+        return {"profile": profile.name if profile else self._profile_id}
 
     @property
     def name(self) -> Any:

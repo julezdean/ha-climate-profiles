@@ -325,6 +325,31 @@ async def test_a_new_profile_is_neither_recognised_nor_hidden(hass):
     assert CONF_PROFILE_PROTECTED not in stored
 
 
+@pytest.mark.parametrize(
+    ("names", "custom_name", "taken"),
+    [
+        (["Komfort", " komfort "], "Custom", "Komfort"),
+        (["Manuell"], "Manuell", "Manuell"),
+        (["custom"], "Manuell", "custom"),
+    ],
+)
+async def test_profile_names_have_to_be_unique(hass, names, custom_name, taken):
+    """Another profile's name, or the custom profile's, is refused."""
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [{CONF_PROFILE_NAME: name, "hvac_mode": "cool"} for name in names],
+        **{CONF_CUSTOM_NAME: custom_name},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_PROFILES: "name_taken"}
+    assert result["description_placeholders"]["name"] == taken
+    assert entry.options[CONF_PROFILES] == []
+
+
 async def test_hiding_a_profile_from_the_card(hass):
     entry = await setup_options(hass)
 

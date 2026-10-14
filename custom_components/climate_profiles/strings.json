@@ -72,7 +72,8 @@
     "error": {
       "invalid_profile": "This profile could not be saved. Please check name and values.",
       "unsupported_domain": "This kind of entity has no single value to compare, so it cannot be used.",
-      "entity_not_found": "This entity does not exist (any more)."
+      "entity_not_found": "This entity does not exist (any more).",
+      "name_taken": "Another profile is already called \"{name}\", or it is the name of the custom profile. Profile names have to be unique."
     }
   },
   "selector": {
@@ -196,6 +197,9 @@
     },
     "unknown_value": {
       "message": "Unknown value: {value}. This device knows: {known}."
+    },
+    "profile_name_taken": {
+      "message": "A profile called \"{profile}\" already exists, or it is the name of the custom profile. Profile names have to be unique."
     }
   }
 }

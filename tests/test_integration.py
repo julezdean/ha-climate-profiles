@@ -325,6 +325,31 @@ async def test_unavailable_climate_marks_entities_unavailable(hass, entry_data):
     assert hass.states.get(SENSOR).state == "unavailable"
 
 
+# --- unique names ----------------------------------------------------------
+
+
+async def test_duplicate_names_are_stored_renamed(hass, entry_data, caplog):
+    """Profiles from before names had to be unique are renamed once, for good."""
+    stored = [
+        {"id": "a", "name": "Komfort", "values": {"hvac_mode": "cool"}},
+        {"id": "b", "name": "Komfort", "values": {"hvac_mode": "off"}},
+        {"id": "c", "name": "Custom", "values": {"hvac_mode": "heat"}},
+    ]
+    entry = await setup_entry(hass, entry_data, profiles=stored)
+
+    names = [item["name"] for item in entry.options[CONF_PROFILES]]
+    assert names == ["Komfort", "Komfort (2)", "Custom (2)"]
+    assert [item["id"] for item in entry.options[CONF_PROFILES]] == ["a", "b", "c"]
+    assert "'Komfort' renamed to 'Komfort (2)'" in caplog.text
+    options = hass.states.get(SELECT).attributes["options"]
+    assert options == ["Komfort", "Komfort (2)", "Custom (2)", "Custom"]
+
+
+async def test_unique_names_are_left_alone(hass, entry_data):
+    entry = await setup_entry(hass, entry_data)
+    assert entry.options[CONF_PROFILES] == PROFILES
+
+
 # --- ordering and multiple instances ---------------------------------------
 
 

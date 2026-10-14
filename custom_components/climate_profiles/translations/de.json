@@ -72,7 +72,8 @@
     "error": {
       "invalid_profile": "Dieses Profil konnte nicht gespeichert werden. Prüfe Name und Werte.",
       "unsupported_domain": "Diese Art von Entity hat keinen einzelnen Wert zum Vergleichen und ist deshalb nicht verwendbar.",
-      "entity_not_found": "Diese Entity gibt es (nicht mehr)."
+      "entity_not_found": "Diese Entity gibt es (nicht mehr).",
+      "name_taken": "„{name}“ heißt schon ein anderes Profil, oder es ist der Name des benutzerdefinierten Profils. Profilnamen müssen eindeutig sein."
     }
   },
   "selector": {
@@ -196,6 +197,9 @@
     },
     "unknown_value": {
       "message": "Unbekannter Wert: {value}. Dieses Gerät kennt: {known}."
+    },
+    "profile_name_taken": {
+      "message": "Ein Profil „{profile}“ gibt es schon, oder es ist der Name des benutzerdefinierten Profils. Profilnamen müssen eindeutig sein."
     }
   }
 }

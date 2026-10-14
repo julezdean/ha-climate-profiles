@@ -148,7 +148,6 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         coordinator = self.coordinator
         data = coordinator.data
         profiles = coordinator.profiles
-        names = profiles.display_names()
         registry = er.async_get(self.hass)
 
         active = data.active if data else None
@@ -159,7 +158,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ATTR_PROFILES: [
                 {
                     "id": profile.id,
-                    "name": names.get(profile.id, profile.name),
+                    "name": profile.name,
                     "color": profile.color,
                     "icon": profile.icon,
                     "order": order,

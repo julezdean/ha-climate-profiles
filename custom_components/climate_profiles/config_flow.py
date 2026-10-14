@@ -80,6 +80,7 @@ from .models import (
     new_profile_id,
     new_value_id,
     normalise_color,
+    reserved_profile_names,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -239,6 +240,19 @@ def _log_catch_alls(profiles: ProfileSet) -> None:
                 broad.name,
                 ", ".join(covered),
             )
+
+
+def _name_taken(profiles: ProfileSet, custom_name: str) -> str | None:
+    """Return the first profile name that is not unique, or ``None``.
+
+    The custom profile's name counts too - under it, a stored profile would be
+    read as custom and could not be reached by name.
+    """
+    reserved = reserved_profile_names(custom_name)
+    for profile in profiles:
+        if profiles.name_taken(profile.name, ignoring=profile.id, reserved=reserved):
+            return profile.name
+    return None
 
 
 def device_candidates(
@@ -622,19 +636,25 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         options = self.config_entry.options
         rows = [_profile_row(profile, vocab) for profile in self._profiles]
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"name": ""}
 
         if user_input is not None:
             rows = list(user_input.get(CONF_PROFILES) or [])
+            custom_name = (
+                str(user_input.get(CONF_CUSTOM_NAME) or "").strip()
+                or DEFAULT_CUSTOM_NAME
+            )
             profiles, errors = self._profiles_from_rows(rows, vocab)
+            if profiles is not None and (taken := _name_taken(profiles, custom_name)):
+                profiles, errors = None, {CONF_PROFILES: "name_taken"}
+                placeholders["name"] = taken
             if profiles is not None:
                 _log_catch_alls(profiles)
                 return self.async_create_entry(
                     data={
                         **options,
                         CONF_PROFILES: profiles.as_list(),
-                        CONF_CUSTOM_NAME: str(
-                            user_input.get(CONF_CUSTOM_NAME) or DEFAULT_CUSTOM_NAME
-                        ).strip(),
+                        CONF_CUSTOM_NAME: custom_name,
                         CONF_CUSTOM_COLOR: normalise_color(
                             user_input.get(CONF_CUSTOM_COLOR), DEFAULT_CUSTOM_COLOR
                         ),
@@ -675,6 +695,7 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+            description_placeholders=placeholders,
         )
 
     # -- turning rows back into what is stored -------------------------------
