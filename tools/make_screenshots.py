@@ -153,6 +153,43 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
+    # A radiator under automatic mode, with every switch the card has: the
+    # temporary "Boost" runs for another 17 minutes, then "Comfort" - what the
+    # sensor names - takes over. Boost is write protected, so the lock is
+    # closed and the card is display only apart from these buttons. The mode
+    # row is hidden, the way a heating dashboard usually has it.
+    "card-heating-boost": {
+        "theme": "light",
+        "device": "bathroom",
+        "card": {
+            "name": "Bathroom",
+            "profile_layout": "icons",
+            "temperature_style": "dial",
+            "show_target": True,
+            "show_automatic": True,
+            "show_protection": True,
+            "hide": ["hvac_mode"],
+        },
+        "state": {
+            "temperature": 24,
+            "active_profile": "Boost",
+            "active_profile_id": "b3",
+            "active_profile_color": "#e29c9c",
+            "automatic": {
+                "status": "temporary",
+                "sensor": "sensor.bathroom_wanted_profile",
+                "sensor_state": "Comfort",
+                "target": "Comfort",
+                "target_id": "b2",
+                "problem": None,
+                "temporary": {
+                    "profile": "Boost",
+                    "profile_id": "b3",
+                    "until": "+1032",
+                },
+            },
+        },
+    },
 }
 
 

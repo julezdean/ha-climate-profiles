@@ -118,9 +118,10 @@ profile that rewrites itself needs an echo guard - a way to tell the
 integration's own writes from a change - and has it twice: the baseline is
 renewed after the integration wrote the state itself, and the window right
 after a profile was applied belongs to the device's answer, not to anybody's
-decision. Such a profile reports "custom" only for the few seconds until the
-change is in it; that is the point of it. A profile that should keep reporting
-deviations is write protected.
+decision. Such a profile stays active for the few seconds until the change is
+in it: the change is on its way into the profile, and custom in between would
+be a flap every automation on the state sees. A profile that should keep
+reporting deviations is write protected.
 
 **Options changes do not reload the entry.** Only the entity map is baked into
 the coordinator; profiles and the custom name are read fresh on each access.

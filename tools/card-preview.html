@@ -378,7 +378,52 @@
         return hass;
       }
 
-      const DEVICES = { ac: (hass) => hass, heating: asHeating };
+      /* A bathroom radiator run by automatic mode, the way a real heating
+         setup looks: everything a sensor chooses is hidden from the card, and
+         the one profile meant to be started by hand is a temporary "Boost".
+         Its own device, so the plain thermostat pictures stay as they are. */
+      const BATHROOM_PROFILES = [
+        { id: "b1", name: "Off", color: "#64748b", icon: "mdi:power", order: 0,
+          detect: true, hidden: true, protected: true,
+          values: { hvac_mode: "off" } },
+        { id: "b2", name: "Comfort", color: "#9ccde2", icon: "mdi:home-heart", order: 1,
+          values: { hvac_mode: "heat", temperature: 21.5 } },
+        { id: "b3", name: "Boost", color: "#e29c9c", icon: "mdi:fire", order: 2,
+          protected: true, temporary: true, duration: 20,
+          values: { hvac_mode: "heat", temperature: 24 } },
+        { id: "b4", name: "Away", color: "#afe29c", icon: "mdi:home-export-outline", order: 3,
+          hidden: true, protected: true,
+          values: { hvac_mode: "heat", temperature: 19.5 } },
+        { id: "b5", name: "Ventilate", color: "#64748b", icon: "mdi:window-open-variant", order: 4,
+          hidden: true, protected: true,
+          values: { hvac_mode: "off" } },
+      ];
+      for (const profile of BATHROOM_PROFILES) {
+        profile.protected = Boolean(profile.protected);
+        profile.protection_entity =
+          `switch.bathroom_${profile.name.toLowerCase().replace(/\W+/g, "_")}_write_protected`;
+      }
+
+      function asBathroom(hass, state) {
+        asHeating(hass);
+        const sensor = hass.states["sensor.living_room_climate_profile"];
+        const attrs = sensor.attributes;
+        attrs.friendly_name = "Bathroom";
+        attrs.profiles = BATHROOM_PROFILES;
+        attrs.capabilities.hvac_modes = ["heat", "off"];
+        for (const key of ["active_profile", "active_profile_id", "active_profile_color"]) {
+          if (state[key] !== undefined) attrs[key] = state[key];
+        }
+        sensor.state = attrs.active_profile;
+        const climate = hass.states["climate.living_room_radiator"];
+        climate.attributes.friendly_name = "Bathroom radiator";
+        climate.attributes.hvac_modes = ["heat", "off"];
+        if (state.temperature !== undefined) climate.attributes.temperature = state.temperature;
+        climate.attributes.current_temperature = 21.8;
+        return hass;
+      }
+
+      const DEVICES = { ac: (hass) => hass, heating: asHeating, bathroom: asBathroom };
 
       const params = new URLSearchParams(location.search);
       const overrides = params.get("state")
@@ -401,14 +446,14 @@
           entity: "sensor.living_room_climate_profile",
           ...(params.get("card") ? JSON.parse(decodeURIComponent(params.get("card"))) : {}),
         });
-        card.hass = device(buildHass(overrides));
+        card.hass = device(buildHass(overrides), overrides);
         document.getElementById(id).appendChild(card);
       }
       if (theme === "dark") document.body.style.background = "#111417";
 
       window.setCardState = (o) => {
         document.querySelectorAll("climate-profile-card").forEach((c) => {
-          c.hass = device(buildHass(o));
+          c.hass = device(buildHass(o), o || {});
         });
       };
 

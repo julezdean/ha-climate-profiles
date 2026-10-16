@@ -63,6 +63,7 @@ special cases - do not "fix" them into a normal state:
 | `card-protection.png` | `show_protection: true`, "Comfort+" is active and write protected - the lock is closed |
 | `card-hidden.png` | "Summer", hidden from the card, is active - not shown, no button is marked |
 | `card-automatic.png` | `show_automatic: true`, automatic mode on, the temporary "Night" runs for another 24 minutes, the sensor names "Comfort" |
+| `card-heating-boost.png` | the bathroom radiator with `icons`, `dial`, `show_target`, `show_automatic`, `show_protection` and `hvac_mode` hidden: the temporary, write protected "Boost" runs for another 17 minutes, the sensor names "Comfort" |
 
 "Comfort+" is write protected in every shot, but only `card-protection.png`
 asks the card to show it; without `show_protection` there is no lock, so the
@@ -79,6 +80,12 @@ profile sensor, no target row and no countdown. A temporary profile's end in
 `?state=` may be given as `"+<seconds>"` from now, so the countdown in the
 picture does not depend on when the recipe runs.
 
+`?device=bathroom` is a radiator set up the way automatic mode is meant to be
+used: every profile a sensor picks is hidden, and the temporary "Boost" is the
+only one to start by hand. It is a device of its own so that adding it left
+the plain thermostat pictures as they were; only `card-heating-boost.png`
+uses it.
+
 To look at a state interactively:
 
 ```bash
@@ -88,4 +95,5 @@ python -m http.server 8712
 
 `?state=<url encoded JSON>` overrides the device state, `?card=<url encoded
 JSON>` the card configuration, and `?device=heating` swaps the air conditioner
-for a radiator thermostat.
+for a radiator thermostat, `?device=bathroom` for the radiator in automatic
+mode.

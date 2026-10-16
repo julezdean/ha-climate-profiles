@@ -104,3 +104,45 @@
       data:
         name: "Saved {{ now().strftime('%d.%m. %H:%M') }}"
         color: "#f59e0b"
+
+# --- automatic mode -----------------------------------------------------------
+# Which profile the sensor of automatic mode names is decided there, not here:
+# a template sensor like this one, set under Configure -> Automatic mode.
+# (It belongs in configuration.yaml or a package, not in automations.yaml.)
+#
+# template:
+#   - sensor:
+#       - name: Bathroom wanted profile
+#         state: >
+#           {% if is_state('binary_sensor.bathroom_window', 'on') %} Ventilate
+#           {% elif is_state('binary_sensor.anyone_home', 'off') %} Away
+#           {% else %} Comfort {% endif %}
+
+# --- start a temporary profile from a button ----------------------------------
+# While automatic mode is on, only temporary profiles can be started by hand.
+# "Boost" runs for its own duration; `duration` overrides it for this call.
+- alias: Boost the bathroom before a shower
+  triggers:
+    - trigger: event
+      event_type: my_shower_button_pressed
+  actions:
+    - action: climate_profiles.apply_profile
+      target:
+        entity_id: sensor.bathroom_climate_profile
+      data:
+        profile: Boost
+        duration: 30
+
+# --- end it early --------------------------------------------------------------
+# The sensor does not end a temporary profile - naming "Ventilate" meanwhile
+# only changes what comes next. To let an open window win right away, end it;
+# without one running, end_temporary does nothing.
+- alias: End the boost when the window opens
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.bathroom_window
+      to: "on"
+  actions:
+    - action: climate_profiles.end_temporary
+      target:
+        entity_id: sensor.bathroom_climate_profile

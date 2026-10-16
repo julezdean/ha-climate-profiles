@@ -120,7 +120,7 @@ Two lists, and everything about an entry happens in one of them.
 | List | One row is | The row holds |
 | --- | --- | --- |
 | **Manage values** | an additional value | name, the entity behind it, an icon |
-| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, and every value it sets |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, whether it can be started for a while in automatic mode and for how long, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
 button below the list adds one. The id a profile or a value is known by rides
@@ -151,6 +151,12 @@ a change made by hand while the profile is active is written into it; on,
 nothing is - see [Changes made by hand](#changes-made-by-hand). It is the same
 setting as the profile's switch entity. The row itself always stays editable,
 protected or not.
+
+Profile names are unique: no two profiles may share one - compared without
+regard to case or surrounding spaces, the way `apply_profile` finds a profile -
+and none may be called like custom. The form refuses such a name. Profiles
+stored before 2.2 with a shared name were renamed once, the later one getting a
+counter: "Comfort (2)".
 
 Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
@@ -286,6 +292,25 @@ replaces it. The time left grows with the button: small in a row of six,
 large on a button of its own.
 
 ![Automatic mode with a temporary profile running](docs/images/card-automatic.png)
+
+On a radiator the same thing usually looks like this: every profile the sensor
+picks is hidden, so the only button is the temporary **Boost**, counting down.
+It is write protected, so the lock is closed and the card is display only
+until Boost ends - then "Comfort", the target, takes over.
+
+```yaml
+type: custom:climate-profile-card
+entity: sensor.bathroom_climate_profile
+name: Bathroom
+profile_layout: icons
+temperature_style: dial
+show_target: true
+show_automatic: true
+show_protection: true
+hide: [hvac_mode]
+```
+
+![A radiator in automatic mode with Boost counting down](docs/images/card-heating-boost.png)
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
@@ -462,6 +487,23 @@ While the switch is on:
   on, and the sensor's `automatic` attribute says why. Once the sensor names a
   profile again, it is applied. To make automatic mode hold still, switch it
   off.
+
+### Coming from an automation
+
+Before 2.2 the usual way was an automation that called `apply_profile`
+whenever a sensor changed. With automatic mode on, such a call is refused, so
+replace it rather than run both:
+
+1. Under **Configure → Automatic mode**, pick the sensor the automation
+   followed.
+2. Switch the new automatic mode switch on.
+3. A "hold this profile for a while" rule - a boost that ignores the sensor
+   for 20 minutes - becomes a [temporary profile](#temporary-profiles) with
+   that duration, instead of timers and helpers.
+4. Delete the automation, and whatever only existed for it.
+
+Priorities between conditions - an open window beats everything but summer,
+say - stay in the sensor, where they were.
 
 ### Temporary profiles
 
