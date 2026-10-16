@@ -67,7 +67,6 @@ versioning [Semantic Versioning](https://semver.org/).
   changes how many are offered, and the card would have jumped between the
   two. A card set to `auto`, or to nothing, is a grid now - with more than six
   profiles that is a change you will see; set `scroll` to keep it.
-
 - **Profile names are unique.** No two profiles may share a name - compared
   without regard to case or surrounding spaces, the way `apply_profile` finds
   one - and none may take the custom profile's name, "Custom" or
