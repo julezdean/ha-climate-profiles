@@ -671,9 +671,10 @@ async def test_a_hidden_profile_comes_and_goes_with_the_state(open_card):
     assert await summer.count() == 0
 
 
-async def test_a_hidden_profile_does_not_count_towards_the_layout(open_card):
-    """Six offered profiles fit a grid; the hidden seventh does not tip it."""
-    page = await open_card()
+@pytest.mark.parametrize("card", [{}, {"profile_layout": "auto"}])
+async def test_without_a_layout_the_profiles_are_a_grid(open_card, card):
+    """There is no "auto" any more: it jumped as automatic mode came and went."""
+    page = await open_card(card=card)
     layout = await page.locator("climate-profile-card .profiles").get_attribute(
         "data-layout"
     )
@@ -687,3 +688,245 @@ async def test_a_hidden_active_profile_cannot_be_applied_from_the_card(open_card
     await page.wait_for_timeout(200)
 
     assert await calls(page) == []
+
+
+# --- automatic mode -----------------------------------------------------------
+
+#: Automatic mode on, the sensor names "Comfort", which is what is on.
+AUTOMATIC = {
+    "automatic": {
+        "status": "following",
+        "sensor": "sensor.wanted_profile",
+        "sensor_state": "Comfort",
+        "target": "Comfort",
+        "target_id": "p3",
+        "problem": None,
+        "temporary": None,
+    }
+}
+
+#: The temporary "Night" runs for another 24 minutes; the sensor still says
+#: "Comfort", which takes over afterwards.
+RUNNING = {
+    "active_profile": "Night",
+    "active_profile_id": "p5",
+    "active_profile_color": "#8b5cf6",
+    "automatic": {
+        **AUTOMATIC["automatic"],
+        "status": "temporary",
+        "temporary": {"profile": "Night", "profile_id": "p5", "until": "+1452"},
+    },
+}
+
+
+def automatic_state(**changes) -> dict:
+    """Return ``AUTOMATIC`` with some of its ``automatic`` fields changed."""
+    return {"automatic": {**AUTOMATIC["automatic"], **changes}}
+
+
+async def test_the_automatic_switch_is_left_out_unless_asked_for(open_card):
+    page = await open_card(AUTOMATIC)
+    assert await page.locator("climate-profile-card .auto").is_hidden()
+
+
+async def test_without_a_profile_sensor_there_is_no_switch(open_card):
+    page = await open_card(card={"show_automatic": True})
+    assert await page.locator("climate-profile-card .auto").is_hidden()
+
+
+@pytest.mark.parametrize(
+    ("status", "pressed", "waiting"),
+    [("off", "false", False), ("following", "true", False), ("waiting", "true", True)],
+)
+async def test_the_automatic_switch_shows_its_state(
+    open_card, status, pressed, waiting
+):
+    page = await open_card(
+        automatic_state(status=status), card={"show_automatic": True}
+    )
+    button = page.locator("climate-profile-card .auto")
+    assert await button.is_visible()
+    assert await button.get_attribute("aria-pressed") == pressed
+    assert ("waiting" in (await button.get_attribute("class"))) is waiting
+
+
+@pytest.mark.parametrize(
+    ("status", "service"), [("off", "turn_on"), ("on", "turn_off")]
+)
+async def test_the_automatic_switch_flips_the_devices_switch(
+    open_card, status, service
+):
+    page = await open_card(
+        automatic_state(status="off" if status == "off" else "following"),
+        card={"show_automatic": True},
+    )
+    await page.locator("climate-profile-card .auto").click()
+    assert await calls(page) == [
+        {
+            "domain": "switch",
+            "service": service,
+            "data": {"entity_id": "switch.living_room_automatic_mode"},
+        }
+    ]
+
+
+async def test_the_target_is_shown_by_default(open_card):
+    page = await open_card(automatic_state(status="off"))
+    target = page.locator("climate-profile-card .target")
+    assert await target.is_visible()
+    assert await target.locator(".target-name").inner_text() == "Comfort"
+    assert "problem" not in (await target.get_attribute("class"))
+
+
+async def test_the_target_can_be_switched_off(open_card):
+    page = await open_card(AUTOMATIC, card={"show_target": False})
+    assert await page.locator("climate-profile-card .target").is_hidden()
+
+
+async def test_without_a_profile_sensor_there_is_no_target(open_card):
+    page = await open_card()
+    assert await page.locator("climate-profile-card .target").is_hidden()
+
+
+@pytest.mark.parametrize(
+    ("problem", "sensor_state", "text"),
+    [
+        ("unknown_profile", "Komfort", 'No profile "Komfort"'),
+        ("sensor_unavailable", "unavailable", "Sensor unavailable"),
+    ],
+)
+async def test_the_target_says_why_there_is_none(
+    open_card, problem, sensor_state, text
+):
+    page = await open_card(
+        automatic_state(
+            status="waiting",
+            target=None,
+            target_id=None,
+            problem=problem,
+            sensor_state=sensor_state,
+        )
+    )
+    target = page.locator("climate-profile-card .target")
+    assert await target.locator(".target-name").inner_text() == text
+    assert "problem" in (await target.get_attribute("class"))
+
+
+@pytest.mark.parametrize("layout", ["grid", "scroll", "icons"])
+async def test_automatic_mode_offers_only_temporary_profiles(open_card, layout):
+    page = await open_card(AUTOMATIC, card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+
+    for profile_id in ("p5", "p6"):
+        button = card.locator(f".profile[data-id='{profile_id}']")
+        assert await button.is_enabled(), profile_id
+    # What automatic mode chose is shown, not offered.
+    comfort = card.locator(".profile[data-id='p3']")
+    assert await comfort.is_disabled()
+    assert "active" in (await comfort.get_attribute("class"))
+    for profile_id in ("p1", "p2", "p4", "p7", "__custom__"):
+        assert await card.locator(f".profile[data-id='{profile_id}']").count() == 0
+
+
+async def test_automatic_mode_offers_only_temporary_profiles_in_the_list(open_card):
+    page = await open_card(AUTOMATIC, card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+    await card.locator(".picker-trigger").click()
+
+    offered = card.locator(".picker-option:not(:disabled)")
+    assert [await item.get_attribute("data-id") for item in await offered.all()] == [
+        "p5",
+        "p6",
+    ]
+    assert await card.locator(".picker-option[data-id='p3']").is_disabled()
+
+
+async def test_a_temporary_profile_is_started_from_the_card(open_card):
+    page = await open_card(AUTOMATIC)
+    await page.locator("climate-profile-card .profile[data-id='p5']").click()
+    assert await calls(page) == [
+        {
+            "domain": "climate_profiles",
+            "service": "apply_profile",
+            "data": {
+                "entity_id": "sensor.living_room_climate_profile",
+                "profile": "p5",
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize("layout", ["grid", "scroll", "icons"])
+async def test_the_running_one_counts_down_and_a_tap_ends_it(open_card, layout):
+    page = await open_card(RUNNING, card={"profile_layout": layout})
+    button = page.locator("climate-profile-card .profile[data-id='p5']")
+    countdown = button.locator(".profile-countdown")
+
+    assert await countdown.is_visible()
+    first = await countdown.inner_text()
+    assert first.startswith("24:")
+    await page.wait_for_timeout(1100)
+    assert await countdown.inner_text() != first, "it counts"
+    # Only the running one counts.
+    other = page.locator(
+        "climate-profile-card .profile[data-id='p6'] .profile-countdown"
+    )
+    assert await other.is_hidden()
+
+    await button.click()
+    assert await calls(page) == [
+        {
+            "domain": "climate_profiles",
+            "service": "end_temporary",
+            "data": {"entity_id": "sensor.living_room_climate_profile"},
+        }
+    ]
+
+
+async def test_the_countdown_goes_under_the_name(open_card):
+    page = await open_card(RUNNING)
+    button = page.locator("climate-profile-card .profile[data-id='p5']")
+    name = await button.locator(".profile-name").bounding_box()
+    countdown = await button.locator(".profile-countdown").bounding_box()
+    assert countdown["y"] >= name["y"] + name["height"] - 1
+
+
+async def test_in_the_list_a_tap_ends_it_instead_of_opening(open_card):
+    page = await open_card(RUNNING, card={"profile_layout": "dropdown"})
+    card = page.locator("climate-profile-card")
+    trigger = card.locator(".picker-trigger")
+
+    assert (await trigger.locator(".picker-countdown").inner_text()).startswith("24:")
+    await trigger.click()
+
+    assert await card.locator(".picker-list").is_hidden()
+    assert [call["service"] for call in await calls(page)] == ["end_temporary"]
+
+
+async def test_outside_automatic_mode_temporary_changes_nothing(open_card):
+    page = await open_card(automatic_state(status="off"))
+    card = page.locator("climate-profile-card")
+    for profile_id in ("p1", "p2", "p3", "p4", "p5", "p6"):
+        assert await card.locator(f".profile[data-id='{profile_id}']").is_enabled()
+    assert await card.locator(".profile-countdown:visible").count() == 0
+
+
+async def test_the_editor_offers_automatic_mode(open_card):
+    page = await open_card()
+    schema = await page.evaluate(
+        """() => {
+          const editor = document.createElement('climate-profile-card-editor');
+          editor.setConfig({ entity: 'sensor.living_room_climate_profile' });
+          return editor._schema().map((field) => field.name);
+        }"""
+    )
+    assert "show_automatic" in schema
+    assert "show_target" in schema
+    data = await page.evaluate(
+        """() => {
+          const editor = document.createElement('climate-profile-card-editor');
+          editor.setConfig({ entity: 'sensor.living_room_climate_profile' });
+          return editor._data();
+        }"""
+    )
+    assert data["show_target"] is True, "on unless switched off"

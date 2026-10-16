@@ -125,6 +125,34 @@ SHOTS: dict[str, dict] = {
             "active_profile_color": "#10b981",
         },
     },
+    # Automatic mode on, with its switch and its target shown: the temporary
+    # "Night" overrides the sensor for another 24 minutes, and "Comfort" - what
+    # the sensor names - takes over afterwards. Only temporary profiles are
+    # offered. Without a profile sensor none of this is in any other picture.
+    "card-automatic": {
+        "theme": "light",
+        "card": {"show_automatic": True},
+        "state": {
+            "temperature": 26,
+            "silent": "on",
+            "active_profile": "Night",
+            "active_profile_id": "p5",
+            "active_profile_color": "#8b5cf6",
+            "automatic": {
+                "status": "temporary",
+                "sensor": "sensor.wanted_profile",
+                "sensor_state": "Comfort",
+                "target": "Comfort",
+                "target_id": "p3",
+                "problem": None,
+                "temporary": {
+                    "profile": "Night",
+                    "profile_id": "p5",
+                    "until": "+1452",
+                },
+            },
+        },
+    },
 }
 
 

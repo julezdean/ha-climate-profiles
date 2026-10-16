@@ -175,10 +175,12 @@ range - comes from the integration. Options, all optional:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
-| `profile_layout` | `auto` | `auto`, `grid`, `scroll`, `dropdown` or `icons` |
+| `profile_layout` | `grid` | `grid`, `scroll`, `dropdown` or `icons` |
 | `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
 | `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
+| `show_automatic` | `false` | a button next to the lock that switches [automatic mode](#automatic-mode) on and off |
+| `show_target` | `true` | a row with the profile automatic mode is aiming for - only with a profile sensor |
 
 Everything configured is shown unless you hide it, so a value you add later
 appears without editing every dashboard. The list mixes the four climate keys
@@ -214,7 +216,9 @@ profile is the filled button, without the check mark the other layouts draw -
 it would sit on top of the icon. **Custom** joins the row only while it is
 what is on.
 
-`auto` chooses neither - it is grid up to six profiles and scroll beyond.
+There is no `auto` any more: it chose grid or scroll by the number of
+profiles, and automatic mode changes that number. A card still set to `auto`
+is a grid.
 
 ### Hidden from the card
 
@@ -224,8 +228,9 @@ off by default, and it holds for every dashboard at once.
 
 Hidden means not offered, not invisible: while the hidden profile is what the
 device is doing, the card shows it like any active profile - it just cannot be
-picked there. The rest of the time it is not in the list, in any layout, and it
-does not count towards the six profiles `auto` decides by.
+picked there. The rest of the time it is not in the list, in any layout. A
+profile both hidden and temporary is hidden: automatic mode does not offer it
+on the card either.
 
 It is about the card and nothing else. `apply_profile` and the select entity
 still reach it - the select has to keep it among its options, or its state
@@ -254,6 +259,30 @@ protect, so the lock is not there while nothing matches. To protect a profile
 that is not active, use its switch.
 
 ![The lock of a write protected profile](docs/images/card-protection.png)
+
+### Automatic mode on the card
+
+With a profile sensor set, the card shows a row with what the sensor names -
+the **target**, also while automatic mode is off or a temporary profile runs,
+since it is what comes next. Without a profile to name, the row says why, in
+the warning colour: `No profile "Komfort"`, or that the sensor is unavailable.
+`show_target: false` leaves the row out.
+
+`show_automatic: true` puts a round button left of the lock that flips the
+device's automatic mode switch: outlined while off, filled while on, with an
+orange dot while it waits for a profile it can follow.
+
+While automatic mode is on, the card offers only the
+[temporary profiles](#temporary-profiles). Whatever else is active - the
+profile the sensor chose, a hidden one, custom - is shown but cannot be
+picked. Without temporary profiles that is the one button left. A running
+temporary profile shows the time it has left: under its name in the grid and
+scroll layouts, next to the icon in `icons` - below it when the button is
+narrow - and in the closed field in `dropdown`. A tap on it ends it; in
+`dropdown` the tap ends it instead of opening the list. Starting another one
+replaces it.
+
+![Automatic mode with a temporary profile running](docs/images/card-automatic.png)
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer

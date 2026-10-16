@@ -45,7 +45,7 @@ from .const import (
 from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
 from .matching import normalise_values
-from .switch import protection_entity_id
+from .switch import automatic_entity_id, protection_entity_id
 
 #: Keys a service call carries that name its target, not a value.
 _TARGET_KEYS = frozenset({"entity_id", "device_id", "area_id", "floor_id", "label_id"})
@@ -213,8 +213,15 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ),
             # ``None`` without a profile sensor; otherwise whether automatic
             # mode is on, what the sensor names and why that is no profile.
+            # The switch is named so the card flips the same thing an
+            # automation does.
             ATTR_AUTOMATIC: (
-                automatic.as_dict() if (automatic := coordinator.automatic) else None
+                {
+                    **automatic.as_dict(),
+                    "switch": automatic_entity_id(registry, coordinator.config_entry),
+                }
+                if (automatic := coordinator.automatic)
+                else None
             ),
         }
 

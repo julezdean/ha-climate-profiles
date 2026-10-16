@@ -137,10 +137,14 @@
           protected: true,
           values: { hvac_mode: "cool", temperature: 22, swing_mode: "off",
                     fan_mode: "auto", display: "off", silent: "off" } },
+        /* Night and Max may be started for a while in automatic mode. That
+           changes nothing outside it, so every other picture stays as it is. */
         { id: "p5", name: "Night", color: "#8b5cf6", icon: "mdi:weather-night", order: 4,
+          temporary: true, duration: 30,
           values: { hvac_mode: "cool", temperature: 26, swing_mode: "off",
                     display: "off", silent: "on" } },
         { id: "p6", name: "Max", color: "#ef4444", icon: null, order: 5,
+          temporary: true, duration: 15,
           values: { hvac_mode: "cool", temperature: 16, swing_mode: "vertical",
                     fan: 100, display: "off", silent: "off" } },
         /* Hidden from the card: only an automation sets it. It stays out of
@@ -199,6 +203,21 @@
         "component.climate.entity_component._.state_attributes.hvac_action.state.idle": "Idle",
       };
 
+      /* A temporary profile's end, given as "+<seconds>" from now, so a test
+         or a screenshot does not depend on when it runs. */
+      function withUntil(automatic) {
+        if (!automatic) return null;
+        const copy = JSON.parse(JSON.stringify(automatic));
+        copy.switch = copy.switch ?? "switch.living_room_automatic_mode";
+        const until = copy.temporary && copy.temporary.until;
+        if (typeof until === "string" && until.startsWith("+")) {
+          copy.temporary.until = new Date(
+            Date.now() + Number(until.slice(1)) * 1000
+          ).toISOString();
+        }
+        return copy;
+      }
+
       function buildHass(overrides = {}) {
         const state = {
           hvac_mode: "cool",
@@ -234,6 +253,7 @@
                 active_profile_color: state.active_profile_color,
                 applying: state.applying,
                 unreached: state.unreached || null,
+                automatic: withUntil(state.automatic),
                 profiles: PROFILES,
                 additional_values: ADDITIONAL,
                 custom_profile: { id: "__custom__", name: "Custom", color: "#78909c" },

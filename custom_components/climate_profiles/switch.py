@@ -45,6 +45,15 @@ def protection_entity_id(
     )
 
 
+def automatic_entity_id(
+    registry: er.EntityRegistry, entry: ClimateProfilesConfigEntry
+) -> str | None:
+    """Return the entity id of the automatic mode switch, if it exists."""
+    return registry.async_get_entity_id(
+        Platform.SWITCH, DOMAIN, f"{entry.entry_id}_{_AUTOMATIC_KEY}"
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ClimateProfilesConfigEntry,
@@ -91,9 +100,7 @@ async def async_setup_entry(
     # per setup; one left from a removed sensor is taken out of the registry.
     if coordinator.profile_sensor is not None:
         async_add_entities([AutomaticSwitch(coordinator)])
-    elif stale := registry.async_get_entity_id(
-        Platform.SWITCH, DOMAIN, f"{entry.entry_id}_{_AUTOMATIC_KEY}"
-    ):
+    elif stale := automatic_entity_id(registry, entry):
         registry.async_remove(stale)
 
 
@@ -183,6 +190,11 @@ class AutomaticSwitch(ClimateProfilesEntity, SwitchEntity):
     def __init__(self, coordinator: ClimateProfilesCoordinator) -> None:
         """Set up the switch."""
         super().__init__(coordinator, _AUTOMATIC_KEY)
+
+    async def async_added_to_hass(self) -> None:
+        """Let the sensor name this switch - the card flips it by that name."""
+        await super().async_added_to_hass()
+        self.coordinator.async_update_listeners()
 
     @property
     def is_on(self) -> bool:

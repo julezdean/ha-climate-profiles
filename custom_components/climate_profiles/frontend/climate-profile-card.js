@@ -129,6 +129,16 @@ function roundToStep(value, step, min) {
   return Math.round(rounded * 100) / 100;
 }
 
+/** What is left of a temporary profile: "4:59", or "1:05:09" from an hour. */
+function formatRemaining(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`;
+  return `${minutes}:${seconds}`;
+}
+
 function formatNumber(value, step) {
   if (!isNum(value)) return "–";
   const decimals = isNum(step) && step > 0 && step < 1 ? 1 : 0;
@@ -154,6 +164,15 @@ class ClimateProfileCard extends HTMLElement {
     this._busy = 0;
     this._error = null;
     this._errorTimer = null;
+    //: The temporary profile counting down, and the timer that repaints it.
+    this._running = null;
+    this._countdownTimer = null;
+  }
+
+  disconnectedCallback() {
+    // Started again by the next paint once the card is back on a view.
+    clearInterval(this._countdownTimer);
+    this._countdownTimer = null;
   }
 
   static getConfigElement() {
@@ -180,9 +199,11 @@ class ClimateProfileCard extends HTMLElement {
       // Everything is shown unless it is hidden, so a value added later needs
       // no change here and none in the dashboard.
       hide: [],
-      profile_layout: "auto",
+      profile_layout: "grid",
       temperature_style: "bar",
       show_protection: false,
+      show_automatic: false,
+      show_target: true,
       ...config,
     };
     this._built = false;
@@ -235,6 +256,13 @@ class ClimateProfileCard extends HTMLElement {
 
     const unavailable =
       !climate || ["unavailable", "unknown"].includes(climate.state);
+    // ``null`` without a profile sensor. On means anything but off: waiting
+    // for the sensor is on too, and it still decides.
+    const automatic = attrs.automatic || null;
+    const running =
+      automatic && automatic.status === "temporary" && automatic.temporary
+        ? automatic.temporary
+        : null;
 
     return {
       source,
@@ -251,6 +279,9 @@ class ClimateProfileCard extends HTMLElement {
         color: "#78909c",
       },
       activeId: attrs.active_profile_id || CUSTOM_ID,
+      automatic,
+      autoOn: Boolean(automatic && automatic.status !== "off"),
+      running,
       applying: Boolean(attrs.applying) || this._busy > 0,
       hvacMode: climate ? climate.state : null,
       hvacModes: caps.hvac_modes || [],
@@ -313,14 +344,24 @@ class ClimateProfileCard extends HTMLElement {
   }
 
   /**
+   * Whether the card offers ``profile`` to be picked. Custom is a status, not
+   * a preset; a hidden profile is set elsewhere; and in automatic mode only a
+   * temporary profile can be started - the rest is the sensor's to choose.
+   */
+  _pickable(model, profile) {
+    if (profile.virtual || profile.hidden) return false;
+    return !model.autoOn || Boolean(profile.temporary);
+  }
+
+  /**
    * Whether the active profile is one the card lists only while it is active:
-   * custom, which is a status and not a preset, or a profile hidden from the
-   * card because only an automation is meant to set it.
+   * custom, which is a status and not a preset, a profile hidden from the
+   * card, or one automatic mode chose.
    */
   _shownWhileActive(model) {
     if (model.activeId === (model.custom.id || CUSTOM_ID)) return true;
     const active = model.profiles.find((profile) => profile.id === model.activeId);
-    return Boolean(active && active.hidden);
+    return Boolean(active && !this._pickable(model, active));
   }
 
   /* ---- rendering ---- */
@@ -340,9 +381,14 @@ class ClimateProfileCard extends HTMLElement {
     const shownWhileActive = this._shownWhileActive(model) ? model.activeId : "";
     const signature = [
       model.profiles
-        .map((p) => `${p.id}:${p.name}:${p.color}:${Boolean(p.hidden)}`)
+        .map(
+          (p) =>
+            `${p.id}:${p.name}:${p.color}:${Boolean(p.hidden)}:${Boolean(p.temporary)}`
+        )
         .join("|"),
       shownWhileActive,
+      // Automatic mode changes what is offered, not only how it is painted.
+      model.autoOn,
       model.hvacModes.join(","),
       model.fanModes.join(","),
       model.swingModes.join(","),
@@ -442,6 +488,9 @@ class ClimateProfileCard extends HTMLElement {
             <p class="subtitle"></p>
           </div>
           <div class="header-actions">
+            <button class="auto" type="button" title="" hidden>
+              <ha-icon icon="mdi:auto-mode"></ha-icon>
+            </button>
             <button class="lock" type="button" title="" hidden>
               <ha-icon icon="mdi:lock-open-variant-outline"></ha-icon>
             </button>
@@ -450,6 +499,13 @@ class ClimateProfileCard extends HTMLElement {
             </button>
           </div>
         </header>
+
+        <section class="target" role="status" hidden>
+          <ha-icon class="target-icon" icon="mdi:target"></ha-icon>
+          <span class="target-label"></span>
+          <span class="target-mark"></span>
+          <span class="target-name"></span>
+        </section>
 
         ${this._tempSection()}
 
@@ -479,6 +535,11 @@ class ClimateProfileCard extends HTMLElement {
       pill: root.querySelector(".pill"),
       lock: root.querySelector(".lock"),
       lockIcon: root.querySelector(".lock ha-icon"),
+      auto: root.querySelector(".auto"),
+      target: root.querySelector(".target"),
+      targetLabel: root.querySelector(".target-label"),
+      targetMark: root.querySelector(".target-mark"),
+      targetName: root.querySelector(".target-name"),
       pillText: root.querySelector(".pill-text"),
       temp: root.querySelector(".temp"),
       degrees: root.querySelector(".degrees"),
@@ -532,6 +593,7 @@ class ClimateProfileCard extends HTMLElement {
     }
     this._el.pill.addEventListener("click", () => this._togglePower());
     this._el.lock.addEventListener("click", () => this._toggleProtection());
+    this._el.auto.addEventListener("click", () => this._toggleAutomatic());
 
     this._buildProfiles(model);
     this._buildControls(model);
@@ -541,9 +603,7 @@ class ClimateProfileCard extends HTMLElement {
     const wrap = this._el.profiles;
     wrap.innerHTML = "";
     wrap.setAttribute("aria-label", this._t("Profiles"));
-    // What is offered decides how much room it needs, not what is stored.
-    const offered = model.profiles.filter((profile) => !profile.hidden);
-    const layout = this._layout(offered.length);
+    const layout = this._layout();
     wrap.dataset.layout = layout;
 
     const all = [...model.profiles, { ...model.custom, virtual: true }];
@@ -558,25 +618,44 @@ class ClimateProfileCard extends HTMLElement {
 
     const iconsOnly = layout === "icons";
     for (const profile of all) {
+      const pickable = this._pickable(model, profile);
+      const isActive = profile.id === model.activeId;
       // Custom has no icon of its own, and a row of icons has no room for a
       // dashed box that says nothing: it joins only while it is what is on.
-      if (iconsOnly && profile.virtual && profile.id !== model.activeId) continue;
-      // A hidden profile is not offered, but the card does not pretend the
-      // device is doing something else either: it is there while it is on.
-      if (profile.hidden && profile.id !== model.activeId) continue;
+      // In automatic mode it is no different from any other profile the
+      // card does not offer.
+      const always = profile.virtual && !iconsOnly && !model.autoOn;
+      // What is not offered - hidden, or chosen by automatic mode - is still
+      // there while it is on: the card does not pretend the device is doing
+      // something else.
+      if (!pickable && !isActive && !always) continue;
       const button = document.createElement("button");
       button.type = "button";
       button.className = iconsOnly ? "profile icon-only" : "profile";
       button.dataset.id = profile.id;
+      if (!pickable) button.classList.add("fixed");
       if (profile.virtual) button.classList.add("virtual");
       if (profile.hidden) button.classList.add("hidden-profile");
+      else if (!profile.virtual && !pickable) button.classList.add("chosen");
       const [r, g, b] = hexToRgb(profile.color);
       button.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
       button.style.setProperty("--profile-color", profile.color);
       button.style.setProperty("--profile-contrast", contrastColor(profile.color));
-      button.innerHTML = `
+      // The time a temporary profile has left goes under its name - or, with
+      // no name to go under, next to or below the icon, as room allows. A
+      // timer beside an icon would be two icons, so there it is the time only.
+      const timer = iconsOnly ? "" : '<ha-icon icon="mdi:timer-outline"></ha-icon>';
+      const countdown = profile.virtual
+        ? ""
+        : `<span class="profile-countdown" hidden>${timer}<span class="countdown-text"></span></span>`;
+      button.innerHTML = iconsOnly
+        ? `
+        <span class="icon-stack">${profileMark(profile)}${countdown}</span>
+        <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`
+        : `
         ${profileMark(profile)}
-        ${iconsOnly ? "" : '<span class="profile-name"></span>'}
+        <span class="profile-name"></span>
+        ${countdown}
         <span class="check" aria-hidden="true"><ha-icon icon="mdi:check"></ha-icon></span>`;
       if (iconsOnly) {
         // The name is the label now - there is nothing else to go by, for a
@@ -596,9 +675,13 @@ class ClimateProfileCard extends HTMLElement {
       } else if (profile.hidden) {
         button.disabled = true;
         if (!iconsOnly) button.title = this._t("Hidden on the card, set elsewhere.");
+      } else if (!pickable) {
+        button.disabled = true;
+        if (!iconsOnly) button.title = this._t("Chosen by automatic mode.");
       } else {
-        button.addEventListener("click", () => this._applyProfile(profile));
+        button.addEventListener("click", () => this._tapProfile(profile));
       }
+      button.dataset.title = button.title;
       wrap.appendChild(button);
       this._profileButtons.set(profile.id, button);
     }
@@ -626,6 +709,7 @@ class ClimateProfileCard extends HTMLElement {
     trigger.innerHTML = `
       <span class="picker-mark"></span>
       <span class="picker-name"></span>
+      <span class="picker-countdown" hidden><ha-icon icon="mdi:timer-outline"></ha-icon><span class="countdown-text"></span></span>
       <ha-icon class="picker-arrow" icon="mdi:chevron-down"></ha-icon>`;
 
     const list = document.createElement("div");
@@ -636,9 +720,9 @@ class ClimateProfileCard extends HTMLElement {
     const options = new Map();
     for (const profile of all) {
       // Custom is a status, not something to pick: it is in the list while it
-      // is what the device is doing, and cannot be chosen. A hidden profile
-      // is treated the same way.
-      const onlyWhileActive = profile.virtual || profile.hidden;
+      // is what the device is doing, and cannot be chosen. A hidden profile,
+      // and one automatic mode chose, are treated the same way.
+      const onlyWhileActive = !this._pickable(model, profile);
       if (onlyWhileActive && profile.id !== model.activeId) continue;
       const option = document.createElement("button");
       option.type = "button";
@@ -646,6 +730,7 @@ class ClimateProfileCard extends HTMLElement {
       option.setAttribute("role", "option");
       option.dataset.id = profile.id;
       if (profile.hidden) option.classList.add("hidden-profile");
+      else if (onlyWhileActive && !profile.virtual) option.classList.add("chosen");
       option.style.setProperty("--profile-color", profile.color);
       option.innerHTML = `
         ${profileMark(profile)}
@@ -657,14 +742,22 @@ class ClimateProfileCard extends HTMLElement {
       } else {
         option.addEventListener("click", () => {
           this._openProfileList(false);
-          this._applyProfile(profile);
+          this._tapProfile(profile);
         });
       }
       list.appendChild(option);
       options.set(profile.id, option);
     }
 
-    trigger.addEventListener("click", () => this._openProfileList(list.hidden));
+    // While a temporary profile counts down, the closed list is that profile:
+    // a tap ends it, as the button would in every other layout.
+    trigger.addEventListener("click", () => {
+      if (this._running) {
+        this._endTemporary();
+        return;
+      }
+      this._openProfileList(list.hidden);
+    });
     picker.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !list.hidden) {
         event.stopPropagation();
@@ -712,12 +805,17 @@ class ClimateProfileCard extends HTMLElement {
     window.addEventListener("pointerdown", this._closePicker, true);
   }
 
-  _layout(count) {
+  /**
+   * The configured layout, grid when there is none. There used to be an
+   * "auto" that picked grid or scroll by the number of profiles; automatic
+   * mode changes that number, and the card jumped between layouts with it.
+   */
+  _layout() {
     const configured = this._config.profile_layout;
     if (["grid", "scroll", "dropdown", "icons"].includes(configured)) {
       return configured;
     }
-    return count > 6 ? "scroll" : "grid";
+    return "grid";
   }
 
   _buildControls(model) {
@@ -1027,10 +1125,7 @@ class ClimateProfileCard extends HTMLElement {
       const isActive = id === model.activeId;
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
-      const fixed =
-        button.classList.contains("virtual") ||
-        button.classList.contains("hidden-profile");
-      if (!fixed) button.disabled = model.unavailable;
+      if (!button.classList.contains("fixed")) button.disabled = model.unavailable;
     }
 
     // controls
@@ -1061,6 +1156,9 @@ class ClimateProfileCard extends HTMLElement {
 
     this._paintUnreached(model);
     this._paintProtection(model, activeProfile);
+    this._paintAutomatic(model);
+    this._paintTarget(model);
+    this._paintCountdown(model);
 
     el.progress.classList.toggle("busy", Boolean(model.applying));
     el.card.setAttribute("aria-busy", model.applying ? "true" : "false");
@@ -1139,6 +1237,104 @@ class ClimateProfileCard extends HTMLElement {
       "icon",
       on ? "mdi:lock" : "mdi:lock-open-variant-outline"
     );
+  }
+
+  /**
+   * Automatic mode, as a round button left of the lock - only when the card
+   * asks for it and the device has a profile sensor. Filled while on, with a
+   * warning dot while it waits for a profile it can follow. It flips the
+   * device's own switch, so the card and an automation cannot disagree.
+   */
+  _paintAutomatic(model) {
+    const el = this._el;
+    const automatic = model.automatic;
+    const show =
+      Boolean(this._config.show_automatic) && Boolean(automatic && automatic.switch);
+    el.auto.hidden = !show;
+    if (!show) return;
+
+    const on = automatic.status !== "off";
+    const waiting = automatic.status === "waiting";
+    el.auto.classList.toggle("on", on);
+    el.auto.classList.toggle("waiting", waiting);
+    el.auto.setAttribute("aria-pressed", on ? "true" : "false");
+    el.auto.setAttribute("aria-label", this._t("Automatic mode"));
+    el.auto.title = !on
+      ? this._t("Automatic mode is off")
+      : waiting
+        ? this._t("Automatic mode is waiting for a profile")
+        : this._t("Automatic mode is on");
+  }
+
+  /**
+   * What the profile sensor names - also while automatic mode is off, and
+   * while a temporary profile runs: it is what comes next. Without a profile
+   * to name, the reason, in the warning colour.
+   */
+  _paintTarget(model) {
+    const el = this._el;
+    const automatic = model.automatic;
+    const show = this._config.show_target !== false && Boolean(automatic);
+    el.target.hidden = !show;
+    if (!show) return;
+
+    el.targetLabel.textContent = this._t("Target");
+    const profile = automatic.target_id
+      ? model.profiles.find((item) => item.id === automatic.target_id)
+      : null;
+    el.target.classList.toggle("problem", !profile);
+    if (profile) {
+      el.targetMark.innerHTML = profileMark(profile);
+      el.targetMark.style.setProperty("--profile-color", profile.color);
+      el.targetName.textContent = profile.name;
+      return;
+    }
+    el.targetMark.innerHTML = "";
+    el.targetName.textContent =
+      automatic.problem === "unknown_profile"
+        ? this._noProfile(automatic.sensor_state ?? "")
+        : this._t("Sensor unavailable");
+  }
+
+  /** Count the running temporary profile down, once a second. */
+  _paintCountdown(model) {
+    this._running = model.running;
+    const until = model.running ? Date.parse(model.running.until) : NaN;
+    if (Number.isFinite(until)) {
+      if (!this._countdownTimer) {
+        this._countdownTimer = setInterval(() => this._tick(), 1000);
+      }
+    } else {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
+    }
+    this._tick();
+  }
+
+  _tick() {
+    const running = this._running;
+    const until = running ? Date.parse(running.until) : NaN;
+    const text = Number.isFinite(until) ? formatRemaining(until - Date.now()) : "";
+    const end = this._t("Tap to end");
+
+    for (const [id, button] of this._profileButtons || []) {
+      const span = button.querySelector(".profile-countdown");
+      if (!span) continue;
+      const counting = Boolean(text) && id === running.profile_id;
+      span.hidden = !counting;
+      span.querySelector(".countdown-text").textContent = counting ? text : "";
+      button.classList.toggle("counting", counting);
+      button.title = counting ? `${text} · ${end}` : button.dataset.title || "";
+    }
+
+    const picker = this._profilePicker;
+    if (picker) {
+      const span = picker.trigger.querySelector(".picker-countdown");
+      span.hidden = !text;
+      span.querySelector(".countdown-text").textContent = text;
+      picker.trigger.title = text ? `${text} · ${end}` : "";
+      picker.trigger.setAttribute("aria-haspopup", text ? "false" : "listbox");
+    }
   }
 
   _paintGroup(key, current, disabled) {
@@ -1278,6 +1474,30 @@ class ClimateProfileCard extends HTMLElement {
     });
   }
 
+  /** Flip automatic mode through the device's own switch. */
+  async _toggleAutomatic() {
+    const automatic = this._model().automatic;
+    if (!automatic || !automatic.switch) return;
+    await this._callService(
+      "switch",
+      automatic.status === "off" ? "turn_on" : "turn_off",
+      { entity_id: automatic.switch }
+    );
+  }
+
+  /** A tap on a profile: the running temporary one ends, any other starts. */
+  async _tapProfile(profile) {
+    if (this._running && this._running.profile_id === profile.id) {
+      await this._endTemporary();
+      return;
+    }
+    await this._applyProfile(profile);
+  }
+
+  async _endTemporary() {
+    await this._call("end_temporary", {});
+  }
+
   async _applyProfile(profile) {
     await this._call("apply_profile", { profile: profile.id });
   }
@@ -1343,6 +1563,12 @@ class ClimateProfileCard extends HTMLElement {
       .replace(/^\w/, (char) => char.toUpperCase());
   }
 
+  /** "No profile "X"" - the quotes are part of the language. */
+  _noProfile(name) {
+    const language = (this._hass && this._hass.language) || "en";
+    return language.startsWith("de") ? `kein Profil „${name}“` : `No profile "${name}"`;
+  }
+
   /** Card-owned strings. German when Home Assistant is German. */
   _t(text) {
     const language = (this._hass && this._hass.language) || "en";
@@ -1402,6 +1628,14 @@ const CARD_DE = {
     "Wird angezeigt, wenn der aktuelle Zustand zu keinem Profil passt.",
   "Hidden on the card, set elsewhere.":
     "In der Karte ausgeblendet, wird anderswo gesetzt.",
+  "Chosen by automatic mode.": "Von der Automatik gewählt.",
+  "Automatic mode": "Automatik",
+  "Automatic mode is off": "Automatik ist aus",
+  "Automatic mode is on": "Automatik ist an",
+  "Automatic mode is waiting for a profile": "Automatik wartet auf ein Profil",
+  Target: "Ziel",
+  "Sensor unavailable": "Sensor nicht verfügbar",
+  "Tap to end": "Tippen beendet",
 };
 
 /* -------------------------------------------------------------------------
@@ -1562,8 +1796,10 @@ ha-card.unavailable { opacity: 0.6; }
   gap: 8px;
   flex: none;
 }
-.lock[hidden] { display: none; }
-.lock {
+.lock[hidden],
+.auto[hidden] { display: none; }
+.lock,
+.auto {
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -1578,11 +1814,64 @@ ha-card.unavailable { opacity: 0.6; }
   cursor: pointer;
   transition: color 200ms ease, background 200ms ease, border-color 200ms ease;
 }
-.lock ha-icon { --mdc-icon-size: 16px; }
-.lock.on {
+.lock ha-icon,
+.auto ha-icon { --mdc-icon-size: 16px; }
+.lock.on,
+.auto.on {
   color: var(--accent-color);
   border-color: rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.12);
+}
+/* On, but nothing to follow: the dot says so without changing the button's
+   meaning - automatic mode is still what decides. */
+.auto { position: relative; }
+.auto.waiting::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgb(var(--cp-warning-rgb));
+  box-shadow: 0 0 0 2px var(--cp-surface);
+}
+
+/* what the profile sensor names */
+.target[hidden] { display: none; }
+.target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--cp-line);
+  border-radius: 14px;
+  font-size: 0.82rem;
+  color: var(--cp-muted);
+}
+.target-icon { --mdc-icon-size: 16px; flex: none; }
+.target-mark { display: flex; flex: none; align-items: center; }
+.target-mark ha-icon { --mdc-icon-size: 16px; color: var(--profile-color); }
+.target-mark .dot-mark {
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  border-radius: 50%;
+  background: var(--profile-color);
+  box-shadow: none;
+}
+.target-name {
+  min-width: 0;
+  color: var(--cp-text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.target.problem {
+  border-color: rgba(var(--cp-warning-rgb), 0.55);
+  background: rgba(var(--cp-warning-rgb), 0.08);
 }
 
 /* temperature */
@@ -1753,6 +2042,18 @@ ha-card.unavailable { opacity: 0.6; }
 .profile.icon-only.active .check,
 .profile.icon-only .check { display: none; }
 .profile.icon-only .dot-mark { width: 14px; height: 14px; margin: 5px 0; }
+/* The time left sits below the icon, or beside it once the button is wide
+   enough - measured on the button, not the screen. */
+.profile.icon-only { container-type: inline-size; }
+.icon-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+@container (min-width: 88px) {
+  .icon-stack { flex-direction: row; gap: 6px; }
+}
 
 /* the dropdown layout */
 .profiles[data-layout="dropdown"] { display: block; }
@@ -1780,6 +2081,18 @@ ha-card.unavailable { opacity: 0.6; }
   font-weight: 500;
 }
 .picker-trigger .picker-name { flex: 1; min-width: 0; }
+.picker-countdown[hidden] { display: none; }
+.picker-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--profile-color, var(--accent-color));
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.picker-countdown ha-icon { --mdc-icon-size: 16px; }
 .picker-arrow {
   --mdc-icon-size: 20px;
   color: var(--cp-muted);
@@ -1931,6 +2244,26 @@ ha-card.unavailable { opacity: 0.6; }
   cursor: default;
 }
 .profile.hidden-profile.active { color: var(--profile-contrast); }
+/* Chosen by automatic mode: shown like a hidden profile, for the same reason. */
+.profile.chosen,
+.picker-option.chosen:disabled {
+  opacity: 1;
+  color: var(--cp-text);
+  cursor: default;
+}
+.profile.chosen.active { color: var(--profile-contrast); }
+
+/* the time a temporary profile has left */
+.profile-countdown[hidden] { display: none; }
+.profile-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.profile .profile-countdown ha-icon { --mdc-icon-size: 13px; color: inherit; }
 
 /* notices */
 /* A flex container, and "display" beats the "hidden" attribute. */
@@ -2216,6 +2549,8 @@ class ClimateProfileCardEditor extends HTMLElement {
     const hide = Array.isArray(this._config.hide) ? this._config.hide : [];
     const data = { ...this._config };
     delete data.hide;
+    // On unless switched off - the form has to show what the card does.
+    data.show_target = this._config.show_target !== false;
     for (const [key] of this._values()) data[`show_${key}`] = !hide.includes(key);
     return data;
   }
@@ -2284,7 +2619,6 @@ const SCHEMA = [
       select: {
         mode: "dropdown",
         options: [
-          { value: "auto", label: "Auto" },
           { value: "grid", label: "Grid" },
           { value: "dropdown", label: "Dropdown" },
           { value: "icons", label: "Icons only" },
@@ -2294,6 +2628,8 @@ const SCHEMA = [
     },
   },
   { name: "show_protection", selector: { boolean: {} } },
+  { name: "show_automatic", selector: { boolean: {} } },
+  { name: "show_target", selector: { boolean: {} } },
 ];
 
 const EDITOR_LABELS = {
@@ -2302,6 +2638,8 @@ const EDITOR_LABELS = {
   profile_layout: "Profile layout",
   temperature_style: "Temperature control",
   show_protection: "Show the write protection of the active profile",
+  show_automatic: "Show the automatic mode switch",
+  show_target: "Show the profile automatic mode is aiming for",
 };
 
 /* -------------------------------------------------------------------------

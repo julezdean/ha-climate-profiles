@@ -20,7 +20,7 @@ versioning [Semantic Versioning](https://semver.org/).
   buttons still work. A sensor that is unavailable or names no profile writes
   nothing; automatic mode waits for one it can follow. The sensor's new
   `automatic` attribute says what it is doing, what the sensor names and why
-  that is no profile. The card does not show any of it yet.
+  that is no profile.
 - **Temporary profiles.** A profile can be marked as one that may be started
   for a while in automatic mode, with a duration in minutes - an hour if none
   is set. Started by hand while automatic mode is on, it overrides the sensor
@@ -29,12 +29,27 @@ versioning [Semantic Versioning](https://semver.org/).
   early, another one replaces it, switching automatic mode off ends it with
   its values kept. Its end is stored, so a restart neither lengthens nor
   forgets it. Outside automatic mode the mark changes nothing. The sensor's
-  `automatic` attribute names it and its end; the card does not show it yet.
+  `automatic` attribute names it and its end.
   `apply_profile` takes an optional `duration` in minutes for one started
   from an automation; it does not make a profile temporary that is not.
   Deleting the running one ends it.
+- **The card shows automatic mode.** With a profile sensor set, a row says
+  what the sensor names - also while automatic mode is off, and why there is
+  no profile when there is none; `show_target: false` leaves it out.
+  `show_automatic: true` adds a button left of the lock that flips the
+  automatic mode switch, with a dot while it waits. While automatic mode is
+  on, only temporary profiles are offered, and whatever else is active is
+  shown without being pickable. A running temporary profile counts down in
+  its button - under the name, beside or below the icon, in the closed
+  dropdown - and a tap ends it.
 
 ### Changed
+
+- **The card's `profile_layout: auto` is gone, and grid is the default.**
+  Auto picked grid up to six profiles and scroll beyond; automatic mode
+  changes how many are offered, and the card would have jumped between the
+  two. A card set to `auto`, or to nothing, is a grid now - with more than six
+  profiles that is a change you will see; set `scroll` to keep it.
 
 - **Profile names are unique.** No two profiles may share a name - compared
   without regard to case or surrounding spaces, the way `apply_profile` finds
