@@ -100,8 +100,8 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
-    # A profile hidden from the card, set by an automation: shown while it is
-    # what the device is doing, and not offered otherwise.
+    # A profile hidden from the card, set by an automation, is what the device
+    # is doing: it is not shown, and no other button is marked active.
     "card-hidden": {
         "theme": "light",
         "state": {

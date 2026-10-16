@@ -33,13 +33,13 @@ versioning [Semantic Versioning](https://semver.org/).
   `apply_profile` takes an optional `duration` in minutes for one started
   from an automation; it does not make a profile temporary that is not.
   Deleting the running one ends it.
-- **The card shows automatic mode.** With a profile sensor set, a row says
-  what the sensor names - also while automatic mode is off, and why there is
-  no profile when there is none; `show_target: false` leaves it out.
+- **The card shows automatic mode.** While automatic mode is on, a row names
+  the profile the sensor names - just its mark and name - or says why there
+  is none; `show_target: false` leaves it out.
   `show_automatic: true` adds a button left of the lock that flips the
   automatic mode switch, with a dot while it waits. While automatic mode is
   on, only temporary profiles are offered, and whatever else is active is
-  shown without being pickable. A running temporary profile counts down in
+  shown without being pickable - unless it is hidden. A running temporary profile counts down in
   its button - under the name, beside or below the icon, in the closed
   dropdown - and a tap ends it. The time grows with the room the button has.
 - **A write protected profile held by automatic mode cannot be changed.**
@@ -50,6 +50,10 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A hidden profile stays hidden on the card while it is active.** Until now
+  the card showed it as the active profile, without offering it. Now it is
+  left out in every layout, no button is marked active meanwhile, and the
+  closed dropdown reads "Profiles" instead of its name.
 - **The card's `profile_layout: auto` is gone, and grid is the default.**
   Auto picked grid up to six profiles and scroll beyond; automatic mode
   changes how many are offered, and the card would have jumped between the

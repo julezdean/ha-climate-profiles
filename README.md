@@ -180,7 +180,7 @@ range - comes from the integration. Options, all optional:
 | `hide` | `[]` | values to leave out, by key or id |
 | `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
 | `show_automatic` | `false` | a button next to the lock that switches [automatic mode](#automatic-mode) on and off |
-| `show_target` | `true` | a row with the profile automatic mode is aiming for - only with a profile sensor |
+| `show_target` | `true` | a row with the profile automatic mode is aiming for - only while automatic mode is on |
 
 Everything configured is shown unless you hide it, so a value you add later
 appears without editing every dashboard. The list mixes the four climate keys
@@ -226,9 +226,9 @@ A profile can be **hidden on the card** - a "Summer" that only an automation
 sets, and nobody should pick by hand. It is one switch in the profile's row,
 off by default, and it holds for every dashboard at once.
 
-Hidden means not offered, not invisible: while the hidden profile is what the
-device is doing, the card shows it like any active profile - it just cannot be
-picked there. The rest of the time it is not in the list, in any layout. A
+Hidden means hidden: it is not in the list, in any layout, also while it is
+what the device is doing. Then no button is marked active - not custom either,
+since a profile does match - and the closed dropdown reads "Profiles". A
 profile both hidden and temporary is hidden: automatic mode does not offer it
 on the card either.
 
@@ -239,7 +239,7 @@ write protection: change something by hand while it is active, and the change
 is stored into it like into any other profile, unless it is **write
 protected**.
 
-![A hidden profile while it is active](docs/images/card-hidden.png)
+![A hidden profile while it is active: nothing is marked](docs/images/card-hidden.png)
 
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
@@ -262,11 +262,12 @@ that is not active, use its switch.
 
 ### Automatic mode on the card
 
-With a profile sensor set, the card shows a row with what the sensor names -
-the **target**, also while automatic mode is off or a temporary profile runs,
-since it is what comes next. Without a profile to name, the row says why, in
-the warning colour: `No profile "Komfort"`, or that the sensor is unavailable.
-`show_target: false` leaves the row out.
+While automatic mode is on, the card shows a row with what the sensor names -
+the **target**: the profile's mark and name, nothing in front of it. It stays
+while a temporary profile runs, since it is what comes next, and goes when
+automatic mode is switched off. Without a profile to name, the row says why,
+in the warning colour: `No profile "Komfort"`, or that the sensor is
+unavailable. `show_target: false` leaves the row out.
 
 `show_automatic: true` puts a round button left of the lock that flips the
 device's automatic mode switch: outlined while off, filled while on, with an
@@ -274,8 +275,8 @@ orange dot while it waits for a profile it can follow.
 
 While automatic mode is on, the card offers only the
 [temporary profiles](#temporary-profiles). Whatever else is active - the
-profile the sensor chose, a hidden one, custom - is shown but cannot be
-picked. Without temporary profiles that is the one button left. A running
+profile the sensor chose, custom - is shown but cannot be picked; a hidden
+one stays hidden. Without temporary profiles that is the one button left. A running
 temporary profile shows the time it has left: under its name in the grid and
 scroll layouts, next to the icon in `icons` - below it when the button is
 narrow - and in the closed field in `dropdown`. A tap on it ends it; in

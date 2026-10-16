@@ -61,7 +61,7 @@ special cases - do not "fix" them into a normal state:
 | `card-icons.png` | the thermostat with `profile_layout: icons` |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-protection.png` | `show_protection: true`, "Comfort+" is active and write protected - the lock is closed |
-| `card-hidden.png` | "Summer", hidden from the card, is active - shown, but not offered |
+| `card-hidden.png` | "Summer", hidden from the card, is active - not shown, no button is marked |
 | `card-automatic.png` | `show_automatic: true`, automatic mode on, the temporary "Night" runs for another 24 minutes, the sensor names "Comfort" |
 
 "Comfort+" is write protected in every shot, but only `card-protection.png`
@@ -69,8 +69,9 @@ asks the card to show it; without `show_protection` there is no lock, so the
 other pictures do not change with it.
 
 "Summer" is in the air conditioner's profiles in every shot. It is hidden from
-the card, so it shows up only in `card-hidden.png`, where it is active; the
-other pictures must not change when it is added or edited.
+the card, so it is in no picture; `card-hidden.png` shows it active, which
+the card shows by marking nothing. The pictures must not change when it is
+added or edited.
 
 "Night" and "Max" are temporary in every shot. That only matters in automatic
 mode, so it shows up only in `card-automatic.png`; the other pictures have no

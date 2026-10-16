@@ -642,33 +642,33 @@ async def test_a_hidden_profile_is_not_offered(open_card, layout, selector):
         ("dropdown", ".picker-option"),
     ],
 )
-async def test_a_hidden_profile_is_shown_while_it_is_on(open_card, layout, selector):
-    """The card does not pretend the device is doing something else."""
+async def test_a_hidden_profile_is_not_shown_while_it_is_on(
+    open_card, layout, selector
+):
+    """Hidden is hidden: nothing on the card is marked active, not even custom."""
     page = await open_card(SUMMER, card={"profile_layout": layout})
     card = page.locator("climate-profile-card")
 
-    summer = card.locator(f"{selector}[data-id='p7']")
-    assert await summer.count() == 1
-    assert await summer.is_disabled(), "it is shown, not offered"
+    assert await card.locator(f"{selector}[data-id='p7']").count() == 0
+    assert await card.locator(f"{selector}.active").count() == 0
     if layout == "dropdown":
-        assert await summer.get_attribute("aria-selected") == "true"
-        assert await card.locator(".picker-name").inner_text() == "Summer"
-    else:
-        assert "active" in (await summer.get_attribute("class"))
+        trigger = card.locator(".picker-trigger")
+        assert await trigger.locator(".picker-name").inner_text() == "Profiles"
+        assert await trigger.locator(".picker-mark").is_hidden()
 
 
-async def test_a_hidden_profile_comes_and_goes_with_the_state(open_card):
+async def test_a_hidden_profile_stays_away_as_the_state_changes(open_card):
     page = await open_card()
-    summer = page.locator("climate-profile-card .profile[data-id='p7']")
-    assert await summer.count() == 0
+    card = page.locator("climate-profile-card")
 
     await page.evaluate(f"setCardState({json.dumps(SUMMER)})")
     await page.wait_for_timeout(100)
-    assert await summer.count() == 1
+    assert await card.locator(".profile[data-id='p7']").count() == 0
+    assert await card.locator(".profile.active").count() == 0
 
     await page.evaluate("setCardState({})")
     await page.wait_for_timeout(100)
-    assert await summer.count() == 0
+    assert await card.locator(".profile.active").count() == 1
 
 
 @pytest.mark.parametrize("card", [{}, {"profile_layout": "auto"}])
@@ -679,15 +679,6 @@ async def test_without_a_layout_the_profiles_are_a_grid(open_card, card):
         "data-layout"
     )
     assert layout == "grid"
-
-
-async def test_a_hidden_active_profile_cannot_be_applied_from_the_card(open_card):
-    page = await open_card(SUMMER)
-
-    await page.locator("climate-profile-card .profile[data-id='p7']").click(force=True)
-    await page.wait_for_timeout(200)
-
-    assert await calls(page) == []
 
 
 # --- automatic mode -----------------------------------------------------------
@@ -771,11 +762,23 @@ async def test_the_automatic_switch_flips_the_devices_switch(
 
 
 async def test_the_target_is_shown_by_default(open_card):
-    page = await open_card(automatic_state(status="off"))
+    page = await open_card(AUTOMATIC)
     target = page.locator("climate-profile-card .target")
     assert await target.is_visible()
     assert await target.locator(".target-name").inner_text() == "Comfort"
     assert "problem" not in (await target.get_attribute("class"))
+
+
+async def test_the_target_is_only_the_profile_name(open_card):
+    """No "Target" label in front of it: the icon says what the row is."""
+    page = await open_card(AUTOMATIC)
+    target = page.locator("climate-profile-card .target")
+    assert (await target.inner_text()).strip() == "Comfort"
+
+
+async def test_the_target_is_left_out_while_automatic_mode_is_off(open_card):
+    page = await open_card(automatic_state(status="off"))
+    assert await page.locator("climate-profile-card .target").is_hidden()
 
 
 async def test_the_target_can_be_switched_off(open_card):
