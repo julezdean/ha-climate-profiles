@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.2.0-beta.1";
+const CARD_VERSION = "2.2.0-beta.2";
 
 /* eslint-disable no-console */
 console.info(
