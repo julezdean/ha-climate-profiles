@@ -15,7 +15,7 @@ from custom_components.climate_profiles.const import (
 )
 
 from .conftest import open_step, set_device_state, settle
-from .test_integration import SELECT, SENSOR, setup_entry
+from .test_integration import PROFILES, SELECT, SENSOR, setup_entry
 
 PROFILE_SENSOR = "sensor.wanted_profile"
 SWITCH = "switch.living_room_automatic_mode"
@@ -341,3 +341,45 @@ async def test_the_options_set_and_clear_the_sensor(hass, entry_data):
     await settle(hass)
     assert CONF_PROFILE_SENSOR not in entry.options
     assert hass.states.get(SWITCH) is None
+
+
+# --- a write protected profile under automatic mode -------------------------
+
+
+async def test_a_protected_profile_held_by_it_cannot_be_changed(
+    hass, entry_data, calls
+):
+    """A change could only make it custom - which protection is there to stop."""
+    profiles = [dict(item) for item in PROFILES]
+    profiles[2] = {**profiles[2], "protected": True}
+    hass.states.async_set(PROFILE_SENSOR, "Kuehlung")
+    set_device_state(hass, temperature=22)
+    entry = await setup_entry(
+        hass,
+        entry_data,
+        profiles=profiles,
+        options={CONF_PROFILE_SENSOR: PROFILE_SENSOR},
+    )
+    await switch_on(hass, entry)
+    count = len(calls["set_temperature"])
+
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN,
+            "set_value",
+            {"entity_id": SENSOR, "temperature": 21},
+            blocking=True,
+        )
+    assert err.value.translation_key == "automatic_profile_protected"
+    assert len(calls["set_temperature"]) == count
+
+    # Off, it is a protected profile like any other: the change goes through
+    # and the state is custom.
+    await entry.runtime_data.async_set_automatic(False)
+    await hass.services.async_call(
+        DOMAIN,
+        "set_value",
+        {"entity_id": SENSOR, "temperature": 21},
+        blocking=True,
+    )
+    assert calls["set_temperature"][-1].data["temperature"] == 21

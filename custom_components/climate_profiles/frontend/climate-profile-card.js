@@ -282,6 +282,17 @@ class ClimateProfileCard extends HTMLElement {
       automatic,
       autoOn: Boolean(automatic && automatic.status !== "off"),
       running,
+      // Automatic mode holds a write protected profile: nothing on the card
+      // may change it - the integration refuses it as well. Only temporary
+      // profiles, automatic mode itself and the lock stay usable.
+      frozen: Boolean(
+        automatic &&
+          automatic.status !== "off" &&
+          (attrs.profiles || []).some(
+            (profile) =>
+              profile.id === (attrs.active_profile_id || CUSTOM_ID) && profile.protected
+          )
+      ),
       applying: Boolean(attrs.applying) || this._busy > 0,
       hvacMode: climate ? climate.state : null,
       hvacModes: caps.hvac_modes || [],
@@ -1034,6 +1045,15 @@ class ClimateProfileCard extends HTMLElement {
       model.profiles.find((profile) => profile.id === model.activeId) || model.custom;
 
     el.card.classList.toggle("unavailable", model.unavailable);
+    el.card.classList.toggle("frozen", model.frozen);
+    // What cannot be changed right now: the device is away, or automatic
+    // mode holds a write protected profile.
+    const locked = model.unavailable || model.frozen;
+    const why = model.frozen
+      ? this._t("Write protected, and held by automatic mode.")
+      : "";
+    el.temp.title = why;
+    el.controls.title = why;
     el.card.style.setProperty("--accent-color", activeProfile.color);
     const [r, g, b] = hexToRgb(activeProfile.color);
     el.card.style.setProperty("--accent-rgb", `${r}, ${g}, ${b}`);
@@ -1058,7 +1078,7 @@ class ClimateProfileCard extends HTMLElement {
         )
       : this._t("Off");
     el.pill.title = on ? this._t("Turn off") : this._t("Turn on");
-    el.pill.disabled = model.unavailable || !model.hvacModes.includes("off");
+    el.pill.disabled = locked || !model.hvacModes.includes("off");
 
     // temperature
     const showTemp = this._visible("temperature", isNum(model.target));
@@ -1099,7 +1119,7 @@ class ClimateProfileCard extends HTMLElement {
         setReading(el.ringHumidity, humidity);
       }
       this.shadowRoot.querySelectorAll(".step").forEach((button) => {
-        button.disabled = model.unavailable;
+        button.disabled = locked;
       });
     }
 
@@ -1129,9 +1149,9 @@ class ClimateProfileCard extends HTMLElement {
     }
 
     // controls
-    this._paintGroup("hvac_mode", model.hvacMode, model.unavailable);
-    this._paintGroup("fan_mode", model.fanMode, model.unavailable || !on);
-    this._paintGroup("swing_mode", model.swingMode, model.unavailable || !on);
+    this._paintGroup("hvac_mode", model.hvacMode, locked);
+    this._paintGroup("fan_mode", model.fanMode, locked || !on);
+    this._paintGroup("swing_mode", model.swingMode, locked || !on);
 
     for (const value of model.additional) {
       const control = this._controls[value.id];
@@ -1140,7 +1160,7 @@ class ClimateProfileCard extends HTMLElement {
       if (control.kind === "slider") {
         const number = isNum(shown) ? shown : Number(control.input.min);
         if (document.activeElement !== control.input) control.input.value = number;
-        control.input.disabled = model.unavailable;
+        control.input.disabled = locked;
         control.block.querySelector(".slider-value").textContent = formatNumber(
           Number(control.input.value),
           Number(control.input.step)
@@ -1148,9 +1168,9 @@ class ClimateProfileCard extends HTMLElement {
         control.input.setAttribute("aria-valuetext", `${control.input.value}`);
         this._paintSliderFill(control.input);
       } else if (control.kind === "toggle") {
-        this._paintToggle(value.id, shown, model.unavailable);
+        this._paintToggle(value.id, shown, locked);
       } else {
-        this._paintGroup(value.id, shown, model.unavailable);
+        this._paintGroup(value.id, shown, locked);
       }
     }
 
@@ -1392,7 +1412,10 @@ class ClimateProfileCard extends HTMLElement {
     el.arc.setAttribute("aria-valuemax", String(max));
     el.arc.setAttribute("aria-valuenow", String(model.target));
     el.arc.setAttribute("aria-valuetext", `${model.target} ${model.unit}`);
-    el.arc.setAttribute("aria-disabled", model.unavailable ? "true" : "false");
+    el.arc.setAttribute(
+      "aria-disabled",
+      model.unavailable || model.frozen ? "true" : "false"
+    );
   }
 
   /* ---- actions ---- */
@@ -1400,7 +1423,9 @@ class ClimateProfileCard extends HTMLElement {
   /** Where on the ring the pointer is, as a temperature. */
   _dialTo(event) {
     const model = this._model();
-    if (model.error || model.unavailable || !isNum(model.target)) return;
+    if (model.error || model.unavailable || model.frozen || !isNum(model.target)) {
+      return;
+    }
 
     const box = this._el.arc.getBoundingClientRect();
     const dx = event.clientX - (box.left + box.width / 2);
@@ -1428,7 +1453,7 @@ class ClimateProfileCard extends HTMLElement {
 
   _nudgeTemperature(direction) {
     const model = this._model();
-    if (model.error || !isNum(model.target)) return;
+    if (model.error || model.frozen || !isNum(model.target)) return;
     const step = isNum(model.caps.target_temp_step) ? model.caps.target_temp_step : 0.5;
     const min = isNum(model.caps.min_temp) ? model.caps.min_temp : 5;
     const max = isNum(model.caps.max_temp) ? model.caps.max_temp : 35;
@@ -1453,7 +1478,7 @@ class ClimateProfileCard extends HTMLElement {
 
   _togglePower() {
     const model = this._model();
-    if (model.error) return;
+    if (model.error || model.frozen) return;
     const off = model.hvacModes.includes("off") ? "off" : null;
     if (!off) return;
     if (model.hvacMode === "off") {
@@ -1503,6 +1528,8 @@ class ClimateProfileCard extends HTMLElement {
   }
 
   async _setValue(values) {
+    // Every control ends here; the disabled buttons are only what is seen.
+    if (this._model().frozen) return;
     for (const [key, value] of Object.entries(values)) {
       this._setPending(key, value);
     }
@@ -1636,6 +1663,8 @@ const CARD_DE = {
   Target: "Ziel",
   "Sensor unavailable": "Sensor nicht verfügbar",
   "Tap to end": "Tippen beendet",
+  "Write protected, and held by automatic mode.":
+    "Schreibgeschützt, und von der Automatik gehalten.",
 };
 
 /* -------------------------------------------------------------------------
@@ -2044,7 +2073,6 @@ ha-card.unavailable { opacity: 0.6; }
 .profile.icon-only .dot-mark { width: 14px; height: 14px; margin: 5px 0; }
 /* The time left sits below the icon, or beside it once the button is wide
    enough - measured on the button, not the screen. */
-.profile.icon-only { container-type: inline-size; }
 .icon-stack {
   display: flex;
   flex-direction: column;
@@ -2088,7 +2116,7 @@ ha-card.unavailable { opacity: 0.6; }
   gap: 4px;
   flex: none;
   color: var(--profile-color, var(--accent-color));
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -2255,15 +2283,18 @@ ha-card.unavailable { opacity: 0.6; }
 
 /* the time a temporary profile has left */
 .profile-countdown[hidden] { display: none; }
+/* Every button measures itself, so the time left grows with the room it has:
+   small in a row of six, as large as the name allows on a button of its own. */
+.profile { container-type: inline-size; }
 .profile-countdown {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 0.72rem;
+  gap: 0.25em;
+  font-size: clamp(0.85rem, 8cqi, 1.3rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.profile .profile-countdown ha-icon { --mdc-icon-size: 13px; color: inherit; }
+.profile .profile-countdown ha-icon { --mdc-icon-size: 1.05em; color: inherit; }
 
 /* notices */
 /* A flex container, and "display" beats the "hidden" attribute. */
@@ -2473,6 +2504,7 @@ ha-card.unavailable { opacity: 0.6; }
 
 /* shared states */
 button:disabled { opacity: 0.45; cursor: not-allowed; }
+.slider:disabled { opacity: 0.45; cursor: not-allowed; }
 button:focus-visible,
 .slider:focus-visible {
   outline: 2px solid var(--accent-color);

@@ -280,7 +280,8 @@ temporary profile shows the time it has left: under its name in the grid and
 scroll layouts, next to the icon in `icons` - below it when the button is
 narrow - and in the closed field in `dropdown`. A tap on it ends it; in
 `dropdown` the tap ends it instead of opening the list. Starting another one
-replaces it.
+replaces it. The time left grows with the button: small in a row of six,
+large on a button of its own.
 
 ![Automatic mode with a temporary profile running](docs/images/card-automatic.png)
 
@@ -449,7 +450,11 @@ While the switch is on:
   `set_value` and the device's own buttons still work: changing the device is
   not choosing a profile.
 - **A change made by hand goes into the profile, as always** - unless it is
-  write protected; see [Changes made by hand](#changes-made-by-hand).
+  write protected; see [Changes made by hand](#changes-made-by-hand). A
+  write protected profile that automatic mode holds cannot be changed at all:
+  `set_value` is refused, and the card is display only, apart from temporary
+  profiles, the automatic mode button and the lock. Only the device's own
+  buttons still get through, and lead to custom.
 - **No profile, no write.** A sensor that is unavailable, or names no profile,
   makes automatic mode wait: the device keeps what it has, the switch stays
   on, and the sensor's `automatic` attribute says why. Once the sensor names a

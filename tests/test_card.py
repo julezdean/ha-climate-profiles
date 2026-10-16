@@ -930,3 +930,45 @@ async def test_the_editor_offers_automatic_mode(open_card):
         }"""
     )
     assert data["show_target"] is True, "on unless switched off"
+
+
+#: Automatic mode holds "Comfort+", which is write protected.
+FROZEN = {
+    "temperature": 22,
+    "active_profile": "Comfort+",
+    "active_profile_id": "p4",
+    "active_profile_color": "#10b981",
+    "automatic": {
+        **AUTOMATIC["automatic"],
+        "sensor_state": "Comfort+",
+        "target": "Comfort+",
+        "target_id": "p4",
+    },
+}
+
+
+async def test_a_protected_profile_held_by_automatic_mode_is_display_only(
+    open_card,
+):
+    page = await open_card(FROZEN, card={"show_protection": True})
+    card = page.locator("climate-profile-card")
+
+    for selector in (".step", ".pill", ".segmented button", ".slider", ".toggle"):
+        for control in await card.locator(selector).all():
+            assert await control.is_disabled(), selector
+    await card.locator(".step[data-step='up']").click(force=True)
+    await card.locator(".segmented button").first.click(force=True)
+    await page.wait_for_timeout(800)
+    assert await calls(page) == []
+
+    # What stays: starting a temporary profile, automatic mode, the lock.
+    assert await card.locator(".profile[data-id='p5']").is_enabled()
+    assert await card.locator(".lock").is_enabled()
+
+
+async def test_an_unprotected_profile_held_by_automatic_mode_can_be_changed(
+    open_card,
+):
+    page = await open_card(AUTOMATIC)
+    card = page.locator("climate-profile-card")
+    assert await card.locator(".step[data-step='up']").is_enabled()

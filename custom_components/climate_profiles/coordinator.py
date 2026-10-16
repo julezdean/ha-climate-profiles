@@ -784,6 +784,17 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """Write individual values, then re-evaluate which profile that is."""
         if not values:
             return
+        active = self.data.active if self.data else None
+        if self._automatic and active is not None and active.protected:
+            # Automatic mode holds a profile that keeps changes out. A change
+            # here could only make the state custom, which is the one thing
+            # write protection under automatic mode is meant to prevent. The
+            # device's own buttons cannot be refused; they still lead there.
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="automatic_profile_protected",
+                translation_placeholders={"profile": active.name},
+            )
         # Changing something by hand ends the question whether the profile
         # applied before took: from here on the state is yours, not the
         # device's answer. A change made on the device itself cannot be told

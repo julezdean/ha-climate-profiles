@@ -41,7 +41,12 @@ versioning [Semantic Versioning](https://semver.org/).
   on, only temporary profiles are offered, and whatever else is active is
   shown without being pickable. A running temporary profile counts down in
   its button - under the name, beside or below the icon, in the closed
-  dropdown - and a tap ends it.
+  dropdown - and a tap ends it. The time grows with the room the button has.
+- **A write protected profile held by automatic mode cannot be changed.**
+  `set_value` is refused, and the card turns display only - temperature,
+  mode, power and every other control - so the state cannot slip to custom.
+  Temporary profiles, the automatic mode button and the lock stay usable; the
+  device's own buttons cannot be stopped.
 
 ### Changed
 

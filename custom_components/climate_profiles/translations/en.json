@@ -228,6 +228,9 @@
     },
     "automatic_needs_sensor": {
       "message": "Automatic mode needs a profile sensor. Set one in the device's options under \"Automatic mode\"."
+    },
+    "automatic_profile_protected": {
+      "message": "Automatic mode holds \"{profile}\", which is write protected, so its values cannot be changed. Switch automatic mode off, or lift the write protection."
     }
   }
 }
