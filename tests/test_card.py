@@ -769,11 +769,12 @@ async def test_the_target_is_shown_by_default(open_card):
     assert "problem" not in (await target.get_attribute("class"))
 
 
-async def test_the_target_is_only_the_profile_name(open_card):
-    """No "Target" label in front of it: the icon says what the row is."""
+async def test_the_target_is_only_the_profile(open_card):
+    """No "Target" label and no target icon: the profile's mark and name."""
     page = await open_card(AUTOMATIC)
     target = page.locator("climate-profile-card .target")
     assert (await target.inner_text()).strip() == "Comfort"
+    assert await target.locator("ha-icon[icon='mdi:target']").count() == 0
 
 
 async def test_the_target_is_left_out_while_automatic_mode_is_off(open_card):
@@ -823,12 +824,10 @@ async def test_automatic_mode_offers_only_temporary_profiles(open_card, layout):
     for profile_id in ("p5", "p6"):
         button = card.locator(f".profile[data-id='{profile_id}']")
         assert await button.is_enabled(), profile_id
-    # What automatic mode chose is shown, not offered.
-    comfort = card.locator(".profile[data-id='p3']")
-    assert await comfort.is_disabled()
-    assert "active" in (await comfort.get_attribute("class"))
-    for profile_id in ("p1", "p2", "p4", "p7", "__custom__"):
+    # What automatic mode chose is not in the list either, though it is on.
+    for profile_id in ("p1", "p2", "p3", "p4", "p7", "__custom__"):
         assert await card.locator(f".profile[data-id='{profile_id}']").count() == 0
+    assert await card.locator(".profile.active").count() == 0
 
 
 async def test_automatic_mode_offers_only_temporary_profiles_in_the_list(open_card):
@@ -836,12 +835,47 @@ async def test_automatic_mode_offers_only_temporary_profiles_in_the_list(open_ca
     card = page.locator("climate-profile-card")
     await card.locator(".picker-trigger").click()
 
-    offered = card.locator(".picker-option:not(:disabled)")
-    assert [await item.get_attribute("data-id") for item in await offered.all()] == [
+    listed = card.locator(".picker-option")
+    assert [await item.get_attribute("data-id") for item in await listed.all()] == [
         "p5",
         "p6",
     ]
-    assert await card.locator(".picker-option[data-id='p3']").is_disabled()
+    assert await listed.locator(":disabled").count() == 0
+    # The closed list is not named after what automatic mode chose.
+    trigger = card.locator(".picker-trigger")
+    assert await trigger.locator(".picker-name").inner_text() == "Profiles"
+
+
+@pytest.mark.parametrize("layout", ["grid", "icons", "dropdown"])
+async def test_automatic_mode_does_not_list_custom(open_card, layout):
+    state = {
+        **AUTOMATIC,
+        "active_profile": "Custom",
+        "active_profile_id": "__custom__",
+        "active_profile_color": "#78909c",
+    }
+    page = await open_card(state, card={"profile_layout": layout})
+    card = page.locator("climate-profile-card")
+    assert await card.locator("[data-id='__custom__']").count() == 0
+
+
+@pytest.mark.parametrize("layout", ["grid", "scroll", "icons", "dropdown"])
+async def test_without_temporary_profiles_automatic_mode_lists_nothing(
+    open_card, layout
+):
+    """No empty box where the profiles were."""
+    page = await open_card(
+        automatic_state(target="Comfort", target_id="h3"),
+        device="heating",
+        card={"profile_layout": layout},
+    )
+    card = page.locator("climate-profile-card")
+    assert await card.locator(".profiles").is_hidden()
+    assert await card.locator(".target-name").inner_text() == "Comfort"
+
+    await page.evaluate("setCardState({})")
+    await page.wait_for_timeout(100)
+    assert await card.locator(".profiles").is_visible(), "back with automatic mode off"
 
 
 async def test_a_temporary_profile_is_started_from_the_card(open_card):

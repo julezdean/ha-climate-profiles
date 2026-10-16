@@ -273,10 +273,11 @@ unavailable. `show_target: false` leaves the row out.
 device's automatic mode switch: outlined while off, filled while on, with an
 orange dot while it waits for a profile it can follow.
 
-While automatic mode is on, the card offers only the
-[temporary profiles](#temporary-profiles). Whatever else is active - the
-profile the sensor chose, custom - is shown but cannot be picked; a hidden
-one stays hidden. Without temporary profiles that is the one button left. A running
+While automatic mode is on, the card lists the
+[temporary profiles](#temporary-profiles) and nothing else. The profile the
+sensor chose is not in the list, nor is custom - the header names what is on,
+and the target row what the sensor names. The closed dropdown reads
+"Profiles" then. Without temporary profiles the list is left out. A running
 temporary profile shows the time it has left: under its name in the grid and
 scroll layouts, next to the icon in `icons` - below it when the button is
 narrow - and in the closed field in `dropdown`. A tap on it ends it; in

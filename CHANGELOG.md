@@ -38,10 +38,11 @@ versioning [Semantic Versioning](https://semver.org/).
   is none; `show_target: false` leaves it out.
   `show_automatic: true` adds a button left of the lock that flips the
   automatic mode switch, with a dot while it waits. While automatic mode is
-  on, only temporary profiles are offered, and whatever else is active is
-  shown without being pickable - unless it is hidden. A running temporary profile counts down in
-  its button - under the name, beside or below the icon, in the closed
-  dropdown - and a tap ends it. The time grows with the room the button has.
+  on, the card lists the temporary profiles and nothing else - not the
+  profile the sensor chose, not custom - and without temporary profiles it
+  leaves the list out. A running temporary profile counts down in its
+  button - under the name, beside or below the icon, in the closed dropdown -
+  and a tap ends it. The time grows with the room the button has.
 - **A write protected profile held by automatic mode cannot be changed.**
   `set_value` is refused, and the card turns display only - temperature,
   mode, power and every other control - so the state cannot slip to custom.

@@ -128,7 +128,7 @@ SHOTS: dict[str, dict] = {
     # Automatic mode on, with its switch and its target shown: the temporary
     # "Night" overrides the sensor for another 24 minutes, and "Comfort" - what
     # the sensor names - takes over afterwards. Only temporary profiles are
-    # offered. Without a profile sensor none of this is in any other picture.
+    # listed. Without a profile sensor none of this is in any other picture.
     "card-automatic": {
         "theme": "light",
         "card": {"show_automatic": True},

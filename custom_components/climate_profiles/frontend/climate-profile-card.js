@@ -366,13 +366,12 @@ class ClimateProfileCard extends HTMLElement {
 
   /**
    * Whether the active profile is one the card lists only while it is active:
-   * custom, which is a status and not a preset, or one automatic mode chose.
-   * A profile hidden from the card is not listed even then.
+   * custom, which is a status and not a preset - outside automatic mode. In
+   * automatic mode the list holds the temporary profiles and nothing else,
+   * and a profile hidden from the card is never in it.
    */
   _shownWhileActive(model) {
-    if (model.activeId === (model.custom.id || CUSTOM_ID)) return true;
-    const active = model.profiles.find((profile) => profile.id === model.activeId);
-    return Boolean(active && !active.hidden && !this._pickable(model, active));
+    return !model.autoOn && model.activeId === (model.custom.id || CUSTOM_ID);
   }
 
   /* ---- rendering ---- */
@@ -386,9 +385,9 @@ class ClimateProfileCard extends HTMLElement {
       return;
     }
 
-    // Custom and a profile automatic mode chose are in the list only while
-    // they are what the device is doing, so that coming and going changes
-    // what is built - the active profile itself is only painted.
+    // Custom is in the list only while it is what the device is doing, so
+    // that coming and going changes what is built - the active profile
+    // itself is only painted.
     const shownWhileActive = this._shownWhileActive(model) ? model.activeId : "";
     const signature = [
       model.profiles
@@ -512,7 +511,6 @@ class ClimateProfileCard extends HTMLElement {
         </header>
 
         <section class="target" role="status" hidden>
-          <ha-icon class="target-icon" icon="mdi:target"></ha-icon>
           <span class="target-mark"></span>
           <span class="target-name"></span>
         </section>
@@ -622,6 +620,8 @@ class ClimateProfileCard extends HTMLElement {
 
     if (layout === "dropdown") {
       this._buildProfileSelect(model, all);
+      // In automatic mode without temporary profiles there is nothing to list.
+      wrap.hidden = this._profilePicker.options.size === 0;
       return;
     }
 
@@ -633,19 +633,18 @@ class ClimateProfileCard extends HTMLElement {
       const isActive = profile.id === model.activeId;
       // Custom has no icon of its own, and a row of icons has no room for a
       // dashed box that says nothing: it joins only while it is what is on.
-      // In automatic mode it is no different from any other profile the
-      // card does not offer.
-      const always = profile.virtual && !iconsOnly && !model.autoOn;
-      // What automatic mode chose is not offered, but still there while it
-      // is on: the card does not pretend the device is doing something else.
-      if (!pickable && !isActive && !always) continue;
+      // In automatic mode the list is the temporary profiles alone - what
+      // the sensor chose is in the header and the target row.
+      if (!pickable) {
+        if (!profile.virtual || model.autoOn) continue;
+        if (iconsOnly && !isActive) continue;
+      }
       const button = document.createElement("button");
       button.type = "button";
       button.className = iconsOnly ? "profile icon-only" : "profile";
       button.dataset.id = profile.id;
       if (!pickable) button.classList.add("fixed");
       if (profile.virtual) button.classList.add("virtual");
-      if (!profile.virtual && !pickable) button.classList.add("chosen");
       const [r, g, b] = hexToRgb(profile.color);
       button.style.setProperty("--profile-rgb", `${r}, ${g}, ${b}`);
       button.style.setProperty("--profile-color", profile.color);
@@ -681,9 +680,6 @@ class ClimateProfileCard extends HTMLElement {
             "Shown when the current state matches none of your profiles."
           );
         }
-      } else if (!pickable) {
-        button.disabled = true;
-        if (!iconsOnly) button.title = this._t("Chosen by automatic mode.");
       } else {
         button.addEventListener("click", () => this._tapProfile(profile));
       }
@@ -691,6 +687,8 @@ class ClimateProfileCard extends HTMLElement {
       wrap.appendChild(button);
       this._profileButtons.set(profile.id, button);
     }
+    // In automatic mode without temporary profiles there is nothing to list.
+    wrap.hidden = this._profileButtons.size === 0;
   }
 
   /**
@@ -726,17 +724,20 @@ class ClimateProfileCard extends HTMLElement {
     const options = new Map();
     for (const profile of all) {
       // Custom is a status, not something to pick: it is in the list while it
-      // is what the device is doing, and cannot be chosen. One automatic mode
-      // chose is treated the same way; a hidden one is not in the list at all.
+      // is what the device is doing, and cannot be chosen - outside automatic
+      // mode. In automatic mode the list is the temporary profiles alone, and
+      // a hidden profile is never in it.
       if (profile.hidden) continue;
       const onlyWhileActive = !this._pickable(model, profile);
-      if (onlyWhileActive && profile.id !== model.activeId) continue;
+      if (onlyWhileActive) {
+        if (!profile.virtual || model.autoOn) continue;
+        if (profile.id !== model.activeId) continue;
+      }
       const option = document.createElement("button");
       option.type = "button";
       option.className = "picker-option";
       option.setAttribute("role", "option");
       option.dataset.id = profile.id;
-      if (onlyWhileActive && !profile.virtual) option.classList.add("chosen");
       option.style.setProperty("--profile-color", profile.color);
       option.innerHTML = `
         ${profileMark(profile)}
@@ -1124,9 +1125,10 @@ class ClimateProfileCard extends HTMLElement {
         model.profiles.find((profile) => profile.id === model.activeId) ||
         model.custom;
       const { trigger, list, options } = this._profilePicker;
-      // A hidden profile is not named here either: the closed list says
-      // only that it is a list of profiles.
-      const shown = !active.hidden;
+      // A profile that is not in the list - hidden, or chosen by automatic
+      // mode - is not named here either: the closed list says only that it
+      // is a list of profiles.
+      const shown = options.has(active.id);
       trigger.querySelector(".picker-name").textContent = shown
         ? active.name
         : this._t("Profiles");
@@ -1653,7 +1655,6 @@ const CARD_DE = {
   Temperature: "Temperatur",
   "Shown when the current state matches none of your profiles.":
     "Wird angezeigt, wenn der aktuelle Zustand zu keinem Profil passt.",
-  "Chosen by automatic mode.": "Von der Automatik gewählt.",
   "Automatic mode": "Automatik",
   "Automatic mode is off": "Automatik ist aus",
   "Automatic mode is on": "Automatik ist an",
@@ -1876,7 +1877,6 @@ ha-card.unavailable { opacity: 0.6; }
   font-size: 0.82rem;
   color: var(--cp-muted);
 }
-.target-icon { --mdc-icon-size: 16px; flex: none; }
 .target-mark { display: flex; flex: none; align-items: center; }
 .target-mark ha-icon { --mdc-icon-size: 16px; color: var(--profile-color); }
 .target-mark .dot-mark {
@@ -2034,6 +2034,9 @@ ha-card.unavailable { opacity: 0.6; }
 .dial .step { width: 46px; height: 46px; border-radius: 16px; }
 
 /* profiles */
+/* above every layout's own display, which would beat the attribute */
+.profiles[hidden],
+.profiles[hidden][data-layout] { display: none; }
 .profiles { display: grid; gap: 8px; }
 .profiles[data-layout="grid"] {
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
@@ -2106,7 +2109,7 @@ ha-card.unavailable { opacity: 0.6; }
   font-weight: 500;
 }
 .picker-trigger .picker-name { flex: 1; min-width: 0; }
-/* a hidden profile is on: the list is not named after it */
+/* the active profile is not in the list: the list is not named after it */
 .picker-trigger.none .picker-name { color: var(--cp-muted); }
 .picker-trigger.none .picker-mark { display: none; }
 .picker-countdown[hidden] { display: none; }
@@ -2262,16 +2265,6 @@ ha-card.unavailable { opacity: 0.6; }
   border-style: solid;
   color: var(--profile-contrast);
 }
-/* Chosen by automatic mode: disabled only so it cannot be picked here. It is
-   a real profile the device is running, not a status like custom, so it is
-   not faded the way every other disabled button is. */
-.profile.chosen,
-.picker-option.chosen:disabled {
-  opacity: 1;
-  color: var(--cp-text);
-  cursor: default;
-}
-.profile.chosen.active { color: var(--profile-contrast); }
 
 /* the time a temporary profile has left */
 .profile-countdown[hidden] { display: none; }
