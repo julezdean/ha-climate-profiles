@@ -16,11 +16,14 @@ from custom_components.climate_profiles.const import (
     CONF_CUSTOM_NAME,
     CONF_PROFILE_COLOR,
     CONF_PROFILE_DETECT,
+    CONF_PROFILE_DURATION,
     CONF_PROFILE_HIDDEN,
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PRIORITY,
     CONF_PROFILE_PROTECTED,
+    CONF_PROFILE_TEMPORARY,
     CONF_PROFILE_VALUES,
     CONF_PROFILES,
     DOMAIN,
@@ -263,13 +266,13 @@ async def submit_values(hass, entry, rows, **extra):
     )
 
 
-async def test_the_menu_has_the_two_lists(hass):
+async def test_the_menu_has_the_two_lists_and_automatic_mode(hass):
     entry = await setup_options(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
 
     assert result["type"] is FlowResultType.MENU
-    assert set(result["menu_options"]) == {"values", "profiles"}
+    assert set(result["menu_options"]) == {"values", "profiles", "automatic"}
 
 
 async def test_adding_a_profile(hass):
@@ -325,6 +328,31 @@ async def test_a_new_profile_is_neither_recognised_nor_hidden(hass):
     assert CONF_PROFILE_PROTECTED not in stored
 
 
+@pytest.mark.parametrize(
+    ("names", "custom_name", "taken"),
+    [
+        (["Komfort", " komfort "], "Custom", "Komfort"),
+        (["Manuell"], "Manuell", "Manuell"),
+        (["custom"], "Manuell", "custom"),
+    ],
+)
+async def test_profile_names_have_to_be_unique(hass, names, custom_name, taken):
+    """Another profile's name, or the custom profile's, is refused."""
+    entry = await setup_options(hass)
+
+    result = await submit_profiles(
+        hass,
+        entry,
+        [{CONF_PROFILE_NAME: name, "hvac_mode": "cool"} for name in names],
+        **{CONF_CUSTOM_NAME: custom_name},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_PROFILES: "name_taken"}
+    assert result["description_placeholders"]["name"] == taken
+    assert entry.options[CONF_PROFILES] == []
+
+
 async def test_hiding_a_profile_from_the_card(hass):
     entry = await setup_options(hass)
 
@@ -370,6 +398,9 @@ async def test_the_list_shows_what_is_stored(hass):
             CONF_PROFILE_DETECT: True,
             CONF_PROFILE_HIDDEN: False,
             CONF_PROFILE_PROTECTED: False,
+            CONF_PROFILE_TEMPORARY: False,
+            CONF_PROFILE_DURATION: 60,
+            CONF_PROFILE_PRIORITY: False,
             CONF_PROFILE_ID: "keep-me",
             "hvac_mode": "cool",
             "temperature": 24,

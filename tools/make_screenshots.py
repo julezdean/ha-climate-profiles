@@ -100,8 +100,8 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
-    # A profile hidden from the card, set by an automation: shown while it is
-    # what the device is doing, and not offered otherwise.
+    # A profile hidden from the card, set by an automation, is what the device
+    # is doing: it is not shown, and no other button is marked active.
     "card-hidden": {
         "theme": "light",
         "state": {
@@ -123,6 +123,102 @@ SHOTS: dict[str, dict] = {
             "active_profile": "Comfort+",
             "active_profile_id": "p4",
             "active_profile_color": "#10b981",
+        },
+    },
+    # Automatic mode on, with its switch and its target shown: the temporary
+    # "Night" overrides the sensor for another 24 minutes, and "Comfort" - what
+    # the sensor names - takes over afterwards. Only temporary profiles are
+    # listed. Without a profile sensor none of this is in any other picture.
+    "card-automatic": {
+        "theme": "light",
+        "card": {"show_automatic": True},
+        "state": {
+            "temperature": 26,
+            "silent": "on",
+            "active_profile": "Night",
+            "active_profile_id": "p5",
+            "active_profile_color": "#8b5cf6",
+            "automatic": {
+                "status": "temporary",
+                "sensor": "sensor.wanted_profile",
+                "sensor_state": "Comfort",
+                "target": "Comfort",
+                "target_id": "p3",
+                "problem": None,
+                "temporary": {
+                    "profile": "Night",
+                    "profile_id": "p5",
+                    "until": "+1452",
+                },
+            },
+        },
+    },
+    # A radiator under automatic mode, with every switch the card has: the
+    # temporary "Boost" runs for another 17 minutes, then "Comfort" - what the
+    # sensor names - takes over. Boost is write protected, so the lock is
+    # closed and the card is display only apart from these buttons. The mode
+    # row is hidden, the way a heating dashboard usually has it.
+    "card-heating-boost": {
+        "theme": "light",
+        "device": "bathroom",
+        "card": {
+            "name": "Bathroom",
+            "profile_layout": "icons",
+            "temperature_style": "dial",
+            "show_target": True,
+            "show_automatic": True,
+            "show_protection": True,
+            "hide": ["hvac_mode"],
+        },
+        "state": {
+            "temperature": 24,
+            "active_profile": "Boost",
+            "active_profile_id": "b3",
+            "active_profile_color": "#e29c9c",
+            "automatic": {
+                "status": "temporary",
+                "sensor": "sensor.bathroom_wanted_profile",
+                "sensor_state": "Comfort",
+                "target": "Comfort",
+                "target_id": "b2",
+                "problem": None,
+                "temporary": {
+                    "profile": "Boost",
+                    "profile_id": "b3",
+                    "until": "+1032",
+                },
+            },
+        },
+    },
+    # The same radiator with the window open: the sensor names "Ventilate",
+    # which takes priority over temporary profiles, so Boost cannot be
+    # started - the button is disabled and the target row says why.
+    "card-heating-priority": {
+        "theme": "light",
+        "device": "bathroom",
+        "card": {
+            "name": "Bathroom",
+            "profile_layout": "icons",
+            "temperature_style": "dial",
+            "show_target": True,
+            "show_automatic": True,
+            "show_protection": True,
+            "hide": ["hvac_mode"],
+        },
+        "state": {
+            "hvac_mode": "off",
+            "active_profile": "Ventilate",
+            "active_profile_id": "b5",
+            "active_profile_color": "#64748b",
+            "automatic": {
+                "status": "following",
+                "sensor": "sensor.bathroom_wanted_profile",
+                "sensor_state": "Ventilate",
+                "target": "Ventilate",
+                "target_id": "b5",
+                "problem": None,
+                "temporary": None,
+            },
         },
     },
 }

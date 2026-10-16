@@ -61,15 +61,31 @@ special cases - do not "fix" them into a normal state:
 | `card-icons.png` | the thermostat with `profile_layout: icons` |
 | `card-unreached.png` | "Max" was applied but the device dropped the fan to silent - the report is up |
 | `card-protection.png` | `show_protection: true`, "Comfort+" is active and write protected - the lock is closed |
-| `card-hidden.png` | "Summer", hidden from the card, is active - shown, but not offered |
+| `card-hidden.png` | "Summer", hidden from the card, is active - not shown, no button is marked |
+| `card-automatic.png` | `show_automatic: true`, automatic mode on, the temporary "Night" runs for another 24 minutes, the sensor names "Comfort" |
+| `card-heating-priority.png` | the same radiator with the window open: the sensor names "Ventilate", which takes priority, so "Boost" is disabled and the target row says why |
+| `card-heating-boost.png` | the bathroom radiator with `icons`, `dial`, `show_target`, `show_automatic`, `show_protection` and `hvac_mode` hidden: the temporary, write protected "Boost" runs for another 17 minutes, the sensor names "Comfort" |
 
 "Comfort+" is write protected in every shot, but only `card-protection.png`
 asks the card to show it; without `show_protection` there is no lock, so the
 other pictures do not change with it.
 
 "Summer" is in the air conditioner's profiles in every shot. It is hidden from
-the card, so it shows up only in `card-hidden.png`, where it is active; the
-other pictures must not change when it is added or edited.
+the card, so it is in no picture; `card-hidden.png` shows it active, which
+the card shows by marking nothing. The pictures must not change when it is
+added or edited.
+
+"Night" and "Max" are temporary in every shot. That only matters in automatic
+mode, so it shows up only in `card-automatic.png`; the other pictures have no
+profile sensor, no target row and no countdown. A temporary profile's end in
+`?state=` may be given as `"+<seconds>"` from now, so the countdown in the
+picture does not depend on when the recipe runs.
+
+`?device=bathroom` is a radiator set up the way automatic mode is meant to be
+used: every profile a sensor picks is hidden, and the temporary "Boost" is the
+only one to start by hand, and "Ventilate" takes priority over it. It is a
+device of its own so that adding it left the plain thermostat pictures as
+they were; only the two `card-heating-*` pictures with automatic mode use it.
 
 To look at a state interactively:
 
@@ -80,4 +96,5 @@ python -m http.server 8712
 
 `?state=<url encoded JSON>` overrides the device state, `?card=<url encoded
 JSON>` the card configuration, and `?device=heating` swaps the air conditioner
-for a radiator thermostat.
+for a radiator thermostat, `?device=bathroom` for the radiator in automatic
+mode.

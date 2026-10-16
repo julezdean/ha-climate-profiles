@@ -89,8 +89,10 @@ list position cannot disagree with itself.
 
 **Ids, not names.** Profiles have opaque ids. Renaming a profile keeps
 automations working, and `active_profile_id` is the attribute automations
-should trigger on. Names may even collide - the select entity disambiguates
-them for its options.
+should trigger on. Names are unique all the same - no two profiles share one, and
+none takes the custom profile's - because a name is what a person, a voice
+assistant or a sensor hands in, and a name two profiles share points at
+neither. Profiles stored before that rule are renamed once, with a counter.
 
 **Options, not a custom store.** Profiles live in the config entry's options,
 so Home Assistant persists them, and multiple instances cannot mix. Changing
@@ -116,15 +118,36 @@ profile that rewrites itself needs an echo guard - a way to tell the
 integration's own writes from a change - and has it twice: the baseline is
 renewed after the integration wrote the state itself, and the window right
 after a profile was applied belongs to the device's answer, not to anybody's
-decision. Such a profile reports "custom" only for the few seconds until the
-change is in it; that is the point of it. A profile that should keep reporting
-deviations is write protected.
+decision. Such a profile stays active for the few seconds until the change is
+in it: the change is on its way into the profile, and custom in between would
+be a flap every automation on the state sees. A profile that should keep
+reporting deviations is write protected.
 
 **Options changes do not reload the entry.** Only the entity map is baked into
 the coordinator; profiles and the custom name are read fresh on each access.
 So storing a change updates the options and refreshes, instead of
 reloading and making every entity blink. A change to the entities themselves
 still reloads - that is what `async_reload_entry` decides.
+
+**Automatic mode has no conditions.** A sensor of the user's names the
+profile, and the integration applies it - no rule engine, no priorities. Home
+Assistant already has templates, schedules and automations to decide such
+things, and a second, weaker set of them in the options would be one more
+place to look. Only a change of the named profile writes, so a restart or a
+sensor that repeats itself does not undo a change made by hand, and while
+automatic mode is on, `async_apply_profile` refuses every other caller in one
+place - except for a temporary profile, which it starts instead. A temporary
+profile stores its end, not what is left of it, so a restart neither
+lengthens it nor forgets it.
+
+**Priority is a property of the profile, not a rule.** A profile marked as
+taking priority wins over temporary ones while the sensor names it: the
+running one ends, and none can start. It is checked where the sensor is
+followed and where a profile is applied - the same two places every other
+automatic decision sits - so the card, the select entity, the service and a
+restart cannot disagree. It ends a temporary profile rather than pausing it:
+after the window is closed again, a boost that resumes on its own would be
+a surprise, and starting it anew is one tap.
 
 ## What Home Assistant cannot do here
 

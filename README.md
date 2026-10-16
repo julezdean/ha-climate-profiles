@@ -99,10 +99,11 @@ Each config entry creates one device with these entities:
 | `sensor.<name>_climate_profile` | the active profile's name, plus everything the card needs as attributes |
 | `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
 | `switch.<name>_<profile>_write_protected` | one per profile: whether it keeps changes made by hand out |
+| `switch.<name>_automatic_mode` | only with a profile sensor: whether that sensor decides the profile - see [Automatic mode](#automatic-mode) |
 
 (The entity names are translated, so a German instance gets
 `sensor.<name>_klimaprofil`, `select.<name>_profil` and
-`switch.<name>_<profil>_schreibgeschutzt`.)
+`switch.<name>_<profil>_schreibgeschutzt` and `switch.<name>_automatik`.)
 
 The switches are configuration entities: they appear under the device's
 settings, not on an automatically generated dashboard. A profile added in the
@@ -119,7 +120,7 @@ Two lists, and everything about an entry happens in one of them.
 | List | One row is | The row holds |
 | --- | --- | --- |
 | **Manage values** | an additional value | name, the entity behind it, an icon |
-| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, and every value it sets |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, whether it can be started for a while in automatic mode and for how long, whether it takes priority over such profiles, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
 button below the list adds one. The id a profile or a value is known by rides
@@ -151,6 +152,12 @@ nothing is - see [Changes made by hand](#changes-made-by-hand). It is the same
 setting as the profile's switch entity. The row itself always stays editable,
 protected or not.
 
+Profile names are unique: no two profiles may share one - compared without
+regard to case or surrounding spaces, the way `apply_profile` finds a profile -
+and none may be called like custom. The form refuses such a name. Profiles
+stored before 2.2 with a shared name were renamed once, the later one getting a
+counter: "Comfort (2)".
+
 Only `hvac_mode` is required - a profile that does not say what the device
 should do is rarely useful. Everything else is optional and, when left empty,
 is not touched when the profile is applied.
@@ -174,10 +181,12 @@ range - comes from the integration. Options, all optional:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `name` | the entity's name | title shown in the header |
-| `profile_layout` | `auto` | `auto`, `grid`, `scroll`, `dropdown` or `icons` |
+| `profile_layout` | `grid` | `grid`, `scroll`, `dropdown` or `icons` |
 | `temperature_style` | `bar` | `bar` or `dial` |
 | `hide` | `[]` | values to leave out, by key or id |
 | `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
+| `show_automatic` | `false` | a button next to the lock that switches [automatic mode](#automatic-mode) on and off |
+| `show_target` | `true` | a row with the profile automatic mode is aiming for - only while automatic mode is on |
 
 Everything configured is shown unless you hide it, so a value you add later
 appears without editing every dashboard. The list mixes the four climate keys
@@ -213,7 +222,9 @@ profile is the filled button, without the check mark the other layouts draw -
 it would sit on top of the icon. **Custom** joins the row only while it is
 what is on.
 
-`auto` chooses neither - it is grid up to six profiles and scroll beyond.
+There is no `auto` any more: it chose grid or scroll by the number of
+profiles, and automatic mode changes that number. A card still set to `auto`
+is a grid.
 
 ### Hidden from the card
 
@@ -221,10 +232,11 @@ A profile can be **hidden on the card** - a "Summer" that only an automation
 sets, and nobody should pick by hand. It is one switch in the profile's row,
 off by default, and it holds for every dashboard at once.
 
-Hidden means not offered, not invisible: while the hidden profile is what the
-device is doing, the card shows it like any active profile - it just cannot be
-picked there. The rest of the time it is not in the list, in any layout, and it
-does not count towards the six profiles `auto` decides by.
+Hidden means hidden: it is not in the list, in any layout, also while it is
+what the device is doing. Then no button is marked active - not custom either,
+since a profile does match - and the closed dropdown reads "Profiles". A
+profile both hidden and temporary is hidden: automatic mode does not offer it
+on the card either.
 
 It is about the card and nothing else. `apply_profile` and the select entity
 still reach it - the select has to keep it among its options, or its state
@@ -233,7 +245,7 @@ write protection: change something by hand while it is active, and the change
 is stored into it like into any other profile, unless it is **write
 protected**.
 
-![A hidden profile while it is active](docs/images/card-hidden.png)
+![A hidden profile while it is active: nothing is marked](docs/images/card-hidden.png)
 
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
@@ -253,6 +265,52 @@ protect, so the lock is not there while nothing matches. To protect a profile
 that is not active, use its switch.
 
 ![The lock of a write protected profile](docs/images/card-protection.png)
+
+### Automatic mode on the card
+
+While automatic mode is on, the card shows a row with what the sensor names -
+the **target**: the profile's mark and name, nothing in front of it. It stays
+while a temporary profile runs, since it is what comes next, and goes when
+automatic mode is switched off. Without a profile to name, the row says why,
+in the warning colour: `No profile "Komfort"`, or that the sensor is
+unavailable. `show_target: false` leaves the row out.
+
+`show_automatic: true` puts a round button left of the lock that flips the
+device's automatic mode switch: outlined while off, filled while on, with an
+orange dot while it waits for a profile it can follow.
+
+While automatic mode is on, the card lists the
+[temporary profiles](#temporary-profiles) and nothing else. The profile the
+sensor chose is not in the list, nor is custom - the header names what is on,
+and the target row what the sensor names. The closed dropdown reads
+"Profiles" then. Without temporary profiles the list is left out. A running
+temporary profile shows the time it has left: under its name in the grid and
+scroll layouts, next to the icon in `icons` - below it when the button is
+narrow - and in the closed field in `dropdown`. A tap on it ends it; in
+`dropdown` the tap ends it instead of opening the list. Starting another one
+replaces it. The time left grows with the button: small in a row of six,
+large on a button of its own.
+
+![Automatic mode with a temporary profile running](docs/images/card-automatic.png)
+
+On a radiator the same thing usually looks like this: every profile the sensor
+picks is hidden, so the only button is the temporary **Boost**, counting down.
+It is write protected, so the lock is closed and the card is display only
+until Boost ends - then "Comfort", the target, takes over.
+
+```yaml
+type: custom:climate-profile-card
+entity: sensor.bathroom_climate_profile
+name: Bathroom
+profile_layout: icons
+temperature_style: dial
+show_target: true
+show_automatic: true
+show_protection: true
+hide: [hvac_mode]
+```
+
+![A radiator in automatic mode with Boost counting down](docs/images/card-heating-boost.png)
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
@@ -388,6 +446,126 @@ reported rather than silently dropped.
 The first two are pinned down by tests in `tests/test_heating.py`. The humidity
 a device reports is shown on the card; it is just not something a profile sets.
 
+## Automatic mode
+
+Automatic mode applies the profile a sensor of yours names. The sensor's state
+is a profile's name (case does not matter) or its id; which profile that is,
+you decide there - with a template, a schedule, another device's profile
+sensor. The integration has no conditions of its own, it only applies what the
+sensor says.
+
+Set the sensor under **Configure → Automatic mode**. The device then gets the
+switch `switch.<name>_automatic_mode`; leaving the field empty removes it again.
+Only `sensor` entities can be picked, and not the device's own profile sensor.
+For an `input_select`, put a template sensor in between:
+
+```yaml
+template:
+  - sensor:
+      - name: Living room wanted profile
+        state: "{{ states('input_select.living_room_profile') }}"
+```
+
+While the switch is on:
+
+- **A new name writes, the same name does not.** When the sensor names a
+  different profile, it is applied. When it reports the same one again - or
+  Home Assistant restarts - nothing is written, so what was changed by hand
+  since stays. Switching automatic mode on applies the sensor's profile once.
+- **Profiles cannot be chosen by hand.** The card, the select entity,
+  `apply_profile` and voice assistants are refused with an error, all alike.
+  `set_value` and the device's own buttons still work: changing the device is
+  not choosing a profile.
+- **A change made by hand goes into the profile, as always** - unless it is
+  write protected; see [Changes made by hand](#changes-made-by-hand). A
+  write protected profile that automatic mode holds cannot be changed at all:
+  `set_value` is refused, and the card is display only, apart from temporary
+  profiles, the automatic mode button and the lock. Only the device's own
+  buttons still get through, and lead to custom.
+- **No profile, no write.** A sensor that is unavailable, or names no profile,
+  makes automatic mode wait: the device keeps what it has, the switch stays
+  on, and the sensor's `automatic` attribute says why. Once the sensor names a
+  profile again, it is applied. To make automatic mode hold still, switch it
+  off.
+
+### Coming from an automation
+
+Before 2.2 the usual way was an automation that called `apply_profile`
+whenever a sensor changed. With automatic mode on, such a call is refused, so
+replace it rather than run both:
+
+1. Under **Configure → Automatic mode**, pick the sensor the automation
+   followed.
+2. Switch the new automatic mode switch on.
+3. A "hold this profile for a while" rule - a boost that ignores the sensor
+   for 20 minutes - becomes a [temporary profile](#temporary-profiles) with
+   that duration, instead of timers and helpers. What used to beat the boost -
+   an open window - becomes a [profile that takes
+   priority](#profiles-that-take-priority).
+4. Delete the automation, and whatever only existed for it.
+
+Priorities between conditions - an open window beats everything but summer,
+say - stay in the sensor, where they were.
+
+### Temporary profiles
+
+A profile can be marked **Can be started for a while in automatic mode**, with
+a duration in minutes (an hour unless you set one). While automatic mode is
+on, such a profile is the one exception to "cannot be chosen by hand": started
+from the card, the select entity or `apply_profile`, it overrides the sensor
+until its time is up.
+
+- **The sensor does not end it.** Whatever the sensor names meanwhile is
+  shown as the target, and applied once the temporary profile ends - even if
+  it is the profile that was applied before.
+- **It ends early** with `climate_profiles.end_temporary`, or when the sensor
+  names a [profile that takes priority](#profiles-that-take-priority). Starting another
+  temporary profile replaces it, with that one's duration; starting the same
+  one again starts its time anew. Switching automatic mode off ends it too,
+  and its values stay.
+- **Deleting it ends it**, and the sensor takes over.
+- **Its end survives a restart.** One that ran out while Home Assistant was
+  down ends right after it starts.
+- **Nothing to hand back to, nothing written.** If the sensor names no profile
+  when the time is up, the device keeps the temporary profile's values and
+  automatic mode waits, as above.
+
+Outside automatic mode the mark has no effect: the profile is chosen like any
+other and stays until something else is.
+
+### Profiles that take priority
+
+Some states have to win over a boost: an open window makes heating for
+another 20 minutes pointless. Mark such a profile **Takes priority over
+temporary profiles in automatic mode**. While the sensor names it:
+
+- **A running temporary profile ends** right away, and the priority profile is
+  applied - as if the time were up.
+- **None can be started.** The card disables its temporary profiles and says
+  why next to the target, and `apply_profile` is refused with an error.
+- **Once the sensor names something else**, temporary profiles can be
+  started again. The one that ended does not come back on its own.
+
+A restart applies the same rule: a temporary profile stored across it ends if
+the sensor names a priority profile by then. Outside automatic mode, and
+while the sensor names another profile, the mark changes nothing.
+
+![The window is open: Boost cannot be started](docs/images/card-heating-priority.png)
+
+```yaml
+automatic:
+  status: following                  # off, following, waiting or temporary
+  sensor: sensor.living_room_wanted_profile
+  sensor_state: Comfort
+  target: Comfort                    # what the sensor names - also while off
+  target_id: 2b3c4d5e…
+  problem: null                      # sensor_unavailable or unknown_profile
+  temporary:                         # null unless one is running
+    {profile: Comfort, profile_id: 2b3c4d5e…, until: "2026-10-14T18:30:00+00:00"}
+```
+
+`automatic` is `null` while no profile sensor is set.
+
 ## Services
 
 ### `climate_profiles.apply_profile`
@@ -398,6 +576,7 @@ target:
   entity_id: sensor.living_room_climate_profile
 data:
   profile: Comfort        # name or id
+  duration: 90            # optional - minutes, for a temporary profile only
 ```
 
 Writes only the values the profile defines. Values that already match produce
@@ -405,7 +584,10 @@ no service call at all - except when the hvac mode changes, because many
 devices reset their attributes on a mode change.
 
 An unknown profile raises a clean `ServiceValidationError` naming the profiles
-that do exist; it never destabilises Home Assistant.
+that do exist; it never destabilises Home Assistant. So does a profile chosen
+while [automatic mode](#automatic-mode) is on, unless it is a temporary one:
+that one is started, for `duration` minutes if the call says so, otherwise
+for its own.
 
 ### `climate_profiles.set_value`
 
@@ -455,6 +637,17 @@ data:
   values: [temperature]   # optional - defaults to the whole state
 ```
 
+### `climate_profiles.end_temporary`
+
+Ends a [temporary profile](#temporary-profiles) before its time is up; the
+profile sensor decides again. Without one running it does nothing.
+
+```yaml
+action: climate_profiles.end_temporary
+target:
+  entity_id: sensor.living_room_climate_profile
+```
+
 More: [`examples/automations.yaml`](examples/automations.yaml).
 
 ## Sensor attributes
@@ -463,7 +656,7 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, detect, hidden, protected, protection_entity, values}, …]
+profiles: [{id, name, color, icon, order, detect, hidden, protected, temporary, duration, priority, protection_entity, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
@@ -472,6 +665,7 @@ entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 unreached:                           # a profile that was applied but did not take
   {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
+automatic: {status, sensor, sensor_state, target, target_id, problem, temporary}   # see Automatic mode
 ```
 
 Automations should trigger on `active_profile_id`. The state is the display

@@ -13,6 +13,7 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_END_TEMPORARY,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
 )
@@ -75,6 +76,7 @@ def test_services_match_the_code():
         SERVICE_SET_VALUE,
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
+        SERVICE_END_TEMPORARY,
     }
     # Only the climate keys are documented: an additional value is named by
     # the user, so it cannot appear in a static service definition.
@@ -89,7 +91,7 @@ def test_every_service_field_is_documented():
     strings = load_json("strings.json")
     services = yaml.safe_load((COMPONENT / "services.yaml").read_text(encoding="utf-8"))
     for service, definition in services.items():
-        documented = strings["services"][service]["fields"]
+        documented = strings["services"][service].get("fields", {})
         assert set(documented) == set(definition.get("fields", {})), service
 
 
@@ -110,8 +112,9 @@ def test_config_and_options_steps_are_translated():
     config_steps = {"user"}
     assert config_steps <= set(strings["config"]["step"])
 
-    # Two lists and the menu that leads to them - nothing else is a step.
-    options_steps = {"init", "values", "profiles"}
+    # Two lists, automatic mode and the menu that leads to them - nothing
+    # else is a step.
+    options_steps = {"init", "values", "profiles", "automatic"}
     assert options_steps == set(strings["options"]["step"])
     # Every menu offers only steps that exist - the two group menus too.
     for step in strings["options"]["step"].values():

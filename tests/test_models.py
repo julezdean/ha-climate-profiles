@@ -83,11 +83,42 @@ def test_duplicate_ids_are_repaired_on_load():
     assert len({p.id for p in loaded}) == 2
 
 
-def test_duplicate_names_get_distinct_display_names():
+def test_duplicate_names_are_repaired_on_load():
+    """The later one gets the counter the select entity used to show."""
+    raw = [
+        {"id": "a", "name": "Komfort", "values": {"hvac_mode": "cool"}},
+        {"id": "b", "name": "komfort", "values": {}},
+    ]
+    assert [p.name for p in ProfileSet.from_list(raw)] == ["Komfort", "komfort (2)"]
+
+
+def test_a_repaired_name_does_not_take_one_that_exists():
     duplicated = ProfileSet(
-        (profile("Komfort", {"hvac_mode": "cool"}, "a"), profile("Komfort", {}, "b"))
+        (
+            profile("Komfort", {}, "a"),
+            profile("Komfort", {}, "b"),
+            profile("Komfort (2)", {}, "c"),
+        )
     )
-    assert list(duplicated.display_names().values()) == ["Komfort", "Komfort (2)"]
+    assert [p.name for p in duplicated.with_unique_names()] == [
+        "Komfort",
+        "Komfort (3)",
+        "Komfort (2)",
+    ]
+
+
+def test_a_reserved_name_is_repaired_too():
+    named_like_custom = ProfileSet((profile("Custom", {}, "a"),))
+    repaired = named_like_custom.with_unique_names(("Custom",))
+    assert [p.name for p in repaired] == ["Custom (2)"]
+
+
+def test_name_taken(profiles):
+    komfort = profiles.resolve("Komfort")
+    assert profiles.name_taken(" komfort ")
+    assert not profiles.name_taken("Komfort", ignoring=komfort.id)
+    assert not profiles.name_taken("Gibt es nicht")
+    assert profiles.name_taken("custom", reserved=("Custom",))
 
 
 def test_resolve_by_id_and_by_name(profiles):

@@ -200,6 +200,22 @@ async def test_a_new_profile_needs_a_name(hass, entry_data):
         )
 
 
+@pytest.mark.parametrize("name", ["komfort", "Custom"])
+async def test_a_new_profile_needs_a_free_name(hass, entry_data, name):
+    set_device_state(hass)
+    entry = await setup_entry(hass, entry_data)
+
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN,
+            "save_as_profile",
+            {"entity_id": SENSOR, "name": name},
+            blocking=True,
+        )
+    assert err.value.translation_key == "profile_name_taken"
+    assert len(stored(entry)) == len(PROFILES)
+
+
 async def test_saving_only_selected_values(hass, entry_data):
     set_device_state(hass, temperature=23)
     entry = await setup_entry(hass, entry_data)

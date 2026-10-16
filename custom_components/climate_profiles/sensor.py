@@ -18,9 +18,11 @@ from .const import (
     ATTR_ACTIVE_PROFILE_ID,
     ATTR_ADDITIONAL,
     ATTR_APPLYING,
+    ATTR_AUTOMATIC,
     ATTR_CAPABILITIES,
     ATTR_COLOR,
     ATTR_CURRENT_VALUES,
+    ATTR_DURATION,
     ATTR_ENTITIES,
     ATTR_ICON,
     ATTR_NAME,
@@ -29,8 +31,10 @@ from .const import (
     ATTR_UNREACHED,
     ATTR_VALUES,
     CUSTOM_PROFILE_ID,
+    MAX_TEMPORARY_MINUTES,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_END_TEMPORARY,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
     VALUE_FAN_MODE,
@@ -41,7 +45,7 @@ from .const import (
 from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
 from .matching import normalise_values
-from .switch import protection_entity_id
+from .switch import automatic_entity_id, protection_entity_id
 
 #: Keys a service call carries that name its target, not a value.
 _TARGET_KEYS = frozenset({"entity_id", "device_id", "area_id", "floor_id", "label_id"})
@@ -98,7 +102,12 @@ async def async_setup_entry(
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
         SERVICE_APPLY_PROFILE,
-        {vol.Required(ATTR_PROFILE): cv.string},
+        {
+            vol.Required(ATTR_PROFILE): cv.string,
+            vol.Optional(ATTR_DURATION): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=MAX_TEMPORARY_MINUTES)
+            ),
+        },
         "async_apply_profile_service",
     )
     platform.async_register_entity_service(
@@ -109,6 +118,9 @@ async def async_setup_entry(
     )
     platform.async_register_entity_service(
         SERVICE_SAVE_AS_PROFILE, SAVE_AS_PROFILE_SCHEMA, "async_save_as_profile_service"
+    )
+    platform.async_register_entity_service(
+        SERVICE_END_TEMPORARY, None, "async_end_temporary_service"
     )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
@@ -148,7 +160,6 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         coordinator = self.coordinator
         data = coordinator.data
         profiles = coordinator.profiles
-        names = profiles.display_names()
         registry = er.async_get(self.hass)
 
         active = data.active if data else None
@@ -159,13 +170,16 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ATTR_PROFILES: [
                 {
                     "id": profile.id,
-                    "name": names.get(profile.id, profile.name),
+                    "name": profile.name,
                     "color": profile.color,
                     "icon": profile.icon,
                     "order": order,
                     "detect": profile.detect,
                     "hidden": profile.hidden,
                     "protected": profile.protected,
+                    "temporary": profile.temporary,
+                    "duration": profile.duration,
+                    "priority": profile.priority,
                     # The switch that sets it, so the card can flip the same
                     # thing an automation or the entity page does.
                     "protection_entity": protection_entity_id(
@@ -198,13 +212,27 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ATTR_UNREACHED: (
                 data.unreached.as_dict() if data and data.unreached else None
             ),
+            # ``None`` without a profile sensor; otherwise whether automatic
+            # mode is on, what the sensor names and why that is no profile.
+            # The switch is named so the card flips the same thing an
+            # automation does.
+            ATTR_AUTOMATIC: (
+                {
+                    **automatic.as_dict(),
+                    "switch": automatic_entity_id(registry, coordinator.config_entry),
+                }
+                if (automatic := coordinator.automatic)
+                else None
+            ),
         }
 
     # -- services -----------------------------------------------------------
 
-    async def async_apply_profile_service(self, profile: str) -> None:
+    async def async_apply_profile_service(
+        self, profile: str, duration: int | None = None
+    ) -> None:
         """Handle ``climate_profiles.apply_profile``."""
-        await self.coordinator.async_apply_profile(profile)
+        await self.coordinator.async_apply_profile(profile, duration=duration)
 
     async def async_set_value_service(self, **values: Any) -> None:
         """Handle ``climate_profiles.set_value``."""
@@ -217,6 +245,10 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
     ) -> None:
         """Handle ``climate_profiles.capture_profile``."""
         await self.coordinator.async_capture_into_profile(profile, keys=values)
+
+    async def async_end_temporary_service(self) -> None:
+        """Handle ``climate_profiles.end_temporary``."""
+        await self.coordinator.async_end_temporary()
 
     async def async_save_as_profile_service(
         self,

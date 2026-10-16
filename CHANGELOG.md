@@ -4,6 +4,83 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-10-16
+
+### Added
+
+- **Automatic mode.** Under Configure → Automatic mode a sensor of yours can be
+  set whose state names a profile, by name or id. Which profile that is, is
+  decided there - a template, a schedule, another device's profile - not in
+  this integration. The device then gets `switch.<name>_automatic_mode`, and
+  while it is on, the sensor decides: a profile it names is applied when the
+  name changes, and only then, so a restart or the same name reported again
+  does not undo what was changed by hand. Profiles cannot be chosen by hand
+  meanwhile - the card, the select entity, `apply_profile` and voice
+  assistants are refused alike - while `set_value` and the device's own
+  buttons still work. A sensor that is unavailable or names no profile writes
+  nothing; automatic mode waits for one it can follow. The sensor's new
+  `automatic` attribute says what it is doing, what the sensor names and why
+  that is no profile.
+- **Temporary profiles.** A profile can be marked as one that may be started
+  for a while in automatic mode, with a duration in minutes - an hour if none
+  is set. Started by hand while automatic mode is on, it overrides the sensor
+  until its time is up; the sensor does not end it, and what the sensor names
+  meanwhile is applied afterwards. `climate_profiles.end_temporary` ends it
+  early, another one replaces it, switching automatic mode off ends it with
+  its values kept. Its end is stored, so a restart neither lengthens nor
+  forgets it. Outside automatic mode the mark changes nothing. The sensor's
+  `automatic` attribute names it and its end.
+  `apply_profile` takes an optional `duration` in minutes for one started
+  from an automation; it does not make a profile temporary that is not.
+  Deleting the running one ends it.
+- **Profiles can take priority over temporary ones.** A switch in the
+  profile's row, for a state that has to win over a boost - an open window.
+  While the sensor names such a profile in automatic mode, a running
+  temporary profile ends and the priority profile is applied, and no
+  temporary profile can be started: `apply_profile` is refused, and the card
+  disables them and says why next to the target. The sensor's `profiles`
+  attribute carries `priority`. Outside automatic mode it changes nothing.
+- **The card shows automatic mode.** While automatic mode is on, a row names
+  the profile the sensor names - just its mark and name - or says why there
+  is none; `show_target: false` leaves it out.
+  `show_automatic: true` adds a button left of the lock that flips the
+  automatic mode switch, with a dot while it waits. While automatic mode is
+  on, the card lists the temporary profiles and nothing else - not the
+  profile the sensor chose, not custom - and without temporary profiles it
+  leaves the list out. A running temporary profile counts down in its
+  button - under the name, beside or below the icon, in the closed dropdown -
+  and a tap ends it. The time grows with the room the button has.
+- **A write protected profile held by automatic mode cannot be changed.**
+  `set_value` is refused, and the card turns display only - temperature,
+  mode, power and every other control - so the state cannot slip to custom.
+  Temporary profiles, the automatic mode button and the lock stay usable; the
+  device's own buttons cannot be stopped.
+
+### Changed
+
+- **A hidden profile stays hidden on the card while it is active.** Until now
+  the card showed it as the active profile, without offering it. Now it is
+  left out in every layout, no button is marked active meanwhile, and the
+  closed dropdown reads "Profiles" instead of its name.
+- **The card's `profile_layout: auto` is gone, and grid is the default.**
+  Auto picked grid up to six profiles and scroll beyond; automatic mode
+  changes how many are offered, and the card would have jumped between the
+  two. A card set to `auto`, or to nothing, is a grid now - with more than six
+  profiles that is a change you will see; set `scroll` to keep it.
+- **Profile names are unique.** No two profiles may share a name - compared
+  without regard to case or surrounding spaces, the way `apply_profile` finds
+  one - and none may take the custom profile's name, "Custom" or
+  `__custom__`. The options refuse such a name at the form, and
+  `save_as_profile` refuses it with an error. A name two profiles shared
+  pointed at whichever came first, and a profile named like custom could not
+  be reached by name at all.
+- **Profiles stored with such a name are renamed once** when the entry is set
+  up: the later one gets a counter, "Komfort (2)" - in the usual case the
+  option the select entity already showed for it. The log names every renamed
+  profile. Automations that call `apply_profile` with the old, shared name
+  reach the same profile as before; ones that used the select option keep
+  working too.
+
 ## [2.1.0] - 2026-10-14
 
 ### Added

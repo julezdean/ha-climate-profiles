@@ -36,6 +36,10 @@ CONF_VALUE_ORDER: Final = "value_order"
 # --- config entry options --------------------------------------------------
 
 CONF_PROFILES: Final = "profiles"
+#: A sensor of the user's whose state names the profile automatic mode is to
+#: apply. Which profile that is, is decided there - by a template, a schedule,
+#: anything - and nowhere in this integration.
+CONF_PROFILE_SENSOR: Final = "profile_sensor"
 CONF_CUSTOM_NAME: Final = "custom_profile_name"
 CONF_CUSTOM_COLOR: Final = "custom_profile_color"
 CONF_CUSTOM_ICON: Final = "custom_profile_icon"
@@ -59,6 +63,18 @@ CONF_PROFILE_HIDDEN: Final = "hidden"
 #: is quiet; on, nothing ever is. There used to be a third answer, "ask", that
 #: had the card offer to store the change; it went with the offer.
 CONF_PROFILE_PROTECTED: Final = "protected"
+
+#: Whether this profile may be started by hand while automatic mode is on, and
+#: for how many minutes it then overrides it. Outside automatic mode neither
+#: has any effect: a profile is chosen as it always was.
+CONF_PROFILE_TEMPORARY: Final = "temporary"
+#: Whether this profile, named by the profile sensor while automatic mode is
+#: on, ends a running temporary profile and keeps new ones from starting - an
+#: open window that has to win over a boost.
+CONF_PROFILE_PRIORITY: Final = "priority"
+CONF_PROFILE_DURATION: Final = "duration"
+DEFAULT_TEMPORARY_MINUTES: Final = 60
+MAX_TEMPORARY_MINUTES: Final = 24 * 60
 
 #: Read from profiles stored by 2.0: "never" was write protection, "ask" and
 #: "auto" both mean a profile that takes changes now.
@@ -144,6 +160,21 @@ ATTR_NAME: Final = "name"
 ATTR_COLOR: Final = "color"
 ATTR_ICON: Final = "icon"
 ATTR_PROTECTED: Final = "protected"
+ATTR_AUTOMATIC: Final = "automatic"
+ATTR_DURATION: Final = "duration"
+
+# --- automatic mode --------------------------------------------------------
+
+#: What automatic mode is doing: switched off, following the profile sensor,
+#: or switched on but waiting for a state it can follow.
+AUTOMATIC_OFF: Final = "off"
+AUTOMATIC_FOLLOWING: Final = "following"
+AUTOMATIC_WAITING: Final = "waiting"
+#: ... or overridden by a temporary profile started by hand.
+AUTOMATIC_TEMPORARY: Final = "temporary"
+#: Why it is waiting.
+PROBLEM_SENSOR_UNAVAILABLE: Final = "sensor_unavailable"
+PROBLEM_UNKNOWN_PROFILE: Final = "unknown_profile"
 
 # --- services --------------------------------------------------------------
 
@@ -151,6 +182,7 @@ SERVICE_APPLY_PROFILE: Final = "apply_profile"
 SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
+SERVICE_END_TEMPORARY: Final = "end_temporary"
 
 # --- tuning ----------------------------------------------------------------
 
@@ -177,6 +209,10 @@ REACH_MAX_SECONDS: Final = 30.0
 #: listener each time.
 SELECTION_STORAGE_VERSION: Final = 1
 SELECTION_STORAGE_KEY: Final = f"{DOMAIN}.selection"
+#: Whether automatic mode is on, and which profile it applied last - a store
+#: of its own, so the selection store keeps the shape older versions read.
+AUTOMATIC_STORAGE_VERSION: Final = 1
+AUTOMATIC_STORAGE_KEY: Final = f"{DOMAIN}.automatic"
 
 #: How long the state has to be quiet before a manual change is written into
 #: the active profile - otherwise every step of a slider lands in it.

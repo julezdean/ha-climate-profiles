@@ -39,7 +39,8 @@
         "title": "Climate Profiles",
         "menu_options": {
           "values": "Manage values",
-          "profiles": "Manage profiles"
+          "profiles": "Manage profiles",
+          "automatic": "Automatic mode"
         }
       },
       "values": {
@@ -67,12 +68,23 @@
         "data_description": {
           "custom_profile_name": "Shown whenever the current state matches none of your profiles. It has no values of its own."
         }
+      },
+      "automatic": {
+        "title": "Automatic mode",
+        "description": "Automatic mode applies the profile a sensor of yours names. Its state has to be a profile's name or id - which profile that is, a template, a schedule or an automation decides, not this integration. While automatic mode is on, profiles cannot be chosen by hand. It is switched on and off with the device's \"Automatic mode\" switch, which exists only while a sensor is set here.",
+        "data": {
+          "profile_sensor": "Profile sensor"
+        },
+        "data_description": {
+          "profile_sensor": "Leave empty to remove automatic mode. A state that names no profile, or no state at all, writes nothing - the device keeps what it has until the sensor names a profile again."
+        }
       }
     },
     "error": {
       "invalid_profile": "This profile could not be saved. Please check name and values.",
       "unsupported_domain": "This kind of entity has no single value to compare, so it cannot be used.",
-      "entity_not_found": "This entity does not exist (any more)."
+      "entity_not_found": "This entity does not exist (any more).",
+      "name_taken": "Another profile is already called \"{name}\", or it is the name of the custom profile. Profile names have to be unique."
     }
   },
   "selector": {
@@ -108,6 +120,9 @@
     "switch": {
       "protected": {
         "name": "{profile} write protected"
+      },
+      "automatic": {
+        "name": "Automatic mode"
       }
     }
   },
@@ -119,6 +134,10 @@
         "profile": {
           "name": "Profile",
           "description": "Name or id of the profile."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Minutes a temporary profile started in automatic mode runs for, instead of its own duration. Has no effect otherwise."
         }
       }
     },
@@ -179,6 +198,10 @@
           "description": "Store only these values instead of the whole state."
         }
       }
+    },
+    "end_temporary": {
+      "name": "End temporary profile",
+      "description": "Ends a temporary profile started in automatic mode before its time is up. The profile sensor decides again; if it names no profile, nothing is written."
     }
   },
   "exceptions": {
@@ -196,6 +219,21 @@
     },
     "unknown_value": {
       "message": "Unknown value: {value}. This device knows: {known}."
+    },
+    "profile_name_taken": {
+      "message": "A profile called \"{profile}\" already exists, or it is the name of the custom profile. Profile names have to be unique."
+    },
+    "automatic_mode_on": {
+      "message": "Automatic mode is on, so \"{profile}\" cannot be chosen by hand. Switch automatic mode off first."
+    },
+    "automatic_needs_sensor": {
+      "message": "Automatic mode needs a profile sensor. Set one in the device's options under \"Automatic mode\"."
+    },
+    "automatic_profile_protected": {
+      "message": "Automatic mode holds \"{profile}\", which is write protected, so its values cannot be changed. Switch automatic mode off, or lift the write protection."
+    },
+    "temporary_blocked_by_priority": {
+      "message": "\"{target}\" takes priority while the profile sensor names it, so \"{profile}\" cannot be started now."
     }
   }
 }

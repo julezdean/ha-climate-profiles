@@ -15,10 +15,24 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_ADDITIONAL, DOMAIN
+from .const import (
+    CONF_ADDITIONAL,
+    CONF_CUSTOM_NAME,
+    CONF_PROFILE_NAME,
+    CONF_PROFILE_SENSOR,
+    CONF_PROFILES,
+    DEFAULT_CUSTOM_NAME,
+    DOMAIN,
+)
 from .coordinator import ClimateProfilesConfigEntry, ClimateProfilesCoordinator
 from .frontend import async_register_card, async_remove_card
-from .models import AdditionalValueSet, EntityMap, ProfileError
+from .models import (
+    AdditionalValueSet,
+    EntityMap,
+    ProfileError,
+    ProfileSet,
+    reserved_profile_names,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +54,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ClimateProfilesConfigEntry
 ) -> bool:
     """Set up one configured device."""
+    _store_unique_names(hass, entry)
     try:
         coordinator = ClimateProfilesCoordinator(hass, entry)
     except ProfileError as err:
@@ -51,11 +66,56 @@ async def async_setup_entry(
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    # After a restart this writes only if the sensor names another profile
+    # than the one applied before it.
+    entry.async_create_background_task(
+        hass, coordinator.async_follow_sensor(), "climate_profiles follow sensor"
+    )
 
     # Reconciled per entry, not once per run: async_setup does not run again
     # when an entry is added after the last one was removed.
     await async_register_card(hass)
     return True
+
+
+def _store_unique_names(hass: HomeAssistant, entry: ClimateProfilesConfigEntry) -> None:
+    """Rename profiles stored before names had to be unique, once.
+
+    Loading repairs duplicates too, but only in memory: which of two
+    "Komfort" gets the counter depends on the order, and a name that changes
+    when the order does is no name to rely on. Stored, it stays put. Done
+    before the update listener is attached, so no listener reacts to it.
+    """
+    raw = entry.options.get(CONF_PROFILES)
+    try:
+        stored = ProfileSet.from_list(raw)
+    except ProfileError:
+        return  # the coordinator reports it
+    custom_name = str(entry.options.get(CONF_CUSTOM_NAME) or "").strip()
+    unique = stored.with_unique_names(
+        reserved_profile_names(custom_name or DEFAULT_CUSTOM_NAME)
+    )
+    renamed = [
+        (before, after.name)
+        for before, after in zip(
+            (str(item[CONF_PROFILE_NAME]).strip() for item in raw or []),
+            unique,
+            strict=True,
+        )
+        if before != after.name
+    ]
+    if not renamed:
+        return
+    for before, after in renamed:
+        _LOGGER.warning(
+            "%s: profile %r renamed to %r - profile names have to be unique",
+            entry.title,
+            before,
+            after,
+        )
+    hass.config_entries.async_update_entry(
+        entry, options={**entry.options, CONF_PROFILES: unique.as_list()}
+    )
 
 
 async def async_unload_entry(
@@ -78,7 +138,7 @@ async def async_reload_entry(
     The additional values live in the options but are part of that map: a
     different set of entities has to be listened to, which only a reload does.
     So the comparison has to read them from the options too, or every capture
-    would reload the entry.
+    would reload the entry. The profile sensor is the same case.
     """
     coordinator = getattr(entry, "runtime_data", None)
     if coordinator is None:
@@ -90,8 +150,14 @@ async def async_reload_entry(
     except ProfileError:
         additional = AdditionalValueSet()
 
-    if coordinator.entities == EntityMap.from_config(entry.data, additional):
+    sensor = entry.options.get(CONF_PROFILE_SENSOR) or None
+    if (
+        coordinator.entities == EntityMap.from_config(entry.data, additional)
+        and coordinator.profile_sensor == sensor
+    ):
         await coordinator.async_refresh()
+        # A renamed profile may be the one the sensor has been naming.
+        await coordinator.async_follow_sensor()
         return
     await hass.config_entries.async_reload(entry.entry_id)
 
