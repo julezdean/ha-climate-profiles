@@ -87,6 +87,7 @@ from .models import (
     Vocabulary,
     new_profile_id,
     normalise_color,
+    parse_minutes,
     reserved_profile_names,
 )
 
@@ -692,8 +693,14 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
     # -- writing ------------------------------------------------------------
 
-    async def async_apply_profile(self, reference: str) -> None:
+    async def async_apply_profile(
+        self, reference: str, *, duration: int | None = None
+    ) -> None:
         """Apply the profile named or identified by ``reference``.
+
+        ``duration`` (minutes) replaces the profile's own when this starts a
+        temporary profile, and means nothing otherwise - like the mark itself
+        outside automatic mode.
 
         Only the values the profile defines are written; everything else keeps
         whatever it currently has.
@@ -713,7 +720,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_placeholders={"profile": reference, "known": known},
             )
         if self._automatic and profile.temporary:
-            await self._async_start_temporary(profile)
+            await self._async_start_temporary(profile, duration)
             return
         if self._automatic:
             # One thing decides which profile is active. Taken here, every way
@@ -857,6 +864,17 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         nothing is written either: no decision is made on a state that is not
         there, and the device keeps what it has until there is one.
         """
+        if (
+            self._temporary is not None
+            and self.profiles.get(self._temporary[0]) is None
+        ):
+            # Its profile was deleted: there is nothing left to hold, and the
+            # sensor takes over as if its time were up.
+            _LOGGER.debug("%s: the temporary profile was deleted", self.name)
+            self._clear_temporary()
+            self._automatic_applied = None
+            await self._async_store_automatic()
+            self.async_update_listeners()
         automatic = self.automatic
         if automatic is None or automatic.status != AUTOMATIC_FOLLOWING:
             return
@@ -879,7 +897,9 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 err,
             )
 
-    async def _async_start_temporary(self, profile: ClimateProfile) -> None:
+    async def _async_start_temporary(
+        self, profile: ClimateProfile, duration: int | None = None
+    ) -> None:
         """Override the sensor with ``profile`` for its duration.
 
         A second one replaces the first, with its own duration - so does the
@@ -887,7 +907,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         even if that is the one applied before: the temporary one changed the
         device in between.
         """
-        until = dt_util.utcnow() + timedelta(minutes=profile.duration)
+        minutes = profile.duration if duration is None else parse_minutes(duration)
+        until = dt_util.utcnow() + timedelta(minutes=minutes)
         _LOGGER.debug("%s: %s until %s", self.name, profile.name, until)
         self._clear_temporary()
         self._temporary = (profile.id, until)

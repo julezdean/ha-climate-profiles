@@ -134,6 +134,10 @@
         "profile": {
           "name": "Profile",
           "description": "Name or id of the profile."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Minutes a temporary profile started in automatic mode runs for, instead of its own duration. Has no effect otherwise."
         }
       }
     },

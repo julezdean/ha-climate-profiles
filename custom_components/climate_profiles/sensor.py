@@ -22,6 +22,7 @@ from .const import (
     ATTR_CAPABILITIES,
     ATTR_COLOR,
     ATTR_CURRENT_VALUES,
+    ATTR_DURATION,
     ATTR_ENTITIES,
     ATTR_ICON,
     ATTR_NAME,
@@ -30,6 +31,7 @@ from .const import (
     ATTR_UNREACHED,
     ATTR_VALUES,
     CUSTOM_PROFILE_ID,
+    MAX_TEMPORARY_MINUTES,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
     SERVICE_END_TEMPORARY,
@@ -100,7 +102,12 @@ async def async_setup_entry(
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
         SERVICE_APPLY_PROFILE,
-        {vol.Required(ATTR_PROFILE): cv.string},
+        {
+            vol.Required(ATTR_PROFILE): cv.string,
+            vol.Optional(ATTR_DURATION): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=MAX_TEMPORARY_MINUTES)
+            ),
+        },
         "async_apply_profile_service",
     )
     platform.async_register_entity_service(
@@ -213,9 +220,11 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
 
     # -- services -----------------------------------------------------------
 
-    async def async_apply_profile_service(self, profile: str) -> None:
+    async def async_apply_profile_service(
+        self, profile: str, duration: int | None = None
+    ) -> None:
         """Handle ``climate_profiles.apply_profile``."""
-        await self.coordinator.async_apply_profile(profile)
+        await self.coordinator.async_apply_profile(profile, duration=duration)
 
     async def async_set_value_service(self, **values: Any) -> None:
         """Handle ``climate_profiles.set_value``."""

@@ -134,6 +134,10 @@
         "profile": {
           "name": "Profil",
           "description": "Name oder ID des Profils."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Minuten, die ein in der Automatik gestartetes temporäres Profil läuft, statt seiner eigenen Dauer. Hat sonst keine Wirkung."
         }
       }
     },

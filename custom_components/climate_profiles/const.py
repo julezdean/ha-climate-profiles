@@ -157,6 +157,7 @@ ATTR_COLOR: Final = "color"
 ATTR_ICON: Final = "icon"
 ATTR_PROTECTED: Final = "protected"
 ATTR_AUTOMATIC: Final = "automatic"
+ATTR_DURATION: Final = "duration"
 
 # --- automatic mode --------------------------------------------------------
 

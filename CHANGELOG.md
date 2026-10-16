@@ -30,6 +30,9 @@ versioning [Semantic Versioning](https://semver.org/).
   its values kept. Its end is stored, so a restart neither lengthens nor
   forgets it. Outside automatic mode the mark changes nothing. The sensor's
   `automatic` attribute names it and its end; the card does not show it yet.
+  `apply_profile` takes an optional `duration` in minutes for one started
+  from an automation; it does not make a profile temporary that is not.
+  Deleting the running one ends it.
 
 ### Changed
 

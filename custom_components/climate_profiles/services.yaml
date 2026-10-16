@@ -9,6 +9,15 @@ apply_profile:
       example: Komfort
       selector:
         text:
+    duration:
+      example: 90
+      selector:
+        number:
+          min: 1
+          max: 1440
+          step: 1
+          mode: box
+          unit_of_measurement: min
 
 set_value:
   target:

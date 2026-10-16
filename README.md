@@ -442,6 +442,7 @@ until its time is up.
   temporary profile replaces it, with that one's duration; starting the same
   one again starts its time anew. Switching automatic mode off ends it too,
   and its values stay.
+- **Deleting it ends it**, and the sensor takes over.
 - **Its end survives a restart.** One that ran out while Home Assistant was
   down ends right after it starts.
 - **Nothing to hand back to, nothing written.** If the sensor names no profile
@@ -475,6 +476,7 @@ target:
   entity_id: sensor.living_room_climate_profile
 data:
   profile: Comfort        # name or id
+  duration: 90            # optional - minutes, for a temporary profile only
 ```
 
 Writes only the values the profile defines. Values that already match produce
@@ -482,7 +484,10 @@ no service call at all - except when the hvac mode changes, because many
 devices reset their attributes on a mode change.
 
 An unknown profile raises a clean `ServiceValidationError` naming the profiles
-that do exist; it never destabilises Home Assistant.
+that do exist; it never destabilises Home Assistant. So does a profile chosen
+while [automatic mode](#automatic-mode) is on, unless it is a temporary one:
+that one is started, for `duration` minutes if the call says so, otherwise
+for its own.
 
 ### `climate_profiles.set_value`
 

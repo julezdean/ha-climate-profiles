@@ -272,3 +272,51 @@ async def test_one_that_ran_out_during_a_restart_ends(
 
     assert automatic(hass)["status"] == "following"
     assert calls["set_temperature"][-1].data["temperature"] == 22
+
+
+# --- duration per call and deleted profiles --------------------------------
+
+
+async def test_a_call_can_set_its_own_duration(hass, entry_data, calls):
+    await setup_temporary(hass, entry_data)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "apply_profile",
+        {"entity_id": SENSOR, "profile": "Komfort", "duration": 5},
+        blocking=True,
+    )
+    await settle(hass)
+
+    until = dt_util.parse_datetime(automatic(hass)["temporary"]["until"])
+    assert timedelta(minutes=4) < until - dt_util.utcnow() <= timedelta(minutes=5)
+
+
+async def test_a_duration_does_not_make_a_profile_temporary(hass, entry_data, calls):
+    await setup_temporary(hass, entry_data)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "apply_profile",
+            {"entity_id": SENSOR, "profile": "Kuehlung", "duration": 5},
+            blocking=True,
+        )
+
+
+async def test_deleting_the_running_profile_hands_back(hass, entry_data, calls):
+    entry = await setup_temporary(hass, entry_data)
+    await apply(hass, "Komfort")
+
+    hass.config_entries.async_update_entry(
+        entry,
+        options={
+            **entry.options,
+            "profiles": [p for p in entry.options["profiles"] if p["id"] != "komfort"],
+        },
+    )
+    await settle(hass)
+
+    assert automatic(hass)["status"] == "following"
+    assert automatic(hass)["temporary"] is None
+    assert calls["set_temperature"][-1].data["temperature"] == 22
