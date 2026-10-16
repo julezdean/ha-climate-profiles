@@ -30,6 +30,7 @@ from .const import (
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PRIORITY,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILE_TEMPORARY,
     CONF_PROFILE_VALUES,
@@ -115,6 +116,11 @@ class ClimateProfile:
     #: ``duration`` minutes, after which the profile sensor decides again.
     temporary: bool = False
     duration: int = DEFAULT_TEMPORARY_MINUTES
+    #: Whether it wins over temporary profiles while the sensor names it in
+    #: automatic mode: a running one ends, and none can be started. Outside
+    #: automatic mode, and while the sensor names another profile, it changes
+    #: nothing.
+    priority: bool = False
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ClimateProfile:
@@ -152,6 +158,7 @@ class ClimateProfile:
             protected=_protected(raw),
             temporary=bool(raw.get(CONF_PROFILE_TEMPORARY, False)),
             duration=parse_minutes(raw.get(CONF_PROFILE_DURATION)),
+            priority=bool(raw.get(CONF_PROFILE_PRIORITY, False)),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -174,6 +181,8 @@ class ClimateProfile:
             data[CONF_PROFILE_TEMPORARY] = True
         if self.duration != DEFAULT_TEMPORARY_MINUTES:
             data[CONF_PROFILE_DURATION] = self.duration
+        if self.priority:
+            data[CONF_PROFILE_PRIORITY] = True
         return data
 
     def with_values(self, values: dict[str, Any]) -> ClimateProfile:

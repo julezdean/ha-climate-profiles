@@ -120,7 +120,7 @@ Two lists, and everything about an entry happens in one of them.
 | List | One row is | The row holds |
 | --- | --- | --- |
 | **Manage values** | an additional value | name, the entity behind it, an icon |
-| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, whether it can be started for a while in automatic mode and for how long, and every value it sets |
+| **Manage profiles** | a profile | name, colour, icon, how it becomes active, whether the card offers it, whether it is write protected, whether it can be started for a while in automatic mode and for how long, whether it takes priority over such profiles, and every value it sets |
 
 A row is dragged to move it, the pencil opens it, the bin removes it, and the
 button below the list adds one. The id a profile or a value is known by rides
@@ -499,7 +499,9 @@ replace it rather than run both:
 2. Switch the new automatic mode switch on.
 3. A "hold this profile for a while" rule - a boost that ignores the sensor
    for 20 minutes - becomes a [temporary profile](#temporary-profiles) with
-   that duration, instead of timers and helpers.
+   that duration, instead of timers and helpers. What used to beat the boost -
+   an open window - becomes a [profile that takes
+   priority](#profiles-that-take-priority).
 4. Delete the automation, and whatever only existed for it.
 
 Priorities between conditions - an open window beats everything but summer,
@@ -516,7 +518,8 @@ until its time is up.
 - **The sensor does not end it.** Whatever the sensor names meanwhile is
   shown as the target, and applied once the temporary profile ends - even if
   it is the profile that was applied before.
-- **It ends early** with `climate_profiles.end_temporary`. Starting another
+- **It ends early** with `climate_profiles.end_temporary`, or when the sensor
+  names a [profile that takes priority](#profiles-that-take-priority). Starting another
   temporary profile replaces it, with that one's duration; starting the same
   one again starts its time anew. Switching automatic mode off ends it too,
   and its values stay.
@@ -529,6 +532,25 @@ until its time is up.
 
 Outside automatic mode the mark has no effect: the profile is chosen like any
 other and stays until something else is.
+
+### Profiles that take priority
+
+Some states have to win over a boost: an open window makes heating for
+another 20 minutes pointless. Mark such a profile **Takes priority over
+temporary profiles in automatic mode**. While the sensor names it:
+
+- **A running temporary profile ends** right away, and the priority profile is
+  applied - as if the time were up.
+- **None can be started.** The card disables its temporary profiles and says
+  why next to the target, and `apply_profile` is refused with an error.
+- **Once the sensor names something else**, temporary profiles can be
+  started again. The one that ended does not come back on its own.
+
+A restart applies the same rule: a temporary profile stored across it ends if
+the sensor names a priority profile by then. Outside automatic mode, and
+while the sensor names another profile, the mark changes nothing.
+
+![The window is open: Boost cannot be started](docs/images/card-heating-priority.png)
 
 ```yaml
 automatic:
@@ -634,7 +656,7 @@ More: [`examples/automations.yaml`](examples/automations.yaml).
 active_profile: Comfort
 active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
-profiles: [{id, name, color, icon, order, detect, hidden, protected, temporary, duration, protection_entity, values}, …]
+profiles: [{id, name, color, icon, order, detect, hidden, protected, temporary, duration, priority, protection_entity, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
 additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
 current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}

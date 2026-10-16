@@ -179,6 +179,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                     "protected": profile.protected,
                     "temporary": profile.temporary,
                     "duration": profile.duration,
+                    "priority": profile.priority,
                     # The switch that sets it, so the card can flip the same
                     # thing an automation or the entity page does.
                     "protection_entity": protection_entity_id(

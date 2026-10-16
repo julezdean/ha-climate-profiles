@@ -720,6 +720,17 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 translation_placeholders={"profile": reference, "known": known},
             )
         if self._automatic and profile.temporary:
+            if (blocking := self.priority_target) is not None and (
+                blocking.id != profile.id
+            ):
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="temporary_blocked_by_priority",
+                    translation_placeholders={
+                        "profile": profile.name,
+                        "target": blocking.name,
+                    },
+                )
             await self._async_start_temporary(profile, duration)
             return
         if self._automatic:
@@ -842,6 +853,21 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             status, self.profile_sensor, target, raw, problem, temporary, until
         )
 
+    @property
+    def priority_target(self) -> ClimateProfile | None:
+        """Return the profile the sensor names if it wins over temporary ones.
+
+        Only while automatic mode is on: outside it the sensor decides nothing,
+        and neither does the mark.
+        """
+        if not self._automatic or self.profile_sensor is None:
+            return None
+        state = self.hass.states.get(self.profile_sensor)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return None
+        target = self.profiles.resolve(state.state)
+        return target if target is not None and target.priority else None
+
     async def async_set_automatic(self, on: bool) -> None:
         """Switch automatic mode on or off."""
         if on and self.profile_sensor is None:
@@ -882,6 +908,19 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             # Its profile was deleted: there is nothing left to hold, and the
             # sensor takes over as if its time were up.
             _LOGGER.debug("%s: the temporary profile was deleted", self.name)
+            self._clear_temporary()
+            self._automatic_applied = None
+            await self._async_store_automatic()
+            self.async_update_listeners()
+        if self._temporary is not None and (blocking := self.priority_target):
+            # An open window wins over a boost: the sensor names a profile
+            # that takes priority, so the temporary one ends here and that
+            # profile is applied below, as if the time were up.
+            _LOGGER.debug(
+                "%s: %s takes priority, the temporary profile ends",
+                self.name,
+                blocking.name,
+            )
             self._clear_temporary()
             self._automatic_applied = None
             await self._async_store_automatic()

@@ -320,3 +320,139 @@ async def test_deleting_the_running_profile_hands_back(hass, entry_data, calls):
     assert automatic(hass)["status"] == "following"
     assert automatic(hass)["temporary"] is None
     assert calls["set_temperature"][-1].data["temperature"] == 22
+
+
+# --- profiles that take priority ---------------------------------------------
+
+#: "Aus" stands for an open window: it wins over the temporary "Komfort".
+PRIORITY_PROFILES = [
+    {**PROFILES[0], "priority": True},
+    {**PROFILES[1], "temporary": True, "duration": 30},
+    PROFILES[2],
+]
+
+
+async def setup_priority(hass, entry_data, hass_storage=None):
+    """Set up an entry whose sensor names "Kuehlung", automatic mode on."""
+    hass.states.async_set(PROFILE_SENSOR, "Kuehlung")
+    set_device_state(hass, temperature=26)
+    entry = await setup_entry(
+        hass,
+        entry_data,
+        profiles=PRIORITY_PROFILES,
+        options={CONF_PROFILE_SENSOR: PROFILE_SENSOR},
+    )
+    await entry.runtime_data.async_set_automatic(True)
+    await settle(hass)
+    return entry
+
+
+def test_priority_is_stored_only_when_set():
+    plain = ClimateProfile(id="a", name="A", values={"hvac_mode": "off"})
+    assert "priority" not in plain.as_dict()
+
+    window = ClimateProfile.from_dict(
+        {"id": "b", "name": "B", "values": {}, "priority": True}
+    )
+    assert window.priority is True
+    assert ClimateProfile.from_dict(window.as_dict()) == window
+
+
+async def test_a_priority_profile_ends_a_running_temporary_one(hass, entry_data, calls):
+    await setup_priority(hass, entry_data)
+    await apply(hass, "Komfort")
+    assert automatic(hass)["status"] == "temporary"
+
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+
+    assert automatic(hass)["status"] == "following"
+    assert automatic(hass)["temporary"] is None
+    assert calls["set_hvac_mode"][-1].data["hvac_mode"] == "off"
+
+
+async def test_no_temporary_profile_starts_while_one_takes_priority(
+    hass, entry_data, calls
+):
+    await setup_priority(hass, entry_data)
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+    count = written(calls)
+
+    with pytest.raises(ServiceValidationError) as err:
+        await apply(hass, "Komfort")
+
+    assert err.value.translation_key == "temporary_blocked_by_priority"
+    assert err.value.translation_placeholders == {
+        "profile": "Komfort",
+        "target": "Aus",
+    }
+    assert written(calls) == count
+    assert automatic(hass)["status"] == "following"
+
+
+async def test_once_the_sensor_moves_on_it_can_start_again(hass, entry_data, calls):
+    await setup_priority(hass, entry_data)
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+    hass.states.async_set(PROFILE_SENSOR, "Kuehlung")
+    await settle(hass)
+
+    await apply(hass, "Komfort")
+
+    assert automatic(hass)["status"] == "temporary"
+
+
+async def test_a_profile_without_priority_leaves_it_running(hass, entry_data, calls):
+    await setup_priority(hass, entry_data)
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+    hass.states.async_set(PROFILE_SENSOR, "Kuehlung")
+    await settle(hass)
+    await apply(hass, "Komfort")
+
+    hass.states.async_set(PROFILE_SENSOR, "Komfort")
+    await settle(hass)
+
+    assert automatic(hass)["status"] == "temporary"
+    assert automatic(hass)["target_id"] == "komfort"
+
+
+async def test_priority_means_nothing_outside_automatic_mode(hass, entry_data, calls):
+    entry = await setup_priority(hass, entry_data)
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+    await entry.runtime_data.async_set_automatic(False)
+    await settle(hass)
+
+    await apply(hass, "Komfort")
+
+    assert calls["set_temperature"][-1].data["temperature"] == 24
+    assert automatic(hass)["status"] == "off"
+
+
+async def test_a_restart_ends_one_that_lost_to_priority(
+    hass, entry_data, calls, hass_storage
+):
+    entry = await setup_priority(hass, entry_data)
+    await entry.runtime_data.async_set_automatic(False)
+    await settle(hass)
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    until = dt_util.utcnow() + timedelta(minutes=10)
+    hass_storage[AUTOMATIC_STORAGE_KEY] = {
+        "version": 1,
+        "key": AUTOMATIC_STORAGE_KEY,
+        "data": {
+            entry.entry_id: {
+                "on": True,
+                "applied": None,
+                "temporary": {"id": "komfort", "until": until.isoformat()},
+            }
+        },
+    }
+
+    await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+
+    assert automatic(hass)["status"] == "following"
+    assert automatic(hass)["target_id"] == "aus"

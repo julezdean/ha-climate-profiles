@@ -231,6 +231,9 @@
     },
     "automatic_profile_protected": {
       "message": "Automatic mode holds \"{profile}\", which is write protected, so its values cannot be changed. Switch automatic mode off, or lift the write protection."
+    },
+    "temporary_blocked_by_priority": {
+      "message": "\"{target}\" takes priority while the profile sensor names it, so \"{profile}\" cannot be started now."
     }
   }
 }

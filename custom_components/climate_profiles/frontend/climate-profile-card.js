@@ -263,6 +263,15 @@ class ClimateProfileCard extends HTMLElement {
       automatic && automatic.status === "temporary" && automatic.temporary
         ? automatic.temporary
         : null;
+    // The sensor names a profile that wins over temporary ones - an open
+    // window over a boost. None can be started meanwhile; the integration
+    // refuses it too, and ends one that was running.
+    const targetProfile =
+      automatic && automatic.status !== "off" && automatic.target_id
+        ? (attrs.profiles || []).find((profile) => profile.id === automatic.target_id)
+        : null;
+    const blockedBy =
+      !running && targetProfile && targetProfile.priority ? targetProfile : null;
 
     return {
       source,
@@ -282,6 +291,7 @@ class ClimateProfileCard extends HTMLElement {
       automatic,
       autoOn: Boolean(automatic && automatic.status !== "off"),
       running,
+      blockedBy,
       // Automatic mode holds a write protected profile: nothing on the card
       // may change it - the integration refuses it as well. Only temporary
       // profiles, automatic mode itself and the lock stay usable.
@@ -513,6 +523,7 @@ class ClimateProfileCard extends HTMLElement {
         <section class="target" role="status" hidden>
           <span class="target-mark"></span>
           <span class="target-name"></span>
+          <span class="target-note" hidden></span>
         </section>
 
         ${this._tempSection()}
@@ -547,6 +558,7 @@ class ClimateProfileCard extends HTMLElement {
       target: root.querySelector(".target"),
       targetMark: root.querySelector(".target-mark"),
       targetName: root.querySelector(".target-name"),
+      targetNote: root.querySelector(".target-note"),
       pillText: root.querySelector(".pill-text"),
       temp: root.querySelector(".temp"),
       degrees: root.querySelector(".degrees"),
@@ -1135,7 +1147,7 @@ class ClimateProfileCard extends HTMLElement {
       trigger.querySelector(".picker-mark").innerHTML = shown ? profileMark(active) : "";
       trigger.classList.toggle("none", !shown);
       trigger.style.setProperty("--profile-color", shown ? active.color : "");
-      trigger.disabled = model.unavailable;
+      trigger.disabled = model.unavailable || Boolean(model.blockedBy);
       if (model.unavailable) this._openProfileList(false);
       for (const [id, option] of options) {
         const isActive = id === model.activeId;
@@ -1148,7 +1160,9 @@ class ClimateProfileCard extends HTMLElement {
       const isActive = id === model.activeId;
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
-      if (!button.classList.contains("fixed")) button.disabled = model.unavailable;
+      if (!button.classList.contains("fixed")) {
+        button.disabled = model.unavailable || Boolean(model.blockedBy);
+      }
     }
 
     // controls
@@ -1305,6 +1319,11 @@ class ClimateProfileCard extends HTMLElement {
       ? model.profiles.find((item) => item.id === automatic.target_id)
       : null;
     el.target.classList.toggle("problem", !profile);
+    // A profile that takes priority says so: it is why nothing can be
+    // started right now.
+    const note = Boolean(profile && profile.priority);
+    el.targetNote.hidden = !note;
+    el.targetNote.textContent = note ? this._t("has priority") : "";
     if (profile) {
       el.targetMark.innerHTML = profileMark(profile);
       el.targetMark.style.setProperty("--profile-color", profile.color);
@@ -1321,6 +1340,8 @@ class ClimateProfileCard extends HTMLElement {
   /** Count the running temporary profile down, once a second. */
   _paintCountdown(model) {
     this._running = model.running;
+    // Why nothing can be started: the title the buttons carry meanwhile.
+    this._blocked = model.blockedBy ? this._hasPriority(model.blockedBy.name) : "";
     const until = model.running ? Date.parse(model.running.until) : NaN;
     if (Number.isFinite(until)) {
       if (!this._countdownTimer) {
@@ -1346,7 +1367,9 @@ class ClimateProfileCard extends HTMLElement {
       span.hidden = !counting;
       span.querySelector(".countdown-text").textContent = counting ? text : "";
       button.classList.toggle("counting", counting);
-      button.title = counting ? `${text} · ${end}` : button.dataset.title || "";
+      button.title = counting
+        ? `${text} · ${end}`
+        : this._blocked || button.dataset.title || "";
     }
 
     const picker = this._profilePicker;
@@ -1354,7 +1377,7 @@ class ClimateProfileCard extends HTMLElement {
       const span = picker.trigger.querySelector(".picker-countdown");
       span.hidden = !text;
       span.querySelector(".countdown-text").textContent = text;
-      picker.trigger.title = text ? `${text} · ${end}` : "";
+      picker.trigger.title = text ? `${text} · ${end}` : this._blocked || "";
       picker.trigger.setAttribute("aria-haspopup", text ? "false" : "listbox");
     }
   }
@@ -1514,6 +1537,9 @@ class ClimateProfileCard extends HTMLElement {
 
   /** A tap on a profile: the running temporary one ends, any other starts. */
   async _tapProfile(profile) {
+    // The buttons are disabled meanwhile; this is the same rule for a click
+    // that got through anyway.
+    if (this._model().blockedBy) return;
     if (this._running && this._running.profile_id === profile.id) {
       await this._endTemporary();
       return;
@@ -1592,6 +1618,12 @@ class ClimateProfileCard extends HTMLElement {
       .replace(/^\w/, (char) => char.toUpperCase());
   }
 
+  /** ""X" has priority" - the reason a temporary profile cannot start. */
+  _hasPriority(name) {
+    const language = (this._hass && this._hass.language) || "en";
+    return language.startsWith("de") ? `„${name}“ hat Vorrang` : `"${name}" has priority`;
+  }
+
   /** "No profile "X"" - the quotes are part of the language. */
   _noProfile(name) {
     const language = (this._hass && this._hass.language) || "en";
@@ -1660,6 +1692,7 @@ const CARD_DE = {
   "Automatic mode is on": "Automatik ist an",
   "Automatic mode is waiting for a profile": "Automatik wartet auf ein Profil",
   "Sensor unavailable": "Sensor nicht verfügbar",
+  "has priority": "hat Vorrang",
   "Tap to end": "Tippen beendet",
   "Write protected, and held by automatic mode.":
     "Schreibgeschützt, und von der Automatik gehalten.",
@@ -1887,6 +1920,12 @@ ha-card.unavailable { opacity: 0.6; }
   background: var(--profile-color);
   box-shadow: none;
 }
+.target-note {
+  flex: none;
+  margin-left: auto;
+  color: var(--cp-muted);
+}
+.target-note[hidden] { display: none; }
 .target-name {
   min-width: 0;
   color: var(--cp-text);

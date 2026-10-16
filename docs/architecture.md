@@ -140,6 +140,15 @@ place - except for a temporary profile, which it starts instead. A temporary
 profile stores its end, not what is left of it, so a restart neither
 lengthens it nor forgets it.
 
+**Priority is a property of the profile, not a rule.** A profile marked as
+taking priority wins over temporary ones while the sensor names it: the
+running one ends, and none can start. It is checked where the sensor is
+followed and where a profile is applied - the same two places every other
+automatic decision sits - so the card, the select entity, the service and a
+restart cannot disagree. It ends a temporary profile rather than pausing it:
+after the window is closed again, a boost that resumes on its own would be
+a surprise, and starting it anew is one tap.
+
 ## What Home Assistant cannot do here
 
 **Drag & drop in a config flow.** Config flows are forms; there is no sortable

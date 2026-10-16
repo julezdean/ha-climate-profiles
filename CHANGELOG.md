@@ -33,6 +33,13 @@ versioning [Semantic Versioning](https://semver.org/).
   `apply_profile` takes an optional `duration` in minutes for one started
   from an automation; it does not make a profile temporary that is not.
   Deleting the running one ends it.
+- **Profiles can take priority over temporary ones.** A switch in the
+  profile's row, for a state that has to win over a boost - an open window.
+  While the sensor names such a profile in automatic mode, a running
+  temporary profile ends and the priority profile is applied, and no
+  temporary profile can be started: `apply_profile` is refused, and the card
+  disables them and says why next to the target. The sensor's `profiles`
+  attribute carries `priority`. Outside automatic mode it changes nothing.
 - **The card shows automatic mode.** While automatic mode is on, a row names
   the profile the sensor names - just its mark and name - or says why there
   is none; `show_target: false` leaves it out.

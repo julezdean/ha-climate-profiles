@@ -63,6 +63,7 @@ special cases - do not "fix" them into a normal state:
 | `card-protection.png` | `show_protection: true`, "Comfort+" is active and write protected - the lock is closed |
 | `card-hidden.png` | "Summer", hidden from the card, is active - not shown, no button is marked |
 | `card-automatic.png` | `show_automatic: true`, automatic mode on, the temporary "Night" runs for another 24 minutes, the sensor names "Comfort" |
+| `card-heating-priority.png` | the same radiator with the window open: the sensor names "Ventilate", which takes priority, so "Boost" is disabled and the target row says why |
 | `card-heating-boost.png` | the bathroom radiator with `icons`, `dial`, `show_target`, `show_automatic`, `show_protection` and `hvac_mode` hidden: the temporary, write protected "Boost" runs for another 17 minutes, the sensor names "Comfort" |
 
 "Comfort+" is write protected in every shot, but only `card-protection.png`
@@ -82,9 +83,9 @@ picture does not depend on when the recipe runs.
 
 `?device=bathroom` is a radiator set up the way automatic mode is meant to be
 used: every profile a sensor picks is hidden, and the temporary "Boost" is the
-only one to start by hand. It is a device of its own so that adding it left
-the plain thermostat pictures as they were; only `card-heating-boost.png`
-uses it.
+only one to start by hand, and "Ventilate" takes priority over it. It is a
+device of its own so that adding it left the plain thermostat pictures as
+they were; only the two `card-heating-*` pictures with automatic mode use it.
 
 To look at a state interactively:
 

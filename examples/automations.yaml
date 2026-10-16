@@ -134,14 +134,13 @@
         duration: 30
 
 # --- end it early --------------------------------------------------------------
-# The sensor does not end a temporary profile - naming "Ventilate" meanwhile
-# only changes what comes next. To let an open window win right away, end it;
-# without one running, end_temporary does nothing.
-- alias: End the boost when the window opens
+# An open window that has to win over Boost needs no automation: mark the
+# "Ventilate" profile as taking priority. end_temporary is for everything
+# else - here a button that cancels the boost.
+- alias: Cancel the bathroom boost
   triggers:
-    - trigger: state
-      entity_id: binary_sensor.bathroom_window
-      to: "on"
+    - trigger: event
+      event_type: my_cancel_button_pressed
   actions:
     - action: climate_profiles.end_temporary
       target:

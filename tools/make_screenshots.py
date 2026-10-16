@@ -190,6 +190,37 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
+    # The same radiator with the window open: the sensor names "Ventilate",
+    # which takes priority over temporary profiles, so Boost cannot be
+    # started - the button is disabled and the target row says why.
+    "card-heating-priority": {
+        "theme": "light",
+        "device": "bathroom",
+        "card": {
+            "name": "Bathroom",
+            "profile_layout": "icons",
+            "temperature_style": "dial",
+            "show_target": True,
+            "show_automatic": True,
+            "show_protection": True,
+            "hide": ["hvac_mode"],
+        },
+        "state": {
+            "hvac_mode": "off",
+            "active_profile": "Ventilate",
+            "active_profile_id": "b5",
+            "active_profile_color": "#64748b",
+            "automatic": {
+                "status": "following",
+                "sensor": "sensor.bathroom_wanted_profile",
+                "sensor_state": "Ventilate",
+                "target": "Ventilate",
+                "target_id": "b5",
+                "problem": None,
+                "temporary": None,
+            },
+        },
+    },
 }
 
 

@@ -68,6 +68,10 @@ CONF_PROFILE_PROTECTED: Final = "protected"
 #: for how many minutes it then overrides it. Outside automatic mode neither
 #: has any effect: a profile is chosen as it always was.
 CONF_PROFILE_TEMPORARY: Final = "temporary"
+#: Whether this profile, named by the profile sensor while automatic mode is
+#: on, ends a running temporary profile and keeps new ones from starting - an
+#: open window that has to win over a boost.
+CONF_PROFILE_PRIORITY: Final = "priority"
 CONF_PROFILE_DURATION: Final = "duration"
 DEFAULT_TEMPORARY_MINUTES: Final = 60
 MAX_TEMPORARY_MINUTES: Final = 24 * 60

@@ -55,6 +55,7 @@ from .const import (
     CONF_PROFILE_ICON,
     CONF_PROFILE_ID,
     CONF_PROFILE_NAME,
+    CONF_PROFILE_PRIORITY,
     CONF_PROFILE_PROTECTED,
     CONF_PROFILE_SENSOR,
     CONF_PROFILE_TEMPORARY,
@@ -116,6 +117,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "protected": "Write protected",
         "temporary": "Can be started for a while in automatic mode",
         "duration": "For how long (minutes)",
+        "priority": "Takes priority over temporary profiles in automatic mode",
         VALUE_HVAC_MODE: "Mode",
         VALUE_TEMPERATURE: "Temperature",
         VALUE_SWING_MODE: "Swing",
@@ -131,6 +133,7 @@ _ROW_LABELS: dict[str, dict[str, str]] = {
         "protected": "Schreibgeschützt",
         "temporary": "In der Automatik für eine Weile startbar",
         "duration": "Wie lange (Minuten)",
+        "priority": "Hat in der Automatik Vorrang vor temporären Profilen",
         VALUE_HVAC_MODE: "Modus",
         VALUE_TEMPERATURE: "Temperatur",
         VALUE_SWING_MODE: "Swing",
@@ -214,6 +217,7 @@ def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
             (CONF_PROFILE_PROTECTED, profile.protected),
             (CONF_PROFILE_TEMPORARY, profile.temporary),
             (CONF_PROFILE_DURATION, profile.duration),
+            (CONF_PROFILE_PRIORITY, profile.priority),
             (CONF_PROFILE_ID, profile.id),
         )
         if value is not None
@@ -405,6 +409,7 @@ def profile_from_input(
         protected=bool(user_input.get(CONF_PROFILE_PROTECTED, False)),
         temporary=bool(user_input.get(CONF_PROFILE_TEMPORARY, False)),
         duration=parse_minutes(user_input.get(CONF_PROFILE_DURATION)),
+        priority=bool(user_input.get(CONF_PROFILE_PRIORITY, False)),
     )
 
 
@@ -825,6 +830,11 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             CONF_PROFILE_TEMPORARY: {
                 "required": False,
                 "label": labels["temporary"],
+                "selector": {"boolean": {}},
+            },
+            CONF_PROFILE_PRIORITY: {
+                "required": False,
+                "label": labels["priority"],
                 "selector": {"boolean": {}},
             },
             CONF_PROFILE_DURATION: {

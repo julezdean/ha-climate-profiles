@@ -231,6 +231,9 @@
     },
     "automatic_profile_protected": {
       "message": "Die Automatik hält „{profile}“, und das ist schreibgeschützt – seine Werte lassen sich nicht ändern. Schalte die Automatik aus oder hebe den Schreibschutz auf."
+    },
+    "temporary_blocked_by_priority": {
+      "message": "„{target}“ hat Vorrang, solange der Profilsensor es nennt. „{profile}“ kann deshalb gerade nicht gestartet werden."
     }
   }
 }

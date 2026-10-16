@@ -394,8 +394,9 @@
         { id: "b4", name: "Away", color: "#afe29c", icon: "mdi:home-export-outline", order: 3,
           hidden: true, protected: true,
           values: { hvac_mode: "heat", temperature: 19.5 } },
+        /* An open window: it takes priority over the temporary Boost. */
         { id: "b5", name: "Ventilate", color: "#64748b", icon: "mdi:window-open-variant", order: 4,
-          hidden: true, protected: true,
+          hidden: true, protected: true, priority: true,
           values: { hvac_mode: "off" } },
       ];
       for (const profile of BATHROOM_PROFILES) {
@@ -419,6 +420,10 @@
         climate.attributes.friendly_name = "Bathroom radiator";
         climate.attributes.hvac_modes = ["heat", "off"];
         if (state.temperature !== undefined) climate.attributes.temperature = state.temperature;
+        if (state.hvac_mode !== undefined) {
+          climate.state = state.hvac_mode;
+          if (state.hvac_mode === "off") climate.attributes.hvac_action = "off";
+        }
         climate.attributes.current_temperature = 21.8;
         return hass;
       }

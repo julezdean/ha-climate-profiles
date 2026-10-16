@@ -1009,3 +1009,63 @@ async def test_an_unprotected_profile_held_by_automatic_mode_can_be_changed(
     page = await open_card(AUTOMATIC)
     card = page.locator("climate-profile-card")
     assert await card.locator(".step[data-step='up']").is_enabled()
+
+
+# --- profiles that take priority ---------------------------------------------
+
+#: The bathroom's sensor names "Ventilate" - an open window - which takes
+#: priority over the temporary "Boost".
+VENTILATING = {
+    "active_profile": "Ventilate",
+    "active_profile_id": "b5",
+    "active_profile_color": "#64748b",
+    "automatic": {
+        "status": "following",
+        "sensor": "sensor.bathroom_wanted_profile",
+        "sensor_state": "Ventilate",
+        "target": "Ventilate",
+        "target_id": "b5",
+        "problem": None,
+        "temporary": None,
+    },
+}
+
+
+async def test_no_temporary_profile_can_start_while_one_takes_priority(open_card):
+    page = await open_card(VENTILATING, device="bathroom")
+    card = page.locator("climate-profile-card")
+    boost = card.locator(".profile[data-id='b3']")
+    assert await boost.is_disabled()
+    assert await boost.get_attribute("title") == '"Ventilate" has priority'
+    note = card.locator(".target-note")
+    assert await note.is_visible()
+    assert await note.text_content() == "has priority"
+    await boost.click(force=True)
+    assert await calls(page) == []
+
+
+async def test_without_priority_it_can_start(open_card):
+    page = await open_card(
+        {
+            **VENTILATING,
+            "automatic": {
+                **VENTILATING["automatic"],
+                "sensor_state": "Comfort",
+                "target": "Comfort",
+                "target_id": "b2",
+            },
+        },
+        device="bathroom",
+    )
+    card = page.locator("climate-profile-card")
+    assert await card.locator(".profile[data-id='b3']").is_enabled()
+    assert await card.locator(".target-note").is_hidden()
+
+
+async def test_the_dropdown_is_closed_while_one_takes_priority(open_card):
+    page = await open_card(
+        VENTILATING, device="bathroom", card={"profile_layout": "dropdown"}
+    )
+    trigger = page.locator("climate-profile-card .picker-trigger")
+    assert await trigger.is_disabled()
+    assert await trigger.get_attribute("title") == '"Ventilate" has priority'
