@@ -263,3 +263,24 @@ async def open_step(hass, entry, step: str) -> dict:
     return await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": step}
     )
+
+
+async def restart(hass, entry, hass_storage, stored: dict[str, dict]) -> None:
+    """Set ``entry`` up again as after a restart, with ``stored`` on disk.
+
+    A reload alone is not a restart: the shared stores stay in memory and never
+    read the file again. A restart starts without them, so they are dropped
+    here - after what is pending was written, or it would land on top of what
+    the test puts in its place.
+    """
+    from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
+
+    from custom_components.climate_profiles.storage import forget_shared_stores
+
+    await hass.config_entries.async_unload(entry.entry_id)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+    forget_shared_stores(hass)
+    for key, data in stored.items():
+        hass_storage[key] = {"version": 1, "key": key, "data": data}
+    await hass.config_entries.async_setup(entry.entry_id)

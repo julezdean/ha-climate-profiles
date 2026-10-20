@@ -17,7 +17,7 @@ from custom_components.climate_profiles.const import (
 )
 from custom_components.climate_profiles.models import ClimateProfile
 
-from .conftest import set_device_state, settle
+from .conftest import restart, set_device_state, settle
 from .test_automatic import PROFILE_SENSOR, automatic
 from .test_integration import PROFILES, SENSOR, setup_entry
 
@@ -228,19 +228,21 @@ async def test_ending_without_one_does_nothing(hass, entry_data, calls):
 async def test_it_survives_a_restart(hass, entry_data, calls, hass_storage):
     entry = await setup_temporary(hass, entry_data, on=False)
     until = dt_util.utcnow() + timedelta(minutes=10)
-    hass_storage[AUTOMATIC_STORAGE_KEY] = {
-        "version": 1,
-        "key": AUTOMATIC_STORAGE_KEY,
-        "data": {
-            entry.entry_id: {
-                "on": True,
-                "applied": None,
-                "temporary": {"id": "komfort", "until": until.isoformat()},
+
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {
+            AUTOMATIC_STORAGE_KEY: {
+                entry.entry_id: {
+                    "on": True,
+                    "applied": None,
+                    "temporary": {"id": "komfort", "until": until.isoformat()},
+                }
             }
         },
-    }
-
-    await hass.config_entries.async_reload(entry.entry_id)
+    )
     await settle(hass)
 
     assert automatic(hass)["status"] == "temporary"
@@ -252,22 +254,24 @@ async def test_one_that_ran_out_during_a_restart_ends(
     hass, entry_data, calls, hass_storage
 ):
     entry = await setup_temporary(hass, entry_data, on=False)
-    hass_storage[AUTOMATIC_STORAGE_KEY] = {
-        "version": 1,
-        "key": AUTOMATIC_STORAGE_KEY,
-        "data": {
-            entry.entry_id: {
-                "on": True,
-                "applied": None,
-                "temporary": {
-                    "id": "komfort",
-                    "until": (dt_util.utcnow() - timedelta(minutes=1)).isoformat(),
-                },
+
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {
+            AUTOMATIC_STORAGE_KEY: {
+                entry.entry_id: {
+                    "on": True,
+                    "applied": None,
+                    "temporary": {
+                        "id": "komfort",
+                        "until": (dt_util.utcnow() - timedelta(minutes=1)).isoformat(),
+                    },
+                }
             }
         },
-    }
-
-    await hass.config_entries.async_reload(entry.entry_id)
+    )
     await settle(hass)
 
     assert automatic(hass)["status"] == "following"
@@ -439,19 +443,21 @@ async def test_a_restart_ends_one_that_lost_to_priority(
     await settle(hass)
     hass.states.async_set(PROFILE_SENSOR, "Aus")
     until = dt_util.utcnow() + timedelta(minutes=10)
-    hass_storage[AUTOMATIC_STORAGE_KEY] = {
-        "version": 1,
-        "key": AUTOMATIC_STORAGE_KEY,
-        "data": {
-            entry.entry_id: {
-                "on": True,
-                "applied": None,
-                "temporary": {"id": "komfort", "until": until.isoformat()},
+
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {
+            AUTOMATIC_STORAGE_KEY: {
+                entry.entry_id: {
+                    "on": True,
+                    "applied": None,
+                    "temporary": {"id": "komfort", "until": until.isoformat()},
+                }
             }
         },
-    }
-
-    await hass.config_entries.async_reload(entry.entry_id)
+    )
     await settle(hass)
 
     assert automatic(hass)["status"] == "following"

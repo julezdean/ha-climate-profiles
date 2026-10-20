@@ -29,7 +29,6 @@ from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
     async_track_state_change_event,
 )
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -90,6 +89,7 @@ from .models import (
     parse_minutes,
     reserved_profile_names,
 )
+from .storage import SharedStore, async_get_shared_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,9 +233,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         #: service. Remembered across restarts, but only counted while its
         #: values still hold.
         self._selected: str | None = None
-        self._selection_store: Store[dict[str, Any]] = Store(
-            hass, SELECTION_STORAGE_VERSION, SELECTION_STORAGE_KEY
-        )
+        #: Shared with every other entry, set in async_setup.
+        self._selection_store: SharedStore | None = None
         self._auto_capture_timer: Any = None
         #: Set from the moment the timer fires until the write is done - the
         #: other half of "a change is on its way into the profile".
@@ -248,9 +247,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         #: writes when the sensor names a different one, not on every report.
         self._automatic = False
         self._automatic_applied: str | None = None
-        self._automatic_store: Store[dict[str, Any]] = Store(
-            hass, AUTOMATIC_STORAGE_VERSION, AUTOMATIC_STORAGE_KEY
-        )
+        self._automatic_store: SharedStore | None = None
         #: (profile id, end) of a temporary profile started by hand.
         self._temporary: tuple[str, datetime] | None = None
         self._temporary_timer: Any = None
@@ -509,17 +506,21 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
 
     async def async_setup(self) -> None:
         """Start listening to the configured entities."""
-        stored = await self._selection_store.async_load() or {}
-        self._selected = stored.get(self.config_entry.entry_id)
+        self._selection_store = await async_get_shared_store(
+            self.hass, SELECTION_STORAGE_VERSION, SELECTION_STORAGE_KEY
+        )
+        self._selected = self._selection_store.get(self.config_entry.entry_id)
 
-        automatic = await self._automatic_store.async_load() or {}
-        mine = automatic.get(self.config_entry.entry_id) or {}
+        self._automatic_store = await async_get_shared_store(
+            self.hass, AUTOMATIC_STORAGE_VERSION, AUTOMATIC_STORAGE_KEY
+        )
+        mine = self._automatic_store.get(self.config_entry.entry_id) or {}
         self._automatic_applied = mine.get("applied")
         self._automatic = bool(mine.get("on")) and self.profile_sensor is not None
         if mine.get("on") and not self._automatic:
             # The sensor was taken out of the options: there is nothing left
             # to follow, and switching it back in should not resume silently.
-            await self._async_store_automatic()
+            self._store_automatic()
         temporary = mine.get("temporary") or {}
         until = dt_util.parse_datetime(str(temporary.get("until") or ""))
         if self._automatic and temporary.get("id") and until is not None:
@@ -542,19 +543,16 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             )
         self.config_entry.async_on_unload(self._cancel_running_apply)
 
-    async def _async_remember_selection(self, profile_id: str | None) -> None:
+    @callback
+    def _remember_selection(self, profile_id: str | None) -> None:
         """Keep the selection across restarts.
 
         One store for the whole integration, keyed by entry: a device without a
         selection simply has no key.
         """
         self._selected = profile_id
-        stored = await self._selection_store.async_load() or {}
-        if profile_id is None:
-            stored.pop(self.config_entry.entry_id, None)
-        else:
-            stored[self.config_entry.entry_id] = profile_id
-        await self._selection_store.async_save(stored)
+        if self._selection_store is not None:
+            self._selection_store.set(self.config_entry.entry_id, profile_id)
 
     @callback
     def _handle_state_change(self, event: Event[EventStateChangedData]) -> None:
@@ -756,7 +754,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._target = profile
         # Applying is choosing: with detection off this is the only thing that
         # makes a profile active, and it has to survive a restart.
-        await self._async_remember_selection(profile.id)
+        self._remember_selection(profile.id)
         await self._async_run_apply(profile.values, optimistic=profile)
 
     @callback
@@ -882,7 +880,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         # off, a temporary profile ends with it and its values stay.
         self._automatic_applied = None
         self._clear_temporary()
-        await self._async_store_automatic()
+        self._store_automatic()
         self.async_update_listeners()
         await self.async_follow_sensor()
 
@@ -910,7 +908,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             _LOGGER.debug("%s: the temporary profile was deleted", self.name)
             self._clear_temporary()
             self._automatic_applied = None
-            await self._async_store_automatic()
+            self._store_automatic()
             self.async_update_listeners()
         if self._temporary is not None and (blocking := self.priority_target):
             # An open window wins over a boost: the sensor names a profile
@@ -923,7 +921,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             )
             self._clear_temporary()
             self._automatic_applied = None
-            await self._async_store_automatic()
+            self._store_automatic()
             self.async_update_listeners()
         automatic = self.automatic
         if automatic is None or automatic.status != AUTOMATIC_FOLLOWING:
@@ -933,13 +931,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             return
         _LOGGER.debug("%s: automatic mode applies %s", self.name, target.name)
         self._automatic_applied = target.id
-        await self._async_store_automatic()
+        self._store_automatic()
         try:
             await self._async_choose(target)
         except HomeAssistantError as err:
             # Forgotten, so the next report of the sensor tries again.
             self._automatic_applied = None
-            await self._async_store_automatic()
+            self._store_automatic()
             _LOGGER.warning(
                 "%s: automatic mode could not apply %s: %s",
                 self.name,
@@ -964,7 +962,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         self._temporary = (profile.id, until)
         self._schedule_temporary_end()
         self._automatic_applied = None
-        await self._async_store_automatic()
+        self._store_automatic()
         self.async_update_listeners()
         await self._async_choose(profile)
 
@@ -978,7 +976,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             return
         _LOGGER.debug("%s: temporary profile ends", self.name)
         self._clear_temporary()
-        await self._async_store_automatic()
+        self._store_automatic()
         self.async_update_listeners()
         await self.async_follow_sensor()
 
@@ -1005,22 +1003,20 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             self._temporary_timer = None
         self._temporary = None
 
-    async def _async_store_automatic(self) -> None:
+    @callback
+    def _store_automatic(self) -> None:
         """Keep automatic mode across restarts, one key per entry."""
-        stored = await self._automatic_store.async_load() or {}
+        if self._automatic_store is None:
+            return
+        mine: dict[str, Any] | None = None
         if self._automatic:
-            stored[self.config_entry.entry_id] = {
-                "on": True,
-                "applied": self._automatic_applied,
-            }
+            mine = {"on": True, "applied": self._automatic_applied}
             if self._temporary is not None:
-                stored[self.config_entry.entry_id]["temporary"] = {
+                mine["temporary"] = {
                     "id": self._temporary[0],
                     "until": self._temporary[1].isoformat(),
                 }
-        else:
-            stored.pop(self.config_entry.entry_id, None)
-        await self._automatic_store.async_save(stored)
+        self._automatic_store.set(self.config_entry.entry_id, mine)
 
     # -- capturing automatically ---------------------------------------------
 
@@ -1209,7 +1205,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         )
         _LOGGER.debug("Saved the current state as %s", profile.name)
         self._renew_baseline = True
-        await self._async_remember_selection(profile.id)
+        self._remember_selection(profile.id)
         self._store(self.profiles.appended(profile))
         return profile
 
