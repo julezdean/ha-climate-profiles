@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE, STATE_UNAVAILABLE
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 
 from custom_components.climate_profiles.const import (
     AUTOMATIC_STORAGE_KEY,
+    CONF_CLIMATE_ENTITY,
     CONF_PROFILE_SENSOR,
     DOMAIN,
+    SELECTION_STORAGE_KEY,
 )
 
-from .conftest import open_step, set_device_state, settle
+from .conftest import CLIMATE, open_step, restart, set_device_state, settle
 from .test_integration import PROFILES, SELECT, SENSOR, setup_entry
 
 PROFILE_SENSOR = "sensor.wanted_profile"
@@ -290,12 +295,12 @@ async def test_a_restart_does_not_write_the_same_target_again(
     """What was changed by hand since stays."""
     entry = await setup_automatic(hass, entry_data)
     # The entry id is only known now; store it and set up once more.
-    hass_storage[AUTOMATIC_STORAGE_KEY] = {
-        "version": 1,
-        "key": AUTOMATIC_STORAGE_KEY,
-        "data": {entry.entry_id: {"on": True, "applied": "kuehlung"}},
-    }
-    await hass.config_entries.async_reload(entry.entry_id)
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {AUTOMATIC_STORAGE_KEY: {entry.entry_id: {"on": True, "applied": "kuehlung"}}},
+    )
     await settle(hass)
 
     assert entry.runtime_data.automatic_on
@@ -304,15 +309,63 @@ async def test_a_restart_does_not_write_the_same_target_again(
 
 async def test_a_restart_writes_a_new_target(hass, entry_data, calls, hass_storage):
     entry = await setup_automatic(hass, entry_data, wanted="Aus")
-    hass_storage[AUTOMATIC_STORAGE_KEY] = {
-        "version": 1,
-        "key": AUTOMATIC_STORAGE_KEY,
-        "data": {entry.entry_id: {"on": True, "applied": "kuehlung"}},
-    }
-    await hass.config_entries.async_reload(entry.entry_id)
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {AUTOMATIC_STORAGE_KEY: {entry.entry_id: {"on": True, "applied": "kuehlung"}}},
+    )
     await settle(hass)
 
     assert calls["set_hvac_mode"][-1].data["hvac_mode"] == "off"
+
+
+async def test_rooms_switching_together_each_keep_what_they_chose(
+    hass, entry_data, calls, hass_storage, monkeypatch
+):
+    """Every room is stored, not only the one that happened to write last.
+
+    The sensor switching several rooms at once made each of them write the
+    shared file at the same moment; all but one lost their entry, and woke up
+    after a restart with a profile they had left.
+    """
+    # Reading the file really goes to the executor, and others run before
+    # what was read comes back. The mocked storage answers at once, which
+    # hides exactly that.
+    load = Store.async_load
+
+    async def slow_load(self):
+        data = await load(self)
+        await asyncio.sleep(0)
+        return data
+
+    monkeypatch.setattr(Store, "async_load", slow_load)
+    living_room = await setup_automatic(hass, entry_data)
+    bedroom_climate = "climate.bedroom"
+    hass.states.async_set(
+        bedroom_climate, "cool", dict(hass.states.get(CLIMATE).attributes)
+    )
+    bedroom = await setup_entry(
+        hass,
+        {CONF_CLIMATE_ENTITY: bedroom_climate},
+        options={CONF_PROFILE_SENSOR: PROFILE_SENSOR},
+        title="Bedroom",
+    )
+    for entry in (living_room, bedroom):
+        await entry.runtime_data.async_set_automatic(True)
+    await settle(hass)
+
+    hass.states.async_set(PROFILE_SENSOR, "Aus")
+    await settle(hass)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+
+    rooms = (living_room.entry_id, bedroom.entry_id)
+    assert hass_storage[SELECTION_STORAGE_KEY]["data"] == dict.fromkeys(rooms, "aus")
+    stored = hass_storage[AUTOMATIC_STORAGE_KEY]["data"]
+    assert {room: stored[room]["applied"] for room in rooms} == dict.fromkeys(
+        rooms, "aus"
+    )
 
 
 # --- options ---------------------------------------------------------------

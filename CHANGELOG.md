@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Rooms switching at once forgot their profile.** The chosen profile and the
+  state of automatic mode are kept in one file for all devices, and every
+  device read it, changed its own entry and wrote it back. When a sensor
+  switched several rooms at the same moment, all but one of those writes were
+  lost. After a restart such a room came back with the profile it had left -
+  visible whenever two profiles hold the same values, where the remembered
+  choice decides which one is shown. The file is now read once and shared, so
+  every change lands.
+
 ## [2.2.0] - 2026-10-16
 
 ### Added
