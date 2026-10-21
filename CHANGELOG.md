@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **The card opens the device.** A tap on the icon or the name in the header
+  opens Home Assistant's dialog for the climate entity behind the profiles,
+  as a tile card does - with its history and attributes, which the card does
+  not show. Enter and Space do the same from the keyboard.
+
 ## [2.2.1] - 2026-10-20
 
 ### Fixed
