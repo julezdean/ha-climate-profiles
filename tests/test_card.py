@@ -115,6 +115,55 @@ async def calls(page) -> list[dict]:
     return await page.evaluate("window.__calls")
 
 
+# --- the device -------------------------------------------------------------
+
+#: Records the more-info requests the card sends up to Home Assistant.
+MORE_INFO = """
+window.__moreInfo = [];
+document.addEventListener('hass-more-info', (event) => {
+  window.__moreInfo.push(event.detail.entityId);
+});
+"""
+
+
+@pytest.mark.parametrize("part", [".badge", ".title"])
+async def test_the_icon_and_the_name_open_the_device(open_card, part):
+    page = await open_card()
+    await page.evaluate(MORE_INFO)
+    await page.locator(f"climate-profile-card {part}").click()
+
+    assert await page.evaluate("window.__moreInfo") == ["climate.living_room"]
+    assert await calls(page) == [], "opening the device changes nothing"
+
+
+async def test_the_device_opens_from_the_keyboard(open_card):
+    page = await open_card()
+    await page.evaluate(MORE_INFO)
+    await page.locator("climate-profile-card .identity").press("Enter")
+
+    assert await page.evaluate("window.__moreInfo") == ["climate.living_room"]
+
+
+async def test_the_device_opens_while_it_is_unreachable(open_card):
+    """Exactly when somebody wants to look at it."""
+    page = await open_card()
+    await page.evaluate(
+        """() => {
+          const card = document.querySelector('climate-profile-card');
+          const hass = card._hass;
+          const climate = hass.states['climate.living_room'];
+          hass.states['climate.living_room'] = { ...climate, state: 'unavailable' };
+          card.hass = { ...hass };
+        }"""
+    )
+    subtitle = page.locator("climate-profile-card .subtitle")
+    assert await subtitle.inner_text() == "Unavailable"
+    await page.evaluate(MORE_INFO)
+    await page.locator("climate-profile-card .title").click()
+
+    assert await page.evaluate("window.__moreInfo") == ["climate.living_room"]
+
+
 # --- write protection -------------------------------------------------------
 
 

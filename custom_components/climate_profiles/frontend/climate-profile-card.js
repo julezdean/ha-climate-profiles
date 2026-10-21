@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.2.1";
+const CARD_VERSION = "2.3.0";
 
 /* eslint-disable no-console */
 console.info(
@@ -502,10 +502,12 @@ class ClimateProfileCard extends HTMLElement {
         <div class="alert" role="alert" hidden></div>
 
         <header class="header">
-          <div class="badge"><ha-icon icon="mdi:air-conditioner"></ha-icon></div>
-          <div class="titles">
-            <h1 class="title"></h1>
-            <p class="subtitle"></p>
+          <div class="identity" role="button" tabindex="0">
+            <div class="badge"><ha-icon icon="mdi:air-conditioner"></ha-icon></div>
+            <div class="titles">
+              <h1 class="title"></h1>
+              <p class="subtitle"></p>
+            </div>
           </div>
           <div class="header-actions">
             <button class="auto" type="button" title="" hidden>
@@ -610,6 +612,16 @@ class ClimateProfileCard extends HTMLElement {
         this._nudgeTemperature(by);
       });
     }
+    // The icon and the name open the device itself, as they do on a tile
+    // card: its history, its attributes, its settings - none of which this
+    // card shows.
+    const identity = root.querySelector(".identity");
+    identity.addEventListener("click", () => this._openDevice());
+    identity.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      this._openDevice();
+    });
     this._el.pill.addEventListener("click", () => this._togglePower());
     this._el.lock.addEventListener("click", () => this._toggleProtection());
     this._el.auto.addEventListener("click", () => this._toggleAutomatic());
@@ -1565,6 +1577,19 @@ class ClimateProfileCard extends HTMLElement {
     await this._call("set_value", values);
   }
 
+  /** Home Assistant's own dialog for the climate entity behind the profiles. */
+  _openDevice() {
+    const entities = this._hass.states[this._config.entity]?.attributes.entities;
+    if (!entities || !entities.climate) return;
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        bubbles: true,
+        composed: true,
+        detail: { entityId: entities.climate },
+      })
+    );
+  }
+
   async _call(service, data) {
     await this._callService("climate_profiles", service, {
       entity_id: this._config.entity,
@@ -1787,6 +1812,17 @@ ha-card.unavailable { opacity: 0.6; }
   align-items: center;
   gap: 12px;
 }
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  outline: none;
+}
+.identity:focus-visible { box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.45); }
 .badge {
   display: grid;
   place-items: center;

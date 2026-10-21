@@ -201,6 +201,11 @@ offers only the values your device actually has - a radiator thermostat has no
 fan mode to hide.
 More examples: [`examples/lovelace.yaml`](examples/lovelace.yaml).
 
+A tap on the icon or the name in the header opens Home Assistant's own dialog
+for the climate entity behind the profiles - its history, its attributes, its
+settings - as a tile card does. It opens while the device is unavailable too,
+which is when you most want to look.
+
 `temperature_style: dial` draws the temperature as a ring, with the two step
 buttons in the gap at its bottom and what the room reports in its middle - a
 drag around an arc rarely lands on the half degree you meant.
