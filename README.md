@@ -9,7 +9,7 @@ It replaces the usual "template sensor plus a script full of `choose` blocks"
 package with a proper integration: profiles are configured in the UI, the
 matching happens server side, and a custom Lovelace card renders it.
 
-![The card in light and dark mode](docs/images/card-themes.png)
+<img src="docs/images/card-themes.png" alt="The card in light and dark mode" width="920">
 
 ## What it does
 
@@ -250,7 +250,7 @@ write protection: change something by hand while it is active, and the change
 is stored into it like into any other profile, unless it is **write
 protected**.
 
-![A hidden profile while it is active: nothing is marked](docs/images/card-hidden.png)
+<img src="docs/images/card-hidden.png" alt="A hidden profile while it is active: nothing is marked" width="460">
 
 | Profile active | Nothing matches | `temperature_style: dial` |
 | --- | --- | --- |
@@ -269,7 +269,7 @@ card, the entity and the options always say the same. Custom has nothing to
 protect, so the lock is not there while nothing matches. To protect a profile
 that is not active, use its switch.
 
-![The lock of a write protected profile](docs/images/card-protection.png)
+<img src="docs/images/card-protection.png" alt="The lock of a write protected profile" width="460">
 
 ### Automatic mode on the card
 
@@ -296,7 +296,7 @@ narrow - and in the closed field in `dropdown`. A tap on it ends it; in
 replaces it. The time left grows with the button: small in a row of six,
 large on a button of its own.
 
-![Automatic mode with a temporary profile running](docs/images/card-automatic.png)
+<img src="docs/images/card-automatic.png" alt="Automatic mode with a temporary profile running" width="460">
 
 On a radiator the same thing usually looks like this: every profile the sensor
 picks is hidden, so the only button is the temporary **Boost**, counting down.
@@ -315,7 +315,7 @@ show_protection: true
 hide: [hvac_mode]
 ```
 
-![A radiator in automatic mode with Boost counting down](docs/images/card-heating-boost.png)
+<img src="docs/images/card-heating-boost.png" alt="A radiator in automatic mode with Boost counting down" width="460">
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
@@ -413,7 +413,7 @@ result. After a profile is applied it waits until the device has been quiet for
 a moment, then checks whether the profile actually took. If not, the card says
 which values the device did not keep:
 
-![A profile that did not take](docs/images/card-unreached.png)
+<img src="docs/images/card-unreached.png" alt="A profile that did not take" width="460">
 
 The check does not look once and stop: it keeps watching until the maximum
 wait is over, so a device that accepts a value and drops it again a few seconds
@@ -435,7 +435,7 @@ Nothing in the integration assumes cooling. A radiator thermostat with no fan
 and no swing modes gets the same profiles, with everything it cannot do left
 out - of the card as well:
 
-![A radiator thermostat](docs/images/card-heating.png)
+<img src="docs/images/card-heating.png" alt="A radiator thermostat" width="460">
 
 Modes the device does not advertise are never sent, and a value it refuses is
 reported rather than silently dropped.
@@ -555,7 +555,7 @@ A restart applies the same rule: a temporary profile stored across it ends if
 the sensor names a priority profile by then. Outside automatic mode, and
 while the sensor names another profile, the mark changes nothing.
 
-![The window is open: Boost cannot be started](docs/images/card-heating-priority.png)
+<img src="docs/images/card-heating-priority.png" alt="The window is open: Boost cannot be started" width="460">
 
 ```yaml
 automatic:

@@ -43,6 +43,13 @@ so every shot is clipped to the element's measured box instead of a fixed
 window size. If you change the frame width in `card-preview.html`, the images
 follow on their own.
 
+The README does not. The shots are taken at twice the pixel density, so an
+image left to itself shows the card twice its real size; every picture that
+stands alone carries `width` at half its pixel width - `460` for one card,
+`920` for the two themes side by side. Change the frame width and these
+numbers move with it. The pictures in the two tables need none: the table
+columns size them.
+
 ## The states in the pictures
 
 `SHOTS` in `tools/make_screenshots.py` lists them. Three are deliberately
