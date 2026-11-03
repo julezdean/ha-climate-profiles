@@ -63,16 +63,13 @@ capture_profile:
       selector:
         select:
           multiple: true
-          mode: list
+          custom_value: true
           translation_key: value_keys
           options:
             - hvac_mode
             - temperature
             - swing_mode
             - fan_mode
-            - fan
-            - display
-            - silent
 
 save_as_profile:
   target:
@@ -98,16 +95,13 @@ save_as_profile:
       selector:
         select:
           multiple: true
-          mode: list
+          custom_value: true
           translation_key: value_keys
           options:
             - hvac_mode
             - temperature
             - swing_mode
             - fan_mode
-            - fan
-            - display
-            - silent
 
 end_temporary:
   target:

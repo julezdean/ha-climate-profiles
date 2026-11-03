@@ -45,7 +45,7 @@
       },
       "values": {
         "title": "Werte verwalten",
-        "description": "Eine Zeile je Wert, mit der Entität dahinter. Ziehen verschiebt, der Stift bearbeitet, der Mülleimer löscht - was Profile für einen gelöschten Wert gespeichert haben, bleibt stehen und wird von da an übersprungen. Für eine andere Entität die Zeile bearbeiten: neu hinzugefügt entsteht ein neuer Wert, und jedes Profil verliert ihn.",
+        "description": "Eine Zeile je Wert, mit der Entität dahinter. Ziehen verschiebt, der Stift bearbeitet, der Mülleimer löscht - was Profile für einen gelöschten Wert gespeichert haben, bleibt stehen und wird von da an übersprungen. Für eine andere Entität die Zeile bearbeiten: neu hinzugefügt entsteht ein neuer Wert, und jedes Profil verliert ihn. Schlüssel, für `hide` einer Karte oder für `set_value`:{keys}",
         "data": {
           "additional_values": "Werte",
           "selected": "Werte dieses Geräts hinzufügen",
@@ -99,10 +99,7 @@
         "hvac_mode": "Modus",
         "temperature": "Temperatur",
         "swing_mode": "Swing-Modus",
-        "fan_mode": "Lüftermodus",
-        "fan": "Lüftergeschwindigkeit",
-        "display": "Geräteanzeige",
-        "silent": "Flüstermodus"
+        "fan_mode": "Lüftermodus"
       }
     }
   },
@@ -115,6 +112,27 @@
     "select": {
       "profile": {
         "name": "Profil"
+      },
+      "profile_hvac_mode": {
+        "name": "{profile} Modus",
+        "state": {
+          "off": "Aus",
+          "heat": "Heizen",
+          "cool": "Kühlen",
+          "heat_cool": "Heizen/Kühlen",
+          "auto": "Automatisch",
+          "dry": "Entfeuchten",
+          "fan_only": "Nur Lüfter"
+        }
+      },
+      "profile_fan_mode": {
+        "name": "{profile} Lüftermodus"
+      },
+      "profile_swing_mode": {
+        "name": "{profile} Swing-Modus"
+      },
+      "profile_value": {
+        "name": "{profile} {value}"
       }
     },
     "switch": {
@@ -123,6 +141,17 @@
       },
       "automatic": {
         "name": "Automatik"
+      },
+      "profile_value": {
+        "name": "{profile} {value}"
+      }
+    },
+    "number": {
+      "profile_temperature": {
+        "name": "{profile} Temperatur"
+      },
+      "profile_value": {
+        "name": "{profile} {value}"
       }
     }
   },
@@ -173,7 +202,7 @@
         },
         "values": {
           "name": "Werte",
-          "description": "Nur diese Werte übernehmen, statt automatisch zu entscheiden."
+          "description": "Nur diese Werte übernehmen, statt automatisch zu entscheiden. Ein Zusatzwert über seinen Schlüssel oder Namen."
         }
       }
     },
@@ -195,7 +224,7 @@
         },
         "values": {
           "name": "Werte",
-          "description": "Nur diese Werte speichern, statt den ganzen Zustand."
+          "description": "Nur diese Werte speichern, statt den ganzen Zustand. Ein Zusatzwert über seinen Schlüssel oder Namen."
         }
       }
     },
@@ -234,6 +263,9 @@
     },
     "temporary_blocked_by_priority": {
       "message": "„{target}“ hat Vorrang, solange der Profilsensor es nennt. „{profile}“ kann deshalb gerade nicht gestartet werden."
+    },
+    "invalid_profile_value": {
+      "message": "{value} ist kein Wert, den {profile} setzen kann."
     }
   }
 }

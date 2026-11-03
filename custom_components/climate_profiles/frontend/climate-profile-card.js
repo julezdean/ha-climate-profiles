@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "2.3.0";
+const CARD_VERSION = "3.0.0-beta.1";
 
 /* eslint-disable no-console */
 console.info(
@@ -288,6 +288,14 @@ class ClimateProfileCard extends HTMLElement {
         color: "#78909c",
       },
       activeId: attrs.active_profile_id || CUSTOM_ID,
+      // Automatic mode has no custom: before it holds a profile, the state is
+      // unknown - after a restart with a sensor that names nothing.
+      unknown: Boolean(
+        automatic && automatic.status !== "off" && attrs.active_profile_id === null
+      ),
+      // The values in which the device differs from the profile automatic
+      // mode holds. The integration leaves out what is still on its way.
+      deviates: Array.isArray(attrs.deviates) ? attrs.deviates : [],
       automatic,
       autoOn: Boolean(automatic && automatic.status !== "off"),
       running,
@@ -355,13 +363,25 @@ class ClimateProfileCard extends HTMLElement {
   /**
    * Everything configured is shown unless it is hidden, so a value added later
    * appears without editing every dashboard. One list over one key space - the
-   * four climate keys and the ids of the additional values, the same mix that
-   * a profile's ``values`` carries.
+   * four climate keys and the keys of the additional values, the same mix
+   * that a profile's ``values`` carries.
    */
   _visible(key, available) {
+    return !this._hides(key) && Boolean(available);
+  }
+
+  /**
+   * Whether ``hide`` names ``key`` - or the uuid the value had before keys
+   * were readable, which a dashboard from back then still carries.
+   */
+  _hides(key) {
     const hide = this._config.hide;
-    const hidden = Array.isArray(hide) && hide.includes(key);
-    return !hidden && Boolean(available);
+    if (!Array.isArray(hide)) return false;
+    if (hide.includes(key)) return true;
+    const state = this._hass && this._hass.states[this._config.entity];
+    const definitions = (state && state.attributes.additional_values) || [];
+    const value = definitions.find((item) => item.id === key);
+    return Boolean(value && value.former_id && hide.includes(value.former_id));
   }
 
   /**
@@ -506,7 +526,7 @@ class ClimateProfileCard extends HTMLElement {
             <div class="badge"><ha-icon icon="mdi:air-conditioner"></ha-icon></div>
             <div class="titles">
               <h1 class="title"></h1>
-              <p class="subtitle"></p>
+              <p class="subtitle"><span class="subtitle-text"></span><span class="deviation" role="img" hidden></span></p>
             </div>
           </div>
           <div class="header-actions">
@@ -552,7 +572,8 @@ class ClimateProfileCard extends HTMLElement {
       alert: root.querySelector(".alert"),
       badge: root.querySelector(".badge ha-icon"),
       title: root.querySelector(".title"),
-      subtitle: root.querySelector(".subtitle"),
+      subtitle: root.querySelector(".subtitle-text"),
+      deviation: root.querySelector(".deviation"),
       pill: root.querySelector(".pill"),
       lock: root.querySelector(".lock"),
       lockIcon: root.querySelector(".lock ha-icon"),
@@ -1082,7 +1103,10 @@ class ClimateProfileCard extends HTMLElement {
       this._config.name || model.source.attributes.friendly_name || model.source.entity_id;
     el.subtitle.textContent = model.unavailable
       ? this._t("Unavailable")
-      : activeProfile.name;
+      : model.unknown
+        ? this._t("Unknown")
+        : activeProfile.name;
+    this._paintDeviation(model);
     el.badge.setAttribute(
       "icon",
       HVAC_ICONS[model.hvacMode] || "mdi:air-conditioner"
@@ -1211,6 +1235,27 @@ class ClimateProfileCard extends HTMLElement {
 
     el.progress.classList.toggle("busy", Boolean(model.applying));
     el.card.setAttribute("aria-busy", model.applying ? "true" : "false");
+  }
+
+  /**
+   * A dot next to the profile name when the device differs from the profile
+   * automatic mode holds - the thermostat's own buttons on a write protected
+   * profile, a value the device did not keep. The state still names the
+   * profile: automatic mode decides which one applies, not the device.
+   */
+  _paintDeviation(model) {
+    const el = this._el;
+    const show = model.deviates.length > 0 && !model.unavailable && !model.unknown;
+    el.deviation.hidden = !show;
+    if (!show) return;
+    const labels = model.deviates.map((key) =>
+      CLIMATE_LABELS[key]
+        ? this._t(CLIMATE_LABELS[key])
+        : (model.additional.find((item) => item.id === key) || {}).name || key
+    );
+    const text = `${this._t("The device differs")}: ${labels.join(", ")}`;
+    el.deviation.title = text;
+    el.deviation.setAttribute("aria-label", text);
   }
 
   /**
@@ -1705,6 +1750,8 @@ const CARD_DE = {
   "Turn off": "Ausschalten",
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
   "not reached": "nicht erreicht",
+  Unknown: "Unbekannt",
+  "The device differs": "Das Gerät weicht ab",
   "instead of": "statt",
   "Write protection": "Schreibschutz",
   "is write protected": "ist schreibgeschützt",
@@ -1852,6 +1899,16 @@ ha-card.unavailable { opacity: 0.6; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.deviation {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--warning-color, #ffa600);
+}
+.deviation[hidden] { display: none; }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -2618,7 +2675,7 @@ class ClimateProfileCardEditor extends HTMLElement {
     const additional = (attrs.additional_values || [])
       .slice()
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map((value) => [value.id, value.name]);
+      .map((value) => [value.id, value.name, value.former_id]);
     return [...climate, ...additional];
   }
 
@@ -2643,7 +2700,10 @@ class ClimateProfileCardEditor extends HTMLElement {
     delete data.hide;
     // On unless switched off - the form has to show what the card does.
     data.show_target = this._config.show_target !== false;
-    for (const [key] of this._values()) data[`show_${key}`] = !hide.includes(key);
+    for (const [key, , former] of this._values()) {
+      // A dashboard from before keys were readable hides by the old uuid.
+      data[`show_${key}`] = !hide.includes(key) && !(former && hide.includes(former));
+    }
     return data;
   }
 
@@ -2659,12 +2719,15 @@ class ClimateProfileCardEditor extends HTMLElement {
       };
       this._form.addEventListener("value-changed", (event) => {
         const value = { ...event.detail.value };
-        const offered = this._values().map(([key]) => key);
+        const values = this._values();
+        const offered = values.map(([key]) => key);
+        // An old uuid is written back as the key it became.
+        const formers = values.map(([, , former]) => former).filter(Boolean);
         // What is not on offer keeps whatever was decided about it. An entity
         // that is away for a moment takes its switch with it, and editing the
         // name must not quietly unhide the value along with it.
         const hide = (Array.isArray(this._config.hide) ? this._config.hide : [])
-          .filter((key) => !offered.includes(key));
+          .filter((key) => !offered.includes(key) && !formers.includes(key));
         for (const key of offered) {
           if (value[`show_${key}`] === false) hide.push(key);
           delete value[`show_${key}`];

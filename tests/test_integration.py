@@ -69,6 +69,7 @@ async def setup_entry(
 ) -> MockConfigEntry:
     """Set up one config entry with the mocked device already in place."""
     entry = MockConfigEntry(
+        version=2,
         domain=DOMAIN,
         title=title,
         data=entry_data,

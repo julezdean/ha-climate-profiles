@@ -296,6 +296,42 @@ async def test_hiding_a_value_leaves_it_out(open_card):
     assert await card.get_by_role("button", name="Vertical").count() == 0
 
 
+async def test_a_value_is_hidden_by_the_id_it_had_before_keys(open_card):
+    """A dashboard from 2.x names the uuid - it keeps hiding the value."""
+    page = await open_card(card={"hide": ["37aacc3d039c4c469ff07676b7eaf05f"]})
+    card = page.locator("climate-profile-card")
+
+    assert await card.locator(".toggle .toggle-label").all_inner_texts() == ["Display"]
+
+
+EDITS_OLD_ID = """
+const card = document.querySelector('climate-profile-card');
+const editor = document.createElement('climate-profile-card-editor');
+editor.hass = card._hass;
+editor.setConfig({
+  type: 'custom:climate-profile-card',
+  entity: card._config.entity,
+  hide: ['37aacc3d039c4c469ff07676b7eaf05f'],
+});
+let out = null;
+editor.addEventListener('config-changed', (event) => { out = event.detail.config; });
+const data = editor._data();
+editor._form.dispatchEvent(
+  new CustomEvent('value-changed', { detail: { value: data } })
+);
+return { shown: data.show_silent, hide: out.hide || [] };
+"""
+
+
+async def test_the_editor_writes_an_old_id_back_as_its_key(open_card):
+    page = await open_card()
+
+    assert await page.evaluate(f"(() => {{{EDITS_OLD_ID}}})()") == {
+        "shown": False,
+        "hide": ["silent"],
+    }
+
+
 async def test_a_device_without_additional_values_shows_none(open_card):
     """A radiator thermostat has none of them, and no empty controls either."""
     page = await open_card(device="heating")
@@ -1118,3 +1154,39 @@ async def test_the_dropdown_is_closed_while_one_takes_priority(open_card):
     trigger = page.locator("climate-profile-card .picker-trigger")
     assert await trigger.is_disabled()
     assert await trigger.get_attribute("title") == '"Ventilate" has priority'
+
+
+# --- automatic mode holds ---------------------------------------------------
+
+
+async def test_a_deviation_puts_a_dot_next_to_the_name(open_card):
+    page = await open_card({**AUTOMATIC, "deviates": ["temperature", "silent"]})
+    dot = page.locator("climate-profile-card .deviation")
+
+    assert await dot.is_visible()
+    assert await dot.get_attribute("title") == (
+        "The device differs: Temperature, Silent"
+    )
+    assert await page.locator("climate-profile-card .subtitle").inner_text() == (
+        "Comfort"
+    )
+
+
+async def test_without_a_deviation_there_is_no_dot(open_card):
+    page = await open_card({**AUTOMATIC, "deviates": []})
+
+    assert await page.locator("climate-profile-card .deviation").is_hidden()
+
+
+async def test_with_nothing_held_the_state_is_unknown(open_card):
+    page = await open_card(
+        {
+            **automatic_state(target=None, target_id=None, status="waiting"),
+            "active_profile": None,
+            "active_profile_id": None,
+        }
+    )
+
+    assert await page.locator("climate-profile-card .subtitle").inner_text() == (
+        "Unknown"
+    )

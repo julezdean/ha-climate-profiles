@@ -54,15 +54,16 @@ async def _add_profile(hass: HomeAssistant, entry, row: dict) -> None:
     await hass.async_block_till_done()
 
 
-async def test_a_value_is_stored_in_a_profile_under_its_id(hass: HomeAssistant):
+async def test_a_value_is_stored_in_a_profile_under_its_key(hass: HomeAssistant):
     set_device_state(hass)
     entry = await setup_entry(
         hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
     )
 
     value = await _add_value(hass, entry, FAN)
-    # A real id, not the name and not the entity id.
-    assert len(value["id"]) == 32
+    # Readable, formed from the name - here the entity id, as the entity
+    # carries no friendly name.
+    assert value["id"] == "number_living_room_fan_speed"
     assert value["entity"] == FAN
 
     await _add_profile(
@@ -312,7 +313,77 @@ async def test_the_device_offers_its_siblings(hass: HomeAssistant):
 
     added = entry.options[CONF_ADDITIONAL]
     assert [value["name"] for value in added] == ["Fan speed", "Display"]
-    assert all(len(value["id"]) == 32 for value in added)
+    assert [value["id"] for value in added] == ["fan_speed", "display"]
+
+
+async def test_a_key_leaves_the_device_name_out(hass: HomeAssistant):
+    """A friendly name starts with the device's - the key does not need it."""
+    ids = await _device_with_siblings(hass)
+    hass.states.async_set(
+        ids["Fan speed"], "40", {"friendly_name": "PortaSplit Fan speed"}
+    )
+    entry = await setup_entry(
+        hass,
+        {CONF_CLIMATE_ENTITY: ids["PortaSplit"]},
+        profiles=[],
+        options={CONF_ADDITIONAL: []},
+    )
+
+    result = await open_step(hass, entry, "values")
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_ADDITIONAL: [], "selected": [ids["Fan speed"]]}
+    )
+    await hass.async_block_till_done()
+
+    [value] = entry.options[CONF_ADDITIONAL]
+    assert value["name"] == "PortaSplit Fan speed"
+    assert value["id"] == "fan_speed"
+
+
+async def test_a_key_that_is_taken_gets_a_counter(hass: HomeAssistant):
+    """Two values of one name, and a name that is a field of a profile's row."""
+    set_device_state(hass)
+    hass.states.async_set("switch.one", "on", {"friendly_name": "Silent"})
+    hass.states.async_set("switch.two", "on", {"friendly_name": "Silent"})
+    hass.states.async_set("switch.three", "on", {"friendly_name": "Color"})
+    entry = await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
+    )
+
+    result = await open_step(hass, entry, "values")
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_ADDITIONAL: [
+                {"entity": "switch.one"},
+                {"entity": "switch.two"},
+                {"entity": "switch.three"},
+            ]
+        },
+    )
+    await hass.async_block_till_done()
+
+    keys = [value["id"] for value in entry.options[CONF_ADDITIONAL]]
+    assert keys == ["silent", "silent_2", "color_2"]
+
+
+async def test_a_key_stays_when_the_value_is_renamed(hass: HomeAssistant):
+    set_device_state(hass)
+    entry = await setup_entry(
+        hass, {CONF_CLIMATE_ENTITY: CLIMATE}, profiles=[], options={CONF_ADDITIONAL: []}
+    )
+    value = await _add_value(hass, entry, FAN)
+
+    result = await open_step(hass, entry, "values")
+    [row] = _rows(result)
+    await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_ADDITIONAL: [{**row, "name": "Lüfterstufe"}]}
+    )
+    await hass.async_block_till_done()
+
+    [stored] = entry.options[CONF_ADDITIONAL]
+    assert stored["name"] == "Lüfterstufe"
+    assert stored["id"] == value["id"]
 
 
 async def test_what_is_already_configured_is_not_offered_again(hass: HomeAssistant):

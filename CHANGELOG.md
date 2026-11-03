@@ -4,6 +4,51 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-11-03
+
+### Added
+
+- **Every value a profile sets is an entity.** A profile's temperature is a
+  `number`, its mode, fan mode and swing mode are `select`s, and an additional
+  value is a `number`, `select` or `switch` like the entity behind it - on the
+  device page under Configuration, named after the profile and the value.
+  Only values a profile actually sets get one; putting a value in or taking it
+  out in the options brings or removes it without a reload. A change is stored
+  in the profile and, when that profile is active, applied to the device so it
+  stays active. Write protection does not apply, it is about changes made on
+  the device. A stored value the device no longer offers is `unknown`. Hidden
+  profiles have them too.
+- **Deviations in automatic mode are shown.** The sensor's new `deviates`
+  attribute lists the values in which the device differs from the profile
+  automatic mode holds, and the card puts an orange dot next to the profile
+  name. Not while a profile is still on its way, and nothing is written back.
+
+### Changed
+
+- **Additional values have readable keys.** A value gets its key from its name
+  when it is added, with the device's name left out -
+  `kindersicherung` instead of `afca532463034037803a1d6049c80653` - and keeps
+  it when it is renamed. `hide` on the card, `set_value`, `capture_profile`
+  and `save_as_profile` take it. Existing values are migrated on the first
+  start, profiles and apply order included; the old uuid keeps working
+  everywhere, so dashboards and automations need no change. The keys are
+  listed under Configure → Manage values. **This cannot be undone by going
+  back to 2.x** - make a backup first.
+- **Automatic mode has no custom.** The state is the profile automatic mode
+  holds - also while the device is still catching up after a switch, which
+  used to show custom for up to a minute, and when it differs afterwards.
+  While the sensor names no profile, the one held last stays; with none held
+  yet the state is `unknown`. The select entity offers no custom option while
+  automatic mode is on. After a restart the profile held is the reference
+  point for changes made by hand.
+
+### Removed
+
+- **The 1.x value names in the service forms.** `capture_profile` and
+  `save_as_profile` offered `fan`, `display` and `silent`, which have meant
+  nothing since 2.0. The forms offer the four climate values and take any
+  key or name typed in.
+
 ## [2.3.0] - 2026-10-21
 
 ### Added

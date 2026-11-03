@@ -30,6 +30,10 @@ caption are a list that has not been written yet.
 Every additional value carries an id of its own. Profiles store their values
 under it.
 
+(Since 3.0 that id is readable - formed once from the name, then left alone.
+The reasoning below still holds; [value entities](value-entities.md) says what
+changed and why.)
+
 ```yaml
 additional_values:
   - id: 7f3a9c1e…

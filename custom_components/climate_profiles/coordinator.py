@@ -70,6 +70,7 @@ from .matching import (
     build_apply_plan,
     capture_values,
     changed_keys,
+    normalise_value,
     normalise_values,
     profile_matches,
     resolve_active_profile,
@@ -145,10 +146,25 @@ class ProfileState:
     last_matched: ClimateProfile | None = None
     changed: tuple[str, ...] = ()
     unreached: Unreached | None = None
+    #: The profile the state fits, the way it is recognised outside automatic
+    #: mode. In automatic mode ``active`` is the profile held instead, and
+    #: whether an applied profile took is judged on this one.
+    matched: ClimateProfile | None = None
+    #: In automatic mode: the keys in which the device differs from the
+    #: profile held. Empty while a profile is on its way, and outside it.
+    deviates: tuple[str, ...] = ()
+    #: In automatic mode with nothing held yet - the state is unknown rather
+    #: than custom, which automatic mode does not have.
+    unknown: bool = False
 
     @property
-    def active_id(self) -> str:
-        """Return the id of the active profile, or the custom sentinel."""
+    def active_id(self) -> str | None:
+        """Return the id of the active profile, or the custom sentinel.
+
+        ``None`` while automatic mode holds nothing yet.
+        """
+        if self.unknown:
+            return None
         return self.active.id if self.active else CUSTOM_PROFILE_ID
 
 
@@ -431,6 +447,11 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 profiles.detectable(), values, vocabulary, unavailable
             )
         applying = self._apply_task is not None and not self._apply_task.done()
+        # In automatic mode the state is not recognised but held: the profile
+        # automatic mode applies is the active one, also while the device
+        # still differs from it. Recognition goes on underneath, for the
+        # question whether an applied profile took.
+        held = self._held(profiles)
 
         # While an applied profile is still on its way, only that one may take
         # the baseline. Right after the calls the device has not reported yet,
@@ -440,20 +461,23 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         pending = self._target is not None and (
             active is None or active.id != self._target.id
         )
+        # In automatic mode the profile held is the reference point - also
+        # right after a restart, where nothing matched yet.
+        reference = held if self._automatic else active
         if (
-            active is not None
+            reference is not None
             and not pending
             and (
                 self._renew_baseline
                 or self._baseline is None
-                or self._baseline[0] != active.id
+                or self._baseline[0] != reference.id
             )
         ):
             # A new reference point, but only when the profile actually
             # changed or we wrote the state ourselves. A partial profile stays
             # active while you adjust a value it does not define - refreshing
             # the baseline there would forget exactly what you just changed.
-            self._baseline = (active.id, dict(values))
+            self._baseline = (reference.id, dict(values))
         self._renew_baseline = False
 
         if active is not None:
@@ -489,8 +513,20 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             # seconds in between would claim something untrue - and make every
             # automation on the state see a flap that is not one.
             active = last_matched
+
+        deviates: tuple[str, ...] = ()
+        if (
+            held is not None
+            and not pending
+            and not applying
+            and not (self._capture_pending and not held.protected)
+        ):
+            # Not while a profile is on its way, nor while a change is about
+            # to be written into the profile: those differences are the next
+            # few seconds, not a deviation.
+            deviates = _deviating_keys(held, values, vocabulary, unavailable)
         return ProfileState(
-            active,
+            held if self._automatic else active,
             values,
             capabilities,
             vocabulary,
@@ -500,7 +536,29 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             last_matched,
             changed,
             self._unreached,
+            matched=active,
+            deviates=deviates,
+            unknown=self._automatic and held is None,
         )
+
+    @callback
+    def _held(self, profiles: ProfileSet) -> ClimateProfile | None:
+        """Return the profile automatic mode holds, ``None`` outside it.
+
+        A temporary profile while one runs, otherwise the one the sensor
+        names, otherwise - the sensor naming none - the one held last. After a
+        restart with a sensor that names nothing, there is none.
+        """
+        if not self._automatic:
+            return None
+        if self._temporary is not None and (
+            temporary := profiles.get(self._temporary[0])
+        ):
+            return temporary
+        automatic = self.automatic
+        if automatic is not None and automatic.target is not None:
+            return automatic.target
+        return profiles.get(self._selected or "")
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -648,7 +706,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         if state is None or self._target is None:
             return
 
-        matches = state.active is not None and state.active.id == target.id
+        matches = state.matched is not None and state.matched.id == target.id
         window_over = now - self._last_call >= REACH_MAX_SECONDS
         if matches and not window_over:
             # It took - but some devices hold a value only for a few seconds
@@ -687,7 +745,18 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 for key, (wanted, actual) in missed.items()
             ),
         )
-        self.async_set_updated_data(replace(state, unreached=self._unreached))
+        self.async_set_updated_data(
+            replace(state, unreached=self._unreached, deviates=self._deviates(state))
+        )
+
+    @callback
+    def _deviates(self, state: ProfileState) -> tuple[str, ...]:
+        """Return the deviation of the held profile, now that none is pending."""
+        if not self._automatic or state.active is None:
+            return ()
+        return _deviating_keys(
+            state.active, state.values, state.vocabulary, state.unavailable
+        )
 
     # -- writing ------------------------------------------------------------
 
@@ -762,9 +831,10 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """Return ``values`` with every key resolved to what it addresses.
 
         The four climate keys pass through. Everything else is an additional
-        value, addressed by its id or by its name - the same rule profiles
-        follow, and the reason ids win: a value literally named like another
-        one's id cannot shadow it.
+        value, addressed by its key, the uuid it had before keys were
+        readable, or its name - the same rule profiles follow, and the reason
+        keys win: a value literally named like another one's key cannot
+        shadow it.
         """
         resolved: dict[str, Any] = {}
         unknown: list[str] = []
@@ -788,6 +858,13 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 },
             )
         return resolved
+
+    @callback
+    def _resolve_keys(self, keys: list[str] | None) -> list[str] | None:
+        """Return ``keys`` resolved the way ``set_value`` resolves its own."""
+        if not keys:
+            return keys
+        return list(self.resolve_value_keys(dict.fromkeys(keys)))
 
     async def async_set_values(self, values: dict[str, Any]) -> None:
         """Write individual values, then re-evaluate which profile that is."""
@@ -1119,6 +1196,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         """
         profiles = self.profiles
         state = self.data or await self._async_update_data()
+        keys = self._resolve_keys(keys)
 
         target = profiles.resolve(reference)
         if target is None:
@@ -1181,6 +1259,7 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             )
 
         state = self.data or await self._async_update_data()
+        keys = self._resolve_keys(keys)
         values = capture_values(
             {},
             state.values,
@@ -1232,6 +1311,37 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
             if self.data is None or self.data.active is None:
                 self._baseline = None
         self._store(self.profiles.replaced(replace(profile, protected=protected)))
+
+    async def async_set_profile_value(
+        self, profile_id: str, key: str, value: Any
+    ) -> None:
+        """Change one value a profile sets - from its entity.
+
+        Stored in the profile, and applied when the profile is the active
+        one: a profile whose temperature was just raised is still that
+        profile, and the device left behind would make it custom the moment
+        the change is stored. Write protection does not apply - it keeps
+        changes made on the device out, and this one is made to the profile.
+        """
+        profile = self.profiles.get(profile_id)
+        state = self.data
+        if profile is None or key not in profile.values or state is None:
+            return
+        spec = state.vocabulary.get(key)
+        stored = storage_value(spec, normalise_value(spec, value))
+        if stored is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_profile_value",
+                translation_placeholders={"value": str(value), "profile": profile.name},
+            )
+        updated = profile.with_values({**profile.values, key: stored})
+        if updated.values == profile.values:
+            return
+        _LOGGER.debug("%s: %s of %s set to %s", self.name, key, profile.name, stored)
+        self._store(self.profiles.replaced(updated))
+        if state.active is not None and state.active.id == profile_id:
+            await self._async_choose(updated)
 
     @callback
     def _store(self, profiles: ProfileSet) -> None:
@@ -1290,6 +1400,8 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                     state,
                     active=optimistic if optimistic is not None else state.active,
                     applying=True,
+                    # What differed from the profile before is on its way out.
+                    deviates=(),
                 )
             )
 
@@ -1361,6 +1473,28 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 self.name,
                 ", ".join(plan.warnings),
             )
+
+
+def _deviating_keys(
+    profile: ClimateProfile,
+    values: Mapping[str, Any],
+    vocab: Vocabulary,
+    unavailable: frozenset[str],
+) -> tuple[str, ...]:
+    """Return the keys in which ``values`` differ from what ``profile`` sets.
+
+    A value that cannot be read right now is no deviation: there is nothing
+    to compare it with.
+    """
+    wanted = normalise_values(vocab, profile.values)
+    current = normalise_values(vocab, values)
+    return tuple(
+        spec.key
+        for spec in vocab
+        if spec.key in wanted
+        and spec.key not in unavailable
+        and not values_equal(spec, wanted[spec.key], current.get(spec.key))
+    )
 
 
 def _is_custom_reference(reference: str, custom_name: str) -> bool:

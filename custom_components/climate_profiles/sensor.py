@@ -22,6 +22,7 @@ from .const import (
     ATTR_CAPABILITIES,
     ATTR_COLOR,
     ATTR_CURRENT_VALUES,
+    ATTR_DEVIATES,
     ATTR_DURATION,
     ATTR_ENTITIES,
     ATTR_ICON,
@@ -137,9 +138,15 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         super().__init__(coordinator, "active_profile")
 
     @property
-    def native_value(self) -> str:
-        """Return the display name of the active profile."""
+    def native_value(self) -> str | None:
+        """Return the display name of the active profile.
+
+        Unknown while automatic mode holds nothing yet: custom is not a state
+        automatic mode has.
+        """
         data = self.coordinator.data
+        if data is not None and data.unknown:
+            return None
         return self.coordinator.profile_name(data.active if data else None)
 
     @property
@@ -163,9 +170,10 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
         registry = er.async_get(self.hass)
 
         active = data.active if data else None
+        unknown = bool(data and data.unknown)
         return {
-            ATTR_ACTIVE_PROFILE: coordinator.profile_name(active),
-            ATTR_ACTIVE_PROFILE_ID: active.id if active else CUSTOM_PROFILE_ID,
+            ATTR_ACTIVE_PROFILE: None if unknown else coordinator.profile_name(active),
+            ATTR_ACTIVE_PROFILE_ID: data.active_id if data else CUSTOM_PROFILE_ID,
             ATTR_ACTIVE_PROFILE_COLOR: coordinator.profile_color(active),
             ATTR_PROFILES: [
                 {
@@ -199,7 +207,7 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
                 normalise_values(data.vocabulary, data.values) if data else {}
             ),
             ATTR_CAPABILITIES: data.capabilities.as_dict() if data else {},
-            # The card only ever sees ids in ``values``; these say what they
+            # The card only ever sees keys in ``values``; these say what they
             # are called, which entity they are and how to draw them.
             ATTR_ADDITIONAL: _in_apply_order(
                 coordinator.additional.as_frontend(data.vocabulary if data else None),
@@ -212,6 +220,9 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
             ATTR_UNREACHED: (
                 data.unreached.as_dict() if data and data.unreached else None
             ),
+            # In automatic mode the state names the profile held even while
+            # the device differs from it; these are the values that do.
+            ATTR_DEVIATES: list(data.deviates) if data else [],
             # ``None`` without a profile sensor; otherwise whether automatic
             # mode is on, what the sensor names and why that is no profile.
             # The switch is named so the card flips the same thing an

@@ -7,6 +7,8 @@ decided once when a profile is set up and stay in the options.
 
 Automatic mode is a switch for the same reason, and exists only while a
 profile sensor is configured: without one there is nothing it could follow.
+
+The switches a profile sets on or off are here too - see ``profile_values``.
 """
 
 from __future__ import annotations
@@ -20,10 +22,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import DOMAIN
+from .const import DOMAIN, KIND_BOOLEAN
 from .coordinator import ClimateProfilesConfigEntry, ClimateProfilesCoordinator
 from .entity import ClimateProfilesEntity
+from .matching import normalise_value
 from .models import ClimateProfile
+from .profile_values import ProfileValueEntity, async_track_profile_values
 
 #: Prefix of the key each switch is registered under, followed by the id of
 #: its profile - so renaming the profile keeps the entity, and its entity id.
@@ -102,6 +106,10 @@ async def async_setup_entry(
         async_add_entities([AutomaticSwitch(coordinator)])
     elif stale := automatic_entity_id(registry, entry):
         registry.async_remove(stale)
+
+    async_track_profile_values(
+        entry, async_add_entities, Platform.SWITCH, KIND_BOOLEAN, ProfileSwitch
+    )
 
 
 class ProtectedSwitch(ClimateProfilesEntity, SwitchEntity):
@@ -221,3 +229,20 @@ class AutomaticSwitch(ClimateProfilesEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Give the choice back."""
         await self.coordinator.async_set_automatic(False)
+
+
+class ProfileSwitch(ProfileValueEntity, SwitchEntity):
+    """A switch one profile sets on or off."""
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the profile switches it on."""
+        return normalise_value(self._spec, self._stored)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Have the profile switch it on."""
+        await self._async_write(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Have the profile switch it off."""
+        await self._async_write(False)

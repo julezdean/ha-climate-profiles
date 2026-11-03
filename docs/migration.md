@@ -49,3 +49,24 @@ This integration does the same thing, with the same rules.
 Nothing in the package has to be deleted before you start - the integration
 only reads the climate entity and writes when you tell it to, so both can run
 side by side while you check.
+
+## Updating from 2.x to 3.0
+
+3.0 gives every additional value a readable key instead of a uuid, and
+rewrites what is stored once, on the first start: the values, every profile
+and the apply order. Nothing has to be done by hand. What to know:
+
+- **There is no way back.** A 2.x installation reading the new keys takes them
+  for values that do not exist, and every profile loses its additional
+  values. Make a backup before updating.
+- **Dashboards keep working.** A card that hides a value by its uuid still
+  hides it; the visual editor writes the key the next time it saves the card.
+  The same goes for automations that call `set_value` or `capture_profile`
+  with a uuid.
+- **The keys are listed** under Configure → Manage values. `hide` takes them
+  from now on: `hide: [kindersicherung]`.
+- **Automatic mode has no custom any more.** An automation that waited for
+  `active_profile_id: __custom__` while automatic mode was on never sees it
+  now; trigger on the sensor's `deviates` attribute instead.
+- **New entities.** Every value a profile sets appears as an entity on the
+  device page, under Configuration.

@@ -72,6 +72,7 @@ from .const import (
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
 )
+from .keys import value_key
 from .models import (
     AdditionalValue,
     AdditionalValueSet,
@@ -83,7 +84,6 @@ from .models import (
     Vocabulary,
     color_to_rgb,
     new_profile_id,
-    new_value_id,
     normalise_color,
     parse_minutes,
     reserved_profile_names,
@@ -197,6 +197,16 @@ def _value_row(value: AdditionalValue) -> dict[str, Any]:
         CONF_ADDITIONAL_ID: value.id,
     }
     return {key: item for key, item in row.items() if item is not None}
+
+
+def _key_list(values: AdditionalValueSet) -> str:
+    """Return the keys of the values, one per line, for the step's description.
+
+    The row cannot show it: a field that is read only is drawn as an editable
+    box by the frontend. So the description lists what a card's ``hide`` or
+    ``set_value`` takes.
+    """
+    return "".join(f"\n- {value.name}: `{value.id}`" for value in values) or " -"
 
 
 def _profile_row(profile: ClimateProfile, vocab: Vocabulary) -> dict[str, Any]:
@@ -421,7 +431,8 @@ def profile_from_input(
 class ClimateProfilesConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up one air conditioner."""
 
-    VERSION = 1
+    #: 2 since additional values have readable keys - see ``async_migrate_entry``.
+    VERSION = 2
 
     def __init__(self) -> None:
         """Start with an empty draft."""
@@ -640,7 +651,10 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="values", data_schema=vol.Schema(fields), errors=errors
+            step_id="values",
+            data_schema=vol.Schema(fields),
+            errors=errors,
+            description_placeholders={"keys": _key_list(self._additional)},
         )
 
     async def async_step_profiles(
@@ -902,8 +916,19 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
     def _values_from_rows(
         self, rows: list[dict[str, Any]]
     ) -> tuple[AdditionalValueSet | None, dict[str, str]]:
-        """Return the values the rows describe, or what is wrong with them."""
+        """Return the values the rows describe, or what is wrong with them.
+
+        A row that carries a key keeps it, whatever it is called now. A new
+        one gets its key from its name - and every key the list keeps counts
+        as taken, also one further down than the new row.
+        """
         values = AdditionalValueSet()
+        stored = {value.id: value for value in self._additional}
+        taken = {
+            str(row.get(CONF_ADDITIONAL_ID))
+            for row in rows
+            if row.get(CONF_ADDITIONAL_ID)
+        }
         for index, row in enumerate(rows):
             entity_id = str(row.get(CONF_ADDITIONAL_ENTITY) or "")
             state = self.hass.states.get(entity_id)
@@ -916,13 +941,19 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
                 or state.attributes.get("friendly_name")
                 or entity_id
             ).strip()
+            key = str(row.get(CONF_ADDITIONAL_ID) or "")
+            if not key:
+                key = value_key(self.hass, entity_id, name, taken)
+                taken.add(key)
+            former = stored.get(key)
             values = values.appended(
                 AdditionalValue(
-                    id=str(row.get(CONF_ADDITIONAL_ID) or "") or new_value_id(),
+                    id=key,
                     name=values.unique_name(name),
                     entity=entity_id,
                     icon=row.get(CONF_ADDITIONAL_ICON) or None,
                     order=index,
+                    former_id=former.former_id if former else None,
                 )
             )
         return values, {}
@@ -935,10 +966,11 @@ class ClimateProfilesOptionsFlow(OptionsFlow):
         name = str(
             (state.attributes.get("friendly_name") if state else None) or entity_id
         ).strip()
+        name = values.unique_name(name)
         return values.appended(
             AdditionalValue(
-                id=new_value_id(),
-                name=values.unique_name(name),
+                id=value_key(self.hass, entity_id, name, values.keys()),
+                name=name,
                 entity=entity_id,
                 order=values.next_order(),
             )

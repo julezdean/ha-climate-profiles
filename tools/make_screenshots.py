@@ -221,6 +221,39 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
+    # The same radiator while nobody is home: the sensor names "Away", which
+    # is write protected, and somebody turned the thermostat up by hand. The
+    # state stays "Away" - automatic mode holds it - and the dot says the
+    # device differs.
+    "card-heating-deviation": {
+        "theme": "light",
+        "device": "bathroom",
+        "card": {
+            "name": "Bathroom",
+            "profile_layout": "icons",
+            "temperature_style": "dial",
+            "show_target": True,
+            "show_automatic": True,
+            "show_protection": True,
+            "hide": ["hvac_mode"],
+        },
+        "state": {
+            "temperature": 22,
+            "active_profile": "Away",
+            "active_profile_id": "b4",
+            "active_profile_color": "#afe29c",
+            "deviates": ["temperature"],
+            "automatic": {
+                "status": "following",
+                "sensor": "sensor.bathroom_wanted_profile",
+                "sensor_state": "Away",
+                "target": "Away",
+                "target_id": "b4",
+                "problem": None,
+                "temporary": None,
+            },
+        },
+    },
 }
 
 

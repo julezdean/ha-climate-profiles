@@ -162,8 +162,8 @@
       }
 
       /* The additional values, exactly as the integration reports them. The
-         ids are speaking here so the fixture stays readable; production hands
-         out uuids. */
+         keys are readable, as production forms them since 3.0. "Silent"
+         was added before that and still remembers its uuid. */
       const ADDITIONAL = [
         { id: "fan", name: "Fan speed", entity: "number.living_room_fan_speed",
           icon: null, order: 0, kind: "number", min: 1, max: 100, step: 1,
@@ -171,7 +171,8 @@
         { id: "display", name: "Display", entity: "switch.living_room_display",
           icon: "mdi:television", order: 1, kind: "boolean", min: null,
           max: null, step: 1, options: [] },
-        { id: "silent", name: "Silent", entity: "switch.living_room_silent",
+        { id: "silent", former_id: "37aacc3d039c4c469ff07676b7eaf05f",
+          name: "Silent", entity: "switch.living_room_silent",
           icon: "mdi:sleep", order: 2, kind: "boolean", min: null, max: null,
           step: 1, options: [] },
         /* A select: the kind of value the three fixed fields could never
@@ -253,6 +254,7 @@
                 active_profile_color: state.active_profile_color,
                 applying: state.applying,
                 unreached: state.unreached || null,
+                deviates: state.deviates || [],
                 automatic: withUntil(state.automatic),
                 profiles: PROFILES,
                 additional_values: ADDITIONAL,

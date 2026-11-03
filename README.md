@@ -92,6 +92,13 @@ switch in three ticks rather than three searches. Supported are `number`,
 domains whose state is a single value, which is what a profile can compare and
 write.
 
+Each value gets a **key** when it is added, formed from its name with the
+device's name left out: "Better Thermostat Bad Heizung Kindersicherung" becomes
+`kindersicherung`. Profiles store their values under it, and it is what a
+card's `hide` and `set_value` take. Renaming the value later keeps the key, so
+nothing that uses it breaks; the form lists every key under the values. A key
+that is taken gets a counter: `kindersicherung_2`.
+
 Each config entry creates one device with these entities:
 
 | Entity | Purpose |
@@ -100,16 +107,42 @@ Each config entry creates one device with these entities:
 | `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
 | `switch.<name>_<profile>_write_protected` | one per profile: whether it keeps changes made by hand out |
 | `switch.<name>_automatic_mode` | only with a profile sensor: whether that sensor decides the profile - see [Automatic mode](#automatic-mode) |
+| `number.<name>_<profile>_temperature`, `select.<name>_<profile>_mode`, … | one per value a profile sets - see [Profile values as entities](#profile-values-as-entities) |
 
 (The entity names are translated, so a German instance gets
 `sensor.<name>_klimaprofil`, `select.<name>_profil` and
-`switch.<name>_<profil>_schreibgeschutzt` and `switch.<name>_automatik`.)
+`switch.<name>_<profil>_schreibgeschutzt`, `switch.<name>_automatik` and
+`number.<name>_<profil>_temperatur`.)
 
 The switches are configuration entities: they appear under the device's
 settings, not on an automatically generated dashboard. A profile added in the
 options gets its switch right away, a deleted one takes it along. Renaming a
 profile renames its switch but keeps the entity id, so automations pointing at
 it keep working.
+
+### Profile values as entities
+
+Every value a profile sets is an entity of its own, so a profile can be read
+and changed without opening it in the options - on the device page they sit
+together under Configuration.
+
+| Value | Entity |
+| --- | --- |
+| temperature | `number`, in the range of the climate entity |
+| mode, fan mode, swing mode | `select`, with what the device offers |
+| an additional value | `number`, `select` or `switch`, like the entity behind it |
+
+- **Only what a profile sets.** A profile that says nothing about the fan has
+  no fan entity. Putting a value into a profile or taking it out is done in
+  the options; the entity comes and goes with it, without a reload.
+- **A change is stored in the profile** - and applied to the device when that
+  profile is the active one, so it stays active.
+- **Write protection does not apply.** It keeps changes made on the device out
+  of a profile; changing the profile's own value is what the entity is for.
+- **A value the device cannot take is `unknown`**: an option it no longer
+  offers, or a number outside its range. It cannot be picked either.
+- Hidden profiles have them too. Renaming a profile renames its entities and
+  keeps their entity ids.
 
 ## Managing profiles
 
@@ -183,18 +216,22 @@ range - comes from the integration. Options, all optional:
 | `name` | the entity's name | title shown in the header |
 | `profile_layout` | `grid` | `grid`, `scroll`, `dropdown` or `icons` |
 | `temperature_style` | `bar` | `bar` or `dial` |
-| `hide` | `[]` | values to leave out, by key or id |
+| `hide` | `[]` | values to leave out, by key |
 | `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
 | `show_automatic` | `false` | a button next to the lock that switches [automatic mode](#automatic-mode) on and off |
 | `show_target` | `true` | a row with the profile automatic mode is aiming for - only while automatic mode is on |
 
 Everything configured is shown unless you hide it, so a value you add later
 appears without editing every dashboard. The list mixes the four climate keys
-with the ids of your additional values, the same way a profile's values do:
+with the keys of your additional values, the same way a profile's values do:
 
 ```yaml
-hide: [swing_mode, 7f3a9c1e…]
+hide: [swing_mode, kindersicherung]
 ```
+
+A card written before 3.0 names the value by its old id, a 32 character uuid.
+That keeps working; the visual editor replaces it with the key the next time
+the card is saved.
 
 The visual editor shows a switch per value and writes this list for you. It
 offers only the values your device actually has - a radiator thermostat has no
@@ -316,6 +353,14 @@ hide: [hvac_mode]
 ```
 
 <img src="docs/images/card-heating-boost.png" alt="A radiator in automatic mode with Boost counting down" width="460">
+
+Where the device differs from the profile automatic mode holds, an orange dot
+follows the name in the header; hovering it says which values differ. Here the
+sensor names the write protected "Away", and somebody turned the thermostat up
+by hand. The state stays "Away" - automatic mode decides which profile
+applies - and nothing is written back.
+
+<img src="docs/images/card-heating-deviation.png" alt="Automatic mode holds Away, but the thermostat was turned up by hand" width="460">
 
 The card only renders and calls services. It never decides which profile is
 active - that answer always comes from the integration, so the developer
@@ -481,12 +526,23 @@ While the switch is on:
   `apply_profile` and voice assistants are refused with an error, all alike.
   `set_value` and the device's own buttons still work: changing the device is
   not choosing a profile.
+- **The state is the profile automatic mode holds** - a temporary profile
+  while one runs, otherwise the one the sensor names. There is no custom: not
+  while the device is still catching up after a switch, and not when it
+  differs from the profile afterwards. While the sensor names no profile, the
+  one held last stays; with none held yet - after a restart - the state is
+  `unknown`.
+- **A deviation is shown, not fought.** Where the device differs from the
+  profile held, the sensor's `deviates` attribute lists the values, and the
+  card puts a dot next to the profile name. Nothing is written back: that
+  would fight the device, its own window detection for one.
 - **A change made by hand goes into the profile, as always** - unless it is
   write protected; see [Changes made by hand](#changes-made-by-hand). A
   write protected profile that automatic mode holds cannot be changed at all:
   `set_value` is refused, and the card is display only, apart from temporary
   profiles, the automatic mode button and the lock. Only the device's own
-  buttons still get through, and lead to custom.
+  buttons still get through, and lead to a deviation. After a restart the
+  profile held is the reference point for what was changed by hand.
 - **No profile, no write.** A sensor that is unavailable, or names no profile,
   makes automatic mode wait: the device keeps what it has, the switch stays
   on, and the sensor's `automatic` attribute says why. Once the sensor names a
@@ -602,16 +658,16 @@ target:
   entity_id: sensor.living_room_climate_profile
 data:
   temperature: 23
-  Silent: true          # an additional value, by name or by id
+  silent: true          # an additional value, by key or by name
 ```
 
 Writes individual values and re-evaluates which profile that state
 corresponds to. All fields are optional, at least one is required.
 
 Besides the four climate values you can name any of your additional values,
-by its name or by its id - ids win, so a value named like another one's id
-cannot shadow it. An unknown name is refused with the list of what this device
-knows.
+by its key or by its name - keys win, so a value named like another one's key
+cannot shadow it. The id a value had before 3.0 still finds it. An unknown name
+is refused with the list of what this device knows.
 
 ### `climate_profiles.capture_profile`
 
@@ -621,7 +677,7 @@ target:
   entity_id: sensor.living_room_climate_profile
 data:
   profile: Comfort        # required - name or id
-  values: [temperature]   # optional - defaults to deciding automatically
+  values: [temperature]   # optional - defaults to deciding automatically; keys or names
 ```
 
 Writes the current state into the profile you name - what happens on its own
@@ -663,22 +719,25 @@ active_profile_id: 2b3c4d5e…      # stable, use this in automations
 active_profile_color: "#22c55e"
 profiles: [{id, name, color, icon, order, detect, hidden, protected, temporary, duration, priority, protection_entity, values}, …]
 custom_profile: {id: __custom__, name: Custom, color: "#78909c", icon: null}
-additional_values: [{id, name, entity, icon, order, kind, min, max, step, options}, …]
-current_values: {hvac_mode: cool, temperature: 24.0, 7f3a9c1e…: 42, …}
+additional_values: [{id, former_id, name, entity, icon, order, kind, min, max, step, options}, …]
+current_values: {hvac_mode: cool, temperature: 24.0, fan_speed: 42, …}
 capabilities: {hvac_modes: […], min_temp: 16, target_temp_step: 1, …}
 entities: {climate: …, additional: {id: entity_id, …}}
 applying: false
 unreached:                           # a profile that was applied but did not take
   {profile_id: …, profile: Max, values: {fan_mode: {wanted: full, actual: silent}}}
 automatic: {status, sensor, sensor_state, target, target_id, problem, temporary}   # see Automatic mode
+deviates: [temperature]              # automatic mode: where the device differs from the profile held
 ```
 
 Automations should trigger on `active_profile_id`. The state is the display
 name and changes when you rename a profile; the id does not.
 
-The same holds for the additional values: `current_values` carries their ids, and `additional_values` says what each id is called and which
-entity is behind it. Renaming a value or pointing it at a different entity
-leaves every profile that sets it intact.
+The same holds for the additional values: `current_values` carries their keys,
+and `additional_values` says what each key is called, which entity is behind
+it and, for a value added before 3.0, the id it had then (`former_id`).
+Renaming a value or pointing it at a different entity leaves every profile that
+sets it intact.
 
 ## How matching works
 

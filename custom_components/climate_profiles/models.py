@@ -17,6 +17,7 @@ from .const import (
     CLIMATE_KEYS,
     CLIMATE_KINDS,
     CONF_ADDITIONAL_ENTITY,
+    CONF_ADDITIONAL_FORMER_ID,
     CONF_ADDITIONAL_ICON,
     CONF_ADDITIONAL_ID,
     CONF_ADDITIONAL_NAME,
@@ -42,6 +43,7 @@ from .const import (
     KIND_OPTION,
     LEGACY_CAPTURE_NEVER,
     MAX_TEMPORARY_MINUTES,
+    RESERVED_VALUE_KEYS,
     VALUE_HVAC_MODE,
     VALUE_SWING_MODE,
     VALUE_TEMPERATURE,
@@ -137,7 +139,7 @@ class ClimateProfile:
             raise ProfileError(f"values of profile {name!r} must be a mapping")
 
         # Keys are not validated here. Four of them are the climate ones; the
-        # rest are ids of additional values, which this class has no way of
+        # rest are keys of additional values, which this class has no way of
         # knowing about - and a value whose additional value was deleted has to
         # survive in storage rather than make the whole profile unreadable.
         # ``Vocabulary`` decides at runtime what is usable.
@@ -364,14 +366,19 @@ class AdditionalValue:
     the user's: which entity, what it is called, which icon it carries.
     """
 
-    #: Stable and meaningless, like a profile's. Profiles store their values
-    #: under it, so renaming the value or pointing it at a different entity
-    #: leaves every profile intact.
+    #: The value's key - readable, formed from the name when the value was
+    #: added, and never changed afterwards. Profiles store their values under
+    #: it, so renaming the value or pointing it at a different entity leaves
+    #: every profile intact.
     id: str
     name: str
     entity: str
     icon: str | None = None
     order: int = 0
+    #: The uuid it was stored under before keys were readable. Accepted
+    #: wherever the key is, because dashboards hiding it by that id cannot be
+    #: migrated.
+    former_id: str | None = None
 
     @property
     def domain(self) -> str:
@@ -406,12 +413,14 @@ class AdditionalValue:
             order = int(raw.get(CONF_ADDITIONAL_ORDER, 0) or 0)
         except (TypeError, ValueError):
             order = 0
+        former = raw.get(CONF_ADDITIONAL_FORMER_ID) or None
         return cls(
             id=str(raw.get(CONF_ADDITIONAL_ID) or new_value_id()),
             name=name,
             entity=entity,
             icon=str(icon) if icon else None,
             order=order,
+            former_id=str(former) if former else None,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -424,12 +433,35 @@ class AdditionalValue:
         }
         if self.icon:
             data[CONF_ADDITIONAL_ICON] = self.icon
+        if self.former_id:
+            data[CONF_ADDITIONAL_FORMER_ID] = self.former_id
         return data
 
 
 def new_value_id() -> str:
-    """Return a fresh, stable id for an additional value."""
+    """Return a fresh id for a value stored without one.
+
+    Only options edited by hand get here: the config flow forms a readable key
+    from the name, see :func:`unique_key`.
+    """
     return uuid4().hex
+
+
+def unique_key(base: str, taken: set[str] | frozenset[str]) -> str:
+    """Return ``base`` as a key no other value has, with a counter if need be.
+
+    ``base`` comes slugified - that needs Home Assistant, which this module
+    does not import. Reserved keys count as taken: the climate keys share the
+    key space, and the fields of a profile's row sit next to its values.
+    """
+    wanted = base.strip("_") or "value"
+    unavailable = {*taken, *RESERVED_VALUE_KEYS}
+    if wanted not in unavailable:
+        return wanted
+    count = 2
+    while f"{wanted}_{count}" in unavailable:
+        count += 1
+    return f"{wanted}_{count}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,17 +489,28 @@ class AdditionalValueSet:
         return next((v for v in self.values if v.id == value_id), None)
 
     def resolve(self, reference: str) -> AdditionalValue | None:
-        """Return the value an id or a name refers to.
+        """Return the value a key, a former id or a name refers to.
 
-        Ids win over names, so a value literally named like another one's id
-        cannot shadow it - the same rule profiles follow.
+        Keys win over names, so a value literally named like another one's key
+        cannot shadow it - the same rule profiles follow. The uuid a value
+        carried before keys were readable still finds it.
         """
         if not reference:
             return None
         if (by_id := self.get(reference)) is not None:
             return by_id
+        if (by_former := self.by_former_id(reference)) is not None:
+            return by_former
         wanted = reference.strip().casefold()
         return next((v for v in self.values if v.name.casefold() == wanted), None)
+
+    def by_former_id(self, former_id: str) -> AdditionalValue | None:
+        """Return the value that carried ``former_id`` before it had a key."""
+        return next((v for v in self.values if v.former_id == former_id), None)
+
+    def keys(self) -> frozenset[str]:
+        """Return the keys in use."""
+        return frozenset(v.id for v in self.values)
 
     def unique_name(self, name: str, *, ignoring: str | None = None) -> str:
         """Return ``name``, with a counter appended if it is already taken.
@@ -525,6 +568,7 @@ class AdditionalValueSet:
         for value in self.values:
             entry: dict[str, Any] = {
                 "id": value.id,
+                "former_id": value.former_id,
                 "name": value.name,
                 "entity": value.entity,
                 "icon": value.icon,

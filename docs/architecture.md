@@ -20,8 +20,11 @@ matching.py   rules:   normalise -> compare -> resolve active -> build a plan
 coordinator.py glue:   read states, run the rules, execute the plan
 entity.py              one device per config entry
 sensor.py              the active profile + everything the card needs
-                       + the two entity services
+                       + the entity services
 select.py              picking a profile the native way
+profile_values.py      one entity per value a profile sets, shared by
+number.py / select.py / switch.py
+keys.py                the readable key of an additional value
 config_flow.py         setup and profile management
 ─────────────────────────────────────────────────────────────────────────────
 frontend/…js  view:    renders the sensor, calls the services
@@ -76,6 +79,12 @@ intermediate states. There is a test for exactly that.
 already reports the target profile and sets `applying: true`, so the card
 reacts instantly. When the refresh afterwards shows the device did not follow,
 the state falls back to what is really there. Also tested.
+
+Not in automatic mode: there the state is the profile automatic mode holds,
+also while the device differs from it, and the difference is reported as
+`deviates` instead. Automatic mode decides which profile applies; a state
+saying custom about it answered a question nobody asked. See
+[value entities](value-entities.md#automatic-mode-holds-it-does-not-detect).
 
 **Restart, not queue.** A second apply cancels a running one, mirroring the
 `mode: restart` of the original script. Two users tapping two profiles get the

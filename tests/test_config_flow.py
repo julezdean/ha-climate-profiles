@@ -221,6 +221,7 @@ async def setup_options(hass, profiles=None, *, additional=True):
     """Set up an entry and open its options flow."""
     set_device_state(hass)
     entry = MockConfigEntry(
+        version=2,
         domain=DOMAIN,
         title="Wohnzimmer",
         data={CONF_CLIMATE_ENTITY: CLIMATE},

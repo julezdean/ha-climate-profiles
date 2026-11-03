@@ -11,10 +11,12 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 
+from custom_components.climate_profiles import coordinator as coordinator_module
 from custom_components.climate_profiles.const import (
     AUTOMATIC_STORAGE_KEY,
     CONF_CLIMATE_ENTITY,
     CONF_PROFILE_SENSOR,
+    CONF_PROFILES,
     DOMAIN,
     SELECTION_STORAGE_KEY,
 )
@@ -436,3 +438,148 @@ async def test_a_protected_profile_held_by_it_cannot_be_changed(
         blocking=True,
     )
     assert calls["set_temperature"][-1].data["temperature"] == 21
+
+
+# --- holding, not detecting -------------------------------------------------
+
+
+async def test_the_profile_held_is_the_state_while_the_device_catches_up(
+    hass, entry_data, calls, monkeypatch
+):
+    """No custom in between: the device has not answered yet, it is mocked."""
+    entry = await setup_automatic(hass, entry_data)
+    assert hass.states.get(SENSOR).state == "Custom"
+
+    await switch_on(hass, entry)
+
+    state = hass.states.get(SENSOR)
+    assert state.state == "Kuehlung"
+    assert state.attributes["active_profile_id"] == "kuehlung"
+    # On its way: not a deviation yet.
+    assert state.attributes["deviates"] == []
+
+    # The device never follows. Judged, it is a deviation - and still the
+    # profile automatic mode holds.
+    monkeypatch.setattr(coordinator_module, "REACH_QUIET_SECONDS", 0.1)
+    await entry.runtime_data._async_check_reached()
+    await hass.async_block_till_done()
+    state = hass.states.get(SENSOR)
+    assert state.state == "Kuehlung"
+    assert state.attributes["deviates"] == ["temperature"]
+    assert state.attributes["unreached"]["profile_id"] == "kuehlung"
+
+
+async def test_the_select_has_no_custom_in_automatic_mode(hass, entry_data, calls):
+    entry = await setup_automatic(hass, entry_data)
+    assert "Custom" in hass.states.get(SELECT).attributes["options"]
+
+    await switch_on(hass, entry)
+
+    select = hass.states.get(SELECT)
+    assert select.attributes["options"] == ["Aus", "Komfort", "Kuehlung"]
+    assert select.state == "Kuehlung"
+
+
+async def test_a_change_on_the_device_is_a_deviation(hass, entry_data, calls):
+    """A protected profile keeps the change out; the state stays its name."""
+    hass.states.async_set(PROFILE_SENSOR, "Kuehlung")
+    set_device_state(hass, temperature=22)
+    profiles = [{**p, "protected": True} for p in PROFILES]
+    entry = await setup_entry(
+        hass,
+        entry_data,
+        profiles=profiles,
+        options={CONF_PROFILE_SENSOR: PROFILE_SENSOR},
+    )
+    await switch_on(hass, entry)
+    entry.runtime_data._clear_target()
+
+    # The thermostat's own buttons.
+    set_device_state(hass, temperature=25)
+    await settle(hass)
+
+    state = hass.states.get(SENSOR)
+    assert state.state == "Kuehlung"
+    assert state.attributes["deviates"] == ["temperature"]
+
+
+async def test_without_anything_held_the_state_is_unknown(
+    hass, entry_data, calls, hass_storage
+):
+    """After a restart, with a sensor that names nothing."""
+    entry = await setup_automatic(hass, entry_data, wanted="Gibt es nicht")
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {AUTOMATIC_STORAGE_KEY: {entry.entry_id: {"on": True, "applied": None}}},
+    )
+    await settle(hass)
+
+    state = hass.states.get(SENSOR)
+    assert state.state == "unknown"
+    assert state.attributes["active_profile_id"] is None
+    assert hass.states.get(SELECT).state == "unknown"
+
+
+async def test_with_the_sensor_naming_nothing_the_last_profile_stays(
+    hass, entry_data, calls
+):
+    entry = await setup_automatic(hass, entry_data)
+    await switch_on(hass, entry)
+
+    hass.states.async_set(PROFILE_SENSOR, STATE_UNAVAILABLE)
+    await settle(hass)
+
+    assert hass.states.get(SENSOR).state == "Kuehlung"
+
+
+async def test_after_a_restart_the_profile_held_is_the_reference_point(
+    hass, entry_data, calls, hass_storage, monkeypatch
+):
+    """A change made by hand after the restart goes into the profile held."""
+    monkeypatch.setattr(coordinator_module, "AUTO_CAPTURE_QUIET_SECONDS", 0.2)
+    entry = await setup_automatic(hass, entry_data)
+    await restart(
+        hass,
+        entry,
+        hass_storage,
+        {AUTOMATIC_STORAGE_KEY: {entry.entry_id: {"on": True, "applied": "kuehlung"}}},
+    )
+    await settle(hass)
+    # Restarted on 26 °C: the device differs from Kuehlung, and that is shown.
+    assert hass.states.get(SENSOR).state == "Kuehlung"
+    assert hass.states.get(SENSOR).attributes["deviates"] == ["temperature"]
+
+    set_device_state(hass, temperature=23)
+    await settle(hass)
+    await asyncio.sleep(0.4)
+    await settle(hass)
+
+    kuehlung = next(p for p in entry.options[CONF_PROFILES] if p["id"] == "kuehlung")
+    assert kuehlung["values"]["temperature"] == 23
+
+
+async def test_a_deviation_is_not_reported_while_a_profile_is_applied(
+    hass, entry_data, calls
+):
+    """What differed from the profile before must not land on the next one."""
+    entry = await setup_automatic(hass, entry_data)
+    await switch_on(hass, entry)
+    # The mocked device never took Kuehlung: judged, that is a deviation.
+    entry.runtime_data._clear_target()
+    await entry.runtime_data.async_refresh()
+    assert entry.runtime_data.data.deviates == ("temperature",)
+
+    seen: list[tuple[str, tuple[str, ...]]] = []
+    entry.runtime_data.async_add_listener(
+        lambda: seen.append(
+            (entry.runtime_data.data.active.name, entry.runtime_data.data.deviates)
+        )
+    )
+    hass.states.async_set(PROFILE_SENSOR, "Komfort")
+    await settle(hass)
+
+    komfort = [deviates for name, deviates in seen if name == "Komfort"]
+    assert komfort
+    assert all(deviates == () for deviates in komfort), seen

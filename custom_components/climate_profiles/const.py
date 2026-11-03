@@ -20,15 +20,20 @@ CONF_CLIMATE_ENTITY: Final = "climate_entity"
 #: climate entity it is preference rather than identity.
 CONF_ADDITIONAL: Final = "additional_values"
 
+#: The value's key: readable, formed once from its name, and never changed
+#: afterwards - profiles store their values under it.
 CONF_ADDITIONAL_ID: Final = "id"
+#: The uuid a value carried before keys were readable. Kept so a card that
+#: still hides it by that id, or an automation that sets it, keeps working.
+CONF_ADDITIONAL_FORMER_ID: Final = "former_id"
 CONF_ADDITIONAL_NAME: Final = "name"
 CONF_ADDITIONAL_ENTITY: Final = "entity"
 CONF_ADDITIONAL_ICON: Final = "icon"
 CONF_ADDITIONAL_ORDER: Final = "order"
 
 #: The order in which values are applied - and in which the card shows the
-#: additional ones. One list over one key space: the climate keys and the ids of
-#: the additional values, mixed. ``hvac_mode`` is not in it: it always goes
+#: additional ones. One list over one key space: the climate keys and the keys
+#: of the additional values, mixed. ``hvac_mode`` is not in it: it always goes
 #: first, because most devices ignore everything else while they are off.
 CONF_VALUE_ORDER: Final = "value_order"
 
@@ -99,6 +104,28 @@ CLIMATE_KEYS: Final[tuple[str, ...]] = (
     VALUE_FAN_MODE,
 )
 
+#: Keys an additional value may not take: the climate keys, which share the
+#: key space, and the fields of a profile's row in the options, which its
+#: values are fields next to - a value called "Color" would share one.
+RESERVED_VALUE_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        *CLIMATE_KEYS,
+        CONF_PROFILE_ID,
+        CONF_PROFILE_NAME,
+        CONF_PROFILE_COLOR,
+        CONF_PROFILE_ICON,
+        CONF_PROFILE_VALUES,
+        CONF_PROFILE_DETECT,
+        CONF_PROFILE_HIDDEN,
+        CONF_PROFILE_PROTECTED,
+        CONF_PROFILE_TEMPORARY,
+        CONF_PROFILE_PRIORITY,
+        CONF_PROFILE_DURATION,
+        CONF_PROFILE_CAPTURE,
+        "__custom__",
+    }
+)
+
 # --- what a value is -------------------------------------------------------
 
 #: How a value is compared, stored and written. Derived from the domain of the
@@ -143,6 +170,10 @@ ATTR_ACTIVE_PROFILE: Final = "active_profile"
 #: A profile that was applied but did not take: which one, and which of its
 #: values the device did not keep.
 ATTR_UNREACHED: Final = "unreached"
+
+#: In automatic mode: the keys in which the device differs from the profile
+#: held - the state names that profile all the same.
+ATTR_DEVIATES: Final = "deviates"
 
 #: The definitions of the additional values, so the card can label and draw
 #: what it otherwise only sees as ids.
