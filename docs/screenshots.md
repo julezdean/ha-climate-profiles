@@ -71,6 +71,7 @@ special cases - do not "fix" them into a normal state:
 | `card-hidden.png` | "Summer", hidden from the card, is active - not shown, no button is marked |
 | `card-automatic.png` | `show_automatic: true`, automatic mode on, the temporary "Night" runs for another 24 minutes, the sensor names "Comfort" |
 | `card-heating-priority.png` | the same radiator with the window open: the sensor names "Ventilate", which takes priority, so "Boost" is disabled and the target row says why |
+| `card-edit.png` | `show_edit: true`, the pencil tapped: every profile, "Comfort" open with every value the device could set - the fan speed and the preset not set in it |
 | `card-heating-deviation.png` | the same radiator, automatic mode holds the write protected "Away", but the thermostat was turned to 22 °C by hand - the dot next to the name |
 | `card-heating-boost.png` | the bathroom radiator with `icons`, `dial`, `show_target`, `show_automatic`, `show_protection` and `hvac_mode` hidden: the temporary, write protected "Boost" runs for another 17 minutes, the sensor names "Comfort" |
 

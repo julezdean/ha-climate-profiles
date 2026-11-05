@@ -1312,10 +1312,15 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
                 self._baseline = None
         self._store(self.profiles.replaced(replace(profile, protected=protected)))
 
-    async def async_set_profile_value(
-        self, profile_id: str, key: str, value: Any
-    ) -> None:
-        """Change one value a profile sets - from its entity.
+    async def async_edit_profile(
+        self, reference: str, values: Mapping[str, Any]
+    ) -> ClimateProfile:
+        """Change values a profile sets - what the card's edit mode does.
+
+        ``values`` maps a key - or a name, or an old id - to the new value;
+        ``None`` takes the value out of the profile. The mode stays: a profile
+        that does not say what the device should do is not one, which is why
+        the options require it too.
 
         Stored in the profile, and applied when the profile is the active
         one: a profile whose temperature was just raised is still that
@@ -1323,25 +1328,51 @@ class ClimateProfilesCoordinator(DataUpdateCoordinator[ProfileState]):
         the change is stored. Write protection does not apply - it keeps
         changes made on the device out, and this one is made to the profile.
         """
-        profile = self.profiles.get(profile_id)
-        state = self.data
-        if profile is None or key not in profile.values or state is None:
-            return
-        spec = state.vocabulary.get(key)
-        stored = storage_value(spec, normalise_value(spec, value))
-        if stored is None:
+        profiles = self.profiles
+        profile = profiles.resolve(reference)
+        if profile is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="invalid_profile_value",
-                translation_placeholders={"value": str(value), "profile": profile.name},
+                translation_key="unknown_profile",
+                translation_placeholders={
+                    "profile": reference or "-",
+                    "known": ", ".join(p.name for p in profiles) or "-",
+                },
             )
-        updated = profile.with_values({**profile.values, key: stored})
+        state = self.data or await self._async_update_data()
+        changed = dict(profile.values)
+        written = False
+        for key, value in self.resolve_value_keys(values).items():
+            if value is None:
+                if key == VALUE_HVAC_MODE:
+                    raise ServiceValidationError(
+                        translation_domain=DOMAIN,
+                        translation_key="profile_needs_a_mode",
+                        translation_placeholders={"profile": profile.name},
+                    )
+                changed.pop(key, None)
+                continue
+            spec = state.vocabulary.get(key)
+            stored = storage_value(spec, normalise_value(spec, value))
+            if stored is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="invalid_profile_value",
+                    translation_placeholders={
+                        "value": str(value),
+                        "profile": profile.name,
+                    },
+                )
+            changed[key] = stored
+            written = True
+        updated = profile.with_values(changed)
         if updated.values == profile.values:
-            return
-        _LOGGER.debug("%s: %s of %s set to %s", self.name, key, profile.name, stored)
-        self._store(self.profiles.replaced(updated))
-        if state.active is not None and state.active.id == profile_id:
+            return profile
+        _LOGGER.debug("%s: %s now sets %s", self.name, profile.name, updated.values)
+        self._store(profiles.replaced(updated))
+        if written and state.active is not None and state.active.id == profile.id:
             await self._async_choose(updated)
+        return updated
 
     @callback
     def _store(self, profiles: ProfileSet) -> None:

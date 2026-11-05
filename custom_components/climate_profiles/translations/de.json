@@ -112,27 +112,6 @@
     "select": {
       "profile": {
         "name": "Profil"
-      },
-      "profile_hvac_mode": {
-        "name": "{profile} Modus",
-        "state": {
-          "off": "Aus",
-          "heat": "Heizen",
-          "cool": "Kühlen",
-          "heat_cool": "Heizen/Kühlen",
-          "auto": "Automatisch",
-          "dry": "Entfeuchten",
-          "fan_only": "Nur Lüfter"
-        }
-      },
-      "profile_fan_mode": {
-        "name": "{profile} Lüftermodus"
-      },
-      "profile_swing_mode": {
-        "name": "{profile} Swing-Modus"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
       }
     },
     "switch": {
@@ -141,17 +120,6 @@
       },
       "automatic": {
         "name": "Automatik"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
-      }
-    },
-    "number": {
-      "profile_temperature": {
-        "name": "{profile} Temperatur"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
       }
     }
   },
@@ -231,6 +199,20 @@
     "end_temporary": {
       "name": "Temporäres Profil beenden",
       "description": "Beendet ein in der Automatik gestartetes temporäres Profil vor Ablauf seiner Zeit. Danach entscheidet wieder der Profilsensor; nennt er kein Profil, wird nichts geschrieben."
+    },
+    "edit_profile": {
+      "name": "Profil bearbeiten",
+      "description": "Ändert Werte, die ein gespeichertes Profil setzt, und wendet sie an, wenn das Profil aktiv ist. Der Schreibschutz gilt hier nicht - er hält Änderungen am Gerät heraus.",
+      "fields": {
+        "profile": {
+          "name": "Profil",
+          "description": "Name oder ID des Profils."
+        },
+        "values": {
+          "name": "Werte",
+          "description": "Schlüssel oder Name jedes Werts und was er werden soll. null nimmt den Wert aus dem Profil; der Modus bleibt immer drin."
+        }
+      }
     }
   },
   "exceptions": {
@@ -266,6 +248,9 @@
     },
     "invalid_profile_value": {
       "message": "{value} ist kein Wert, den {profile} setzen kann."
+    },
+    "profile_needs_a_mode": {
+      "message": "{profile} muss einen Modus setzen - er kann nicht herausgenommen werden."
     }
   }
 }

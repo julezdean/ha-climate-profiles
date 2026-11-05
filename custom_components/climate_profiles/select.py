@@ -7,15 +7,11 @@ assistants and the default dashboard without the custom card.
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import KIND_OPTION
 from .coordinator import ClimateProfilesConfigEntry
 from .entity import ClimateProfilesEntity
-from .matching import canonical_option
-from .profile_values import ProfileValueEntity, async_track_profile_values
 
 
 async def async_setup_entry(
@@ -23,11 +19,8 @@ async def async_setup_entry(
     entry: ClimateProfilesConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the profile select, and one per option valued profile value."""
+    """Set up the profile select."""
     async_add_entities([ProfileSelect(entry.runtime_data)])
-    async_track_profile_values(
-        entry, async_add_entities, Platform.SELECT, KIND_OPTION, ProfileOptionSelect
-    )
 
 
 class ProfileSelect(ClimateProfilesEntity, SelectEntity):
@@ -67,30 +60,3 @@ class ProfileSelect(ClimateProfilesEntity, SelectEntity):
         and must never write values back to the device.
         """
         await self.coordinator.async_apply_profile(option)
-
-
-class ProfileOptionSelect(ProfileValueEntity, SelectEntity):
-    """An option one profile sets - a mode, or an option valued value."""
-
-    @property
-    def options(self) -> list[str]:
-        """Return what the device offers right now."""
-        spec = self._spec
-        return list(spec.options) if spec is not None else []
-
-    @property
-    def current_option(self) -> str | None:
-        """Return the stored option in the device's spelling.
-
-        ``None`` - unknown - when the device does not offer it: an option it
-        dropped is not something to pick, and the select would refuse it.
-        """
-        stored = self._stored
-        options = self.options
-        if stored is None or not options:
-            return None
-        return canonical_option(str(stored), options)
-
-    async def async_select_option(self, option: str) -> None:
-        """Store the option in the profile."""
-        await self._async_write(option)

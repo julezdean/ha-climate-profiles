@@ -6,7 +6,7 @@
 
 Everything else follows from that. The card never compares values, never
 decides what "custom" means and never writes to the climate entity directly.
-It reads one sensor and calls two services. That is why profiles behave
+It reads one sensor and calls the services. That is why profiles behave
 identically in automations, scripts, voice assistants, the developer tools and
 any other dashboard.
 
@@ -22,8 +22,6 @@ entity.py              one device per config entry
 sensor.py              the active profile + everything the card needs
                        + the entity services
 select.py              picking a profile the native way
-profile_values.py      one entity per value a profile sets, shared by
-number.py / select.py / switch.py
 keys.py                the readable key of an additional value
 config_flow.py         setup and profile management
 ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +82,7 @@ Not in automatic mode: there the state is the profile automatic mode holds,
 also while the device differs from it, and the difference is reported as
 `deviates` instead. Automatic mode decides which profile applies; a state
 saying custom about it answered a question nobody asked. See
-[value entities](value-entities.md#automatic-mode-holds-it-does-not-detect).
+[keys and editing](keys-and-editing.md#automatic-mode-holds-it-does-not-detect).
 
 **Restart, not queue.** A second apply cancels a running one, mirroring the
 `mode: restart` of the original script. Two users tapping two profiles get the

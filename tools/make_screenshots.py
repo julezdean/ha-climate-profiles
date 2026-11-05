@@ -153,6 +153,13 @@ SHOTS: dict[str, dict] = {
             },
         },
     },
+    # Edit mode: every profile, "Comfort" open with every value the device
+    # could set - the fan speed and the preset are not set in it.
+    "card-edit": {
+        "theme": "light",
+        "card": {"show_edit": True, "show_protection": True},
+        "click": "climate-profile-card .edit",
+    },
     # A radiator under automatic mode, with every switch the card has: the
     # temporary "Boost" runs for another 17 minutes, then "Comfort" - what the
     # sensor names - takes over. Boost is write protected, so the lock is

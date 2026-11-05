@@ -68,5 +68,6 @@ and the apply order. Nothing has to be done by hand. What to know:
 - **Automatic mode has no custom any more.** An automation that waited for
   `active_profile_id: __custom__` while automatic mode was on never sees it
   now; trigger on the sensor's `deviates` attribute instead.
-- **New entities.** Every value a profile sets appears as an entity on the
-  device page, under Configuration.
+- **Profiles can be edited on the card.** `show_edit: true` puts a pencil
+  into the header; see the README. If you tried 3.0.0-beta.1, the entities it
+  made for every profile value are removed on the first start.

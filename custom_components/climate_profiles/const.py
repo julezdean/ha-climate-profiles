@@ -214,6 +214,7 @@ SERVICE_SET_VALUE: Final = "set_value"
 SERVICE_CAPTURE_PROFILE: Final = "capture_profile"
 SERVICE_SAVE_AS_PROFILE: Final = "save_as_profile"
 SERVICE_END_TEMPORARY: Final = "end_temporary"
+SERVICE_EDIT_PROFILE: Final = "edit_profile"
 
 # --- tuning ----------------------------------------------------------------
 

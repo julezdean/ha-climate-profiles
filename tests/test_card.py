@@ -1190,3 +1190,142 @@ async def test_with_nothing_held_the_state_is_unknown(open_card):
     assert await page.locator("climate-profile-card .subtitle").inner_text() == (
         "Unknown"
     )
+
+
+# --- edit mode ----------------------------------------------------------------
+
+EDIT = {"show_edit": True}
+
+
+async def open_editor(open_card, **card):
+    page = await open_card(card={**EDIT, **card})
+    await page.locator("climate-profile-card .edit").click()
+    return page, page.locator("climate-profile-card")
+
+
+def row(card, key: str):
+    return card.locator(f".edit-profile.open .edit-row[data-key='{key}']")
+
+
+async def test_the_edit_button_is_left_out_unless_asked_for(open_card):
+    page = await open_card()
+    assert await page.locator("climate-profile-card .edit").is_hidden()
+
+
+async def test_edit_mode_lists_every_profile_the_hidden_ones_too(open_card):
+    _page, card = await open_editor(open_card)
+
+    assert await card.locator(".edit-name").all_inner_texts() == [
+        "Off",
+        "Away",
+        "Comfort",
+        "Comfort+",
+        "Night",
+        "Max",
+        "Summer",
+    ]
+    # Instead of the device, not next to it.
+    assert await card.locator(".profiles").is_hidden()
+    assert await card.locator(".controls").is_hidden()
+    # The active profile is open first.
+    assert await card.locator(".edit-profile.open .edit-name").inner_text() == "Comfort"
+
+
+async def test_edit_mode_shows_every_value_set_or_not(open_card):
+    _page, card = await open_editor(open_card)
+
+    labels = await card.locator(".edit-profile.open .edit-label").all_inner_texts()
+    assert labels == [
+        "Write protection",
+        "Mode",
+        "Temperature",
+        "Fan mode",
+        "Swing",
+        "Fan speed",
+        "Display",
+        "Silent",
+        "Preset",
+    ]
+    assert await row(card, "fan").locator(".edit-none").inner_text() == "Not set"
+    # The mode cannot be taken out, everything else can.
+    assert await row(card, "hvac_mode").locator(".edit-action button").count() == 0
+    assert await row(card, "temperature").locator(".edit-action button").count() == 1
+
+
+async def test_the_stepper_saves_once_the_taps_stop(open_card):
+    page, card = await open_editor(open_card)
+    plus = row(card, "temperature").locator(".edit-stepper .edit-icon").last
+    await plus.click()
+    await plus.click()
+
+    assert (
+        await row(card, "temperature").locator(".edit-number").inner_text() == "26 °C"
+    )
+    assert await calls(page) == []
+    await page.wait_for_timeout(900)
+    assert await calls(page) == [
+        {
+            "domain": "climate_profiles",
+            "service": "edit_profile",
+            "data": {
+                "entity_id": "sensor.living_room_climate_profile",
+                "profile": "p3",
+                "values": {"temperature": 26},
+            },
+        }
+    ]
+
+
+async def test_a_value_is_taken_out_and_put_in(open_card):
+    page, card = await open_editor(open_card)
+
+    await row(card, "swing_mode").locator(".edit-action button").click()
+    await row(card, "fan").locator(".edit-action button").click()
+    await page.wait_for_timeout(200)
+
+    sent = [call["data"]["values"] for call in await calls(page)]
+    # The fan starts where the device is.
+    assert sent == [{"swing_mode": None}, {"fan": 42}]
+
+
+async def test_an_option_and_a_switch_are_saved_at_once(open_card):
+    page, card = await open_editor(open_card)
+
+    await row(card, "fan_mode").locator("select").select_option("high")
+    await row(card, "display").locator(".edit-switch").click()
+    await page.wait_for_timeout(200)
+
+    sent = [call["data"]["values"] for call in await calls(page)]
+    assert sent == [{"fan_mode": "high"}, {"display": True}]
+
+
+async def test_write_protection_is_one_more_thing_to_set(open_card):
+    page, card = await open_editor(open_card)
+
+    await (
+        card.locator(".edit-profile.open .edit-row")
+        .first.locator(".edit-switch")
+        .click()
+    )
+    await page.wait_for_timeout(200)
+
+    assert await calls(page) == [
+        {
+            "domain": "switch",
+            "service": "turn_on",
+            "data": {"entity_id": "switch.living_room_comfort_write_protected"},
+        }
+    ]
+
+
+async def test_another_profile_opens_and_the_pencil_ends_edit_mode(open_card):
+    page, card = await open_editor(open_card)
+
+    await card.locator(".edit-head", has_text="Summer").click()
+    assert await card.locator(".edit-profile.open .edit-name").inner_text() == "Summer"
+    assert await card.locator(".edit-profile.open").count() == 1
+
+    await card.locator(".edit").click()
+    assert await card.locator(".editor").is_hidden()
+    assert await card.locator(".profiles").is_visible()
+    assert await calls(page) == [], "looking changes nothing"

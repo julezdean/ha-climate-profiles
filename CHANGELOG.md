@@ -4,20 +4,19 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versioning [Semantic Versioning](https://semver.org/).
 
-## [3.0.0] - 2026-11-03
+## [3.0.0] - 2026-11-05
 
 ### Added
 
-- **Every value a profile sets is an entity.** A profile's temperature is a
-  `number`, its mode, fan mode and swing mode are `select`s, and an additional
-  value is a `number`, `select` or `switch` like the entity behind it - on the
-  device page under Configuration, named after the profile and the value.
-  Only values a profile actually sets get one; putting a value in or taking it
-  out in the options brings or removes it without a reload. A change is stored
-  in the profile and, when that profile is active, applied to the device so it
-  stays active. Write protection does not apply, it is about changes made on
-  the device. A stored value the device no longer offers is `unknown`. Hidden
-  profiles have them too.
+- **Profiles are edited on the card.** `show_edit: true` puts a pencil into
+  the header; tapped, the card shows every profile, the hidden ones too, with
+  every value the device could set - set or not. A value is changed, put in
+  or taken out right there, and saved at once; the active profile's changes
+  are applied so it stays active. Write protection is one more switch there
+  and does not keep these changes out - it is about changes made on the
+  device. The mode always stays in a profile.
+- **`climate_profiles.edit_profile`** changes what a profile sets, the way the
+  card does: values by key or name, `null` takes one out.
 - **Deviations in automatic mode are shown.** The sensor's new `deviates`
   attribute lists the values in which the device differs from the profile
   automatic mode holds, and the card puts an orange dot next to the profile
@@ -44,6 +43,9 @@ versioning [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **The entities of 3.0.0-beta.1.** The beta made an entity for every value a
+  profile sets; editing on the card replaced them, and they are taken out of
+  the registry on the first start.
 - **The 1.x value names in the service forms.** `capture_profile` and
   `save_as_profile` offered `fan`, `display` and `silent`, which have meant
   nothing since 2.0. The forms offer the four climate values and take any

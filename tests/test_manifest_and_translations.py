@@ -13,6 +13,7 @@ from custom_components.climate_profiles.const import (
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_EDIT_PROFILE,
     SERVICE_END_TEMPORARY,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
@@ -77,6 +78,7 @@ def test_services_match_the_code():
         SERVICE_CAPTURE_PROFILE,
         SERVICE_SAVE_AS_PROFILE,
         SERVICE_END_TEMPORARY,
+        SERVICE_EDIT_PROFILE,
     }
     # Only the climate keys are documented: an additional value is named by
     # the user, so it cannot appear in a static service definition.

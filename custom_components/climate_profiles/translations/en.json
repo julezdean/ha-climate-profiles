@@ -112,27 +112,6 @@
     "select": {
       "profile": {
         "name": "Profile"
-      },
-      "profile_hvac_mode": {
-        "name": "{profile} mode",
-        "state": {
-          "off": "Off",
-          "heat": "Heat",
-          "cool": "Cool",
-          "heat_cool": "Heat/Cool",
-          "auto": "Auto",
-          "dry": "Dry",
-          "fan_only": "Fan only"
-        }
-      },
-      "profile_fan_mode": {
-        "name": "{profile} fan mode"
-      },
-      "profile_swing_mode": {
-        "name": "{profile} swing mode"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
       }
     },
     "switch": {
@@ -141,17 +120,6 @@
       },
       "automatic": {
         "name": "Automatic mode"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
-      }
-    },
-    "number": {
-      "profile_temperature": {
-        "name": "{profile} temperature"
-      },
-      "profile_value": {
-        "name": "{profile} {value}"
       }
     }
   },
@@ -231,6 +199,20 @@
     "end_temporary": {
       "name": "End temporary profile",
       "description": "Ends a temporary profile started in automatic mode before its time is up. The profile sensor decides again; if it names no profile, nothing is written."
+    },
+    "edit_profile": {
+      "name": "Edit profile",
+      "description": "Changes values a stored profile sets, and applies them when the profile is active. Write protection does not apply - it keeps changes made on the device out.",
+      "fields": {
+        "profile": {
+          "name": "Profile",
+          "description": "Name or id of the profile to change."
+        },
+        "values": {
+          "name": "Values",
+          "description": "Key or name of each value, and what to set it to. null takes the value out of the profile; the mode cannot be taken out."
+        }
+      }
     }
   },
   "exceptions": {
@@ -266,6 +248,9 @@
     },
     "invalid_profile_value": {
       "message": "{value} is not a value {profile} can set."
+    },
+    "profile_needs_a_mode": {
+      "message": "{profile} has to set a mode - it cannot be taken out."
     }
   }
 }

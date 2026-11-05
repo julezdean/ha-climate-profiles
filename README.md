@@ -107,42 +107,16 @@ Each config entry creates one device with these entities:
 | `select.<name>_profile` | pick a profile - works in automations, scripts and voice assistants |
 | `switch.<name>_<profile>_write_protected` | one per profile: whether it keeps changes made by hand out |
 | `switch.<name>_automatic_mode` | only with a profile sensor: whether that sensor decides the profile - see [Automatic mode](#automatic-mode) |
-| `number.<name>_<profile>_temperature`, `select.<name>_<profile>_mode`, … | one per value a profile sets - see [Profile values as entities](#profile-values-as-entities) |
 
 (The entity names are translated, so a German instance gets
 `sensor.<name>_klimaprofil`, `select.<name>_profil` and
-`switch.<name>_<profil>_schreibgeschutzt`, `switch.<name>_automatik` and
-`number.<name>_<profil>_temperatur`.)
+`switch.<name>_<profil>_schreibgeschutzt` and `switch.<name>_automatik`.)
 
 The switches are configuration entities: they appear under the device's
 settings, not on an automatically generated dashboard. A profile added in the
 options gets its switch right away, a deleted one takes it along. Renaming a
 profile renames its switch but keeps the entity id, so automations pointing at
 it keep working.
-
-### Profile values as entities
-
-Every value a profile sets is an entity of its own, so a profile can be read
-and changed without opening it in the options - on the device page they sit
-together under Configuration.
-
-| Value | Entity |
-| --- | --- |
-| temperature | `number`, in the range of the climate entity |
-| mode, fan mode, swing mode | `select`, with what the device offers |
-| an additional value | `number`, `select` or `switch`, like the entity behind it |
-
-- **Only what a profile sets.** A profile that says nothing about the fan has
-  no fan entity. Putting a value into a profile or taking it out is done in
-  the options; the entity comes and goes with it, without a reload.
-- **A change is stored in the profile** - and applied to the device when that
-  profile is the active one, so it stays active.
-- **Write protection does not apply.** It keeps changes made on the device out
-  of a profile; changing the profile's own value is what the entity is for.
-- **A value the device cannot take is `unknown`**: an option it no longer
-  offers, or a number outside its range. It cannot be picked either.
-- Hidden profiles have them too. Renaming a profile renames its entities and
-  keeps their entity ids.
 
 ## Managing profiles
 
@@ -219,6 +193,7 @@ range - comes from the integration. Options, all optional:
 | `hide` | `[]` | values to leave out, by key |
 | `show_protection` | `false` | a lock next to the power button, for the write protection of the active profile |
 | `show_automatic` | `false` | a button next to the lock that switches [automatic mode](#automatic-mode) on and off |
+| `show_edit` | `false` | a pencil that switches the card to [editing the profiles](#editing-profiles-on-the-card) |
 | `show_target` | `true` | a row with the profile automatic mode is aiming for - only while automatic mode is on |
 
 Everything configured is shown unless you hide it, so a value you add later
@@ -307,6 +282,33 @@ protect, so the lock is not there while nothing matches. To protect a profile
 that is not active, use its switch.
 
 <img src="docs/images/card-protection.png" alt="The lock of a write protected profile" width="460">
+
+### Editing profiles on the card
+
+`show_edit: true` puts a pencil into the header. Tapped, the card shows the
+profiles instead of the device - every one of them, the hidden ones too - so
+a profile can be read and changed without opening the options. One is open at
+a time, the active one first.
+
+An open profile lists every value your device could set. A value the profile
+sets has its control - steps for a number, a dropdown for an option, a switch
+for on and off - and a cross that takes it out of the profile; one it does
+not set reads "Not set", and the plus puts it in at what the device has right
+now. The mode always stays in. Write protection is one more switch there.
+
+- **Saved at once.** The steps wait until the taps stop, so five taps are one
+  write.
+- **Applied when it is the active profile**, so it stays active - also the one
+  automatic mode holds.
+- **Write protection does not keep it out.** It keeps changes made on the
+  device out of a profile; a change made here is made to the profile.
+- **Anyone who can use the card can edit.** That is why it is off unless the
+  card asks for it.
+
+The pencil again goes back to the device. Name, colour, icon and how a profile
+becomes active stay in the options.
+
+<img src="docs/images/card-edit.png" alt="Editing the Comfort profile on the card" width="460">
 
 ### Automatic mode on the card
 
@@ -697,6 +699,25 @@ data:
   icon: mdi:weather-sunny # optional
   values: [temperature]   # optional - defaults to the whole state
 ```
+
+### `climate_profiles.edit_profile`
+
+```yaml
+action: climate_profiles.edit_profile
+target:
+  entity_id: sensor.living_room_climate_profile
+data:
+  profile: Comfort        # required - name or id
+  values:                 # required - key or name of each value
+    temperature: 23
+    fan_mode: null        # null takes the value out of the profile
+```
+
+Changes what a profile sets - what the card's edit mode calls. A value may be
+one the profile did not set before; `null` takes one out, except the mode. When
+the profile is the active one, the change is applied too. Write protection does
+not apply: it keeps changes made on the device out, not changes made to the
+profile.
 
 ### `climate_profiles.end_temporary`
 

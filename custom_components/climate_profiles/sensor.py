@@ -35,6 +35,7 @@ from .const import (
     MAX_TEMPORARY_MINUTES,
     SERVICE_APPLY_PROFILE,
     SERVICE_CAPTURE_PROFILE,
+    SERVICE_EDIT_PROFILE,
     SERVICE_END_TEMPORARY,
     SERVICE_SAVE_AS_PROFILE,
     SERVICE_SET_VALUE,
@@ -94,6 +95,15 @@ SAVE_AS_PROFILE_SCHEMA = cv.make_entity_service_schema(
 )
 
 
+#: ``None`` takes a value out of the profile - what "not set" means there.
+EDIT_PROFILE_SCHEMA = cv.make_entity_service_schema(
+    {
+        vol.Required(ATTR_PROFILE): cv.string,
+        vol.Required(ATTR_VALUES): vol.All(dict, vol.Length(min=1)),
+    }
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ClimateProfilesConfigEntry,
@@ -122,6 +132,9 @@ async def async_setup_entry(
     )
     platform.async_register_entity_service(
         SERVICE_END_TEMPORARY, None, "async_end_temporary_service"
+    )
+    platform.async_register_entity_service(
+        SERVICE_EDIT_PROFILE, EDIT_PROFILE_SCHEMA, "async_edit_profile_service"
     )
 
     async_add_entities([ActiveProfileSensor(entry.runtime_data)])
@@ -256,6 +269,12 @@ class ActiveProfileSensor(ClimateProfilesEntity, SensorEntity):
     ) -> None:
         """Handle ``climate_profiles.capture_profile``."""
         await self.coordinator.async_capture_into_profile(profile, keys=values)
+
+    async def async_edit_profile_service(
+        self, profile: str, values: dict[str, Any]
+    ) -> None:
+        """Handle ``climate_profiles.edit_profile``."""
+        await self.coordinator.async_edit_profile(profile, values)
 
     async def async_end_temporary_service(self) -> None:
         """Handle ``climate_profiles.end_temporary``."""

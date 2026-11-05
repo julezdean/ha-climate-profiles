@@ -108,3 +108,20 @@ end_temporary:
     entity:
       integration: climate_profiles
       domain: sensor
+
+edit_profile:
+  target:
+    entity:
+      integration: climate_profiles
+      domain: sensor
+  fields:
+    profile:
+      required: true
+      example: Komfort
+      selector:
+        text:
+    values:
+      required: true
+      example: '{"temperature": 22, "fan_mode": null}'
+      selector:
+        object:

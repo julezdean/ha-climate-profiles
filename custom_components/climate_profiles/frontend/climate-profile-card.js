@@ -9,7 +9,7 @@
  * Plain web components on purpose: no build step, no external dependencies.
  */
 
-const CARD_VERSION = "3.0.0-beta.1";
+const CARD_VERSION = "3.0.0-beta.2";
 
 /* eslint-disable no-console */
 console.info(
@@ -167,6 +167,12 @@ class ClimateProfileCard extends HTMLElement {
     //: The temporary profile counting down, and the timer that repaints it.
     this._running = null;
     this._countdownTimer = null;
+    //: Edit mode: whether it is on, which profile is open, what the editor
+    //: was last built from, and the changes still waiting to be saved.
+    this._editing = false;
+    this._editOpen = null;
+    this._editSignature = "";
+    this._editPending = new Map(); // "profile/key" -> { value, timer }
   }
 
   disconnectedCallback() {
@@ -203,6 +209,7 @@ class ClimateProfileCard extends HTMLElement {
       temperature_style: "bar",
       show_protection: false,
       show_automatic: false,
+      show_edit: false,
       show_target: true,
       ...config,
     };
@@ -530,6 +537,9 @@ class ClimateProfileCard extends HTMLElement {
             </div>
           </div>
           <div class="header-actions">
+            <button class="edit" type="button" title="" hidden>
+              <ha-icon icon="mdi:pencil-outline"></ha-icon>
+            </button>
             <button class="auto" type="button" title="" hidden>
               <ha-icon icon="mdi:auto-mode"></ha-icon>
             </button>
@@ -563,6 +573,8 @@ class ClimateProfileCard extends HTMLElement {
         </section>
 
         <section class="controls"></section>
+
+        <section class="editor" role="group" hidden></section>
       </ha-card>
       <style>${STYLES}</style>`;
 
@@ -578,6 +590,8 @@ class ClimateProfileCard extends HTMLElement {
       lock: root.querySelector(".lock"),
       lockIcon: root.querySelector(".lock ha-icon"),
       auto: root.querySelector(".auto"),
+      edit: root.querySelector(".edit"),
+      editor: root.querySelector(".editor"),
       target: root.querySelector(".target"),
       targetMark: root.querySelector(".target-mark"),
       targetName: root.querySelector(".target-name"),
@@ -646,6 +660,9 @@ class ClimateProfileCard extends HTMLElement {
     this._el.pill.addEventListener("click", () => this._togglePower());
     this._el.lock.addEventListener("click", () => this._toggleProtection());
     this._el.auto.addEventListener("click", () => this._toggleAutomatic());
+    this._el.edit.addEventListener("click", () => this._toggleEditing());
+    // A new build starts with an empty editor: it has to be filled again.
+    this._editSignature = "";
 
     this._buildProfiles(model);
     this._buildControls(model);
@@ -1230,6 +1247,7 @@ class ClimateProfileCard extends HTMLElement {
     this._paintUnreached(model);
     this._paintProtection(model, activeProfile);
     this._paintAutomatic(model);
+    this._paintEdit(model);
     this._paintTarget(model);
     this._paintCountdown(model);
 
@@ -1331,6 +1349,328 @@ class ClimateProfileCard extends HTMLElement {
       "icon",
       on ? "mdi:lock" : "mdi:lock-open-variant-outline"
     );
+  }
+
+  /**
+   * Edit mode, as a pencil left of automatic mode - only when the card asks
+   * for it. On, the card shows every profile, the hidden ones too, and every
+   * value each of them could set, instead of the device. A change is saved
+   * right away; when it is the active profile, the integration applies it as
+   * well.
+   */
+  _paintEdit(model) {
+    const el = this._el;
+    const show = Boolean(this._config.show_edit);
+    el.edit.hidden = !show;
+    if (!show) this._editing = false;
+    const on = this._editing;
+    el.card.classList.toggle("editing", on);
+    el.editor.hidden = !on;
+    el.edit.classList.toggle("on", on);
+    el.edit.setAttribute("aria-pressed", on ? "true" : "false");
+    el.edit.setAttribute("aria-label", this._t("Edit profiles"));
+    el.edit.title = on ? this._t("Done editing") : this._t("Edit profiles");
+    if (!on) return;
+
+    // Rebuilt only when what it shows changed: a rebuild on every state of
+    // the device would take the focus out of a dropdown being opened.
+    const signature = JSON.stringify([
+      model.profiles.map((p) => [p.id, p.name, p.color, p.icon, p.hidden, p.protected, p.values]),
+      model.caps,
+      model.additional.map((v) => [v.id, v.name, v.kind, v.min, v.max, v.step, v.options]),
+      this._editOpen,
+      this._hass.language,
+    ]);
+    if (signature === this._editSignature) return;
+    this._editSignature = signature;
+    this._buildEditor(model);
+  }
+
+  _toggleEditing() {
+    this._editing = !this._editing;
+    if (this._editing && !this._editOpen) {
+      // The active profile is open first: it is the one most likely meant.
+      const model = this._model();
+      this._editOpen = model.profiles.some((p) => p.id === model.activeId)
+        ? model.activeId
+        : (model.profiles[0] || {}).id || null;
+    }
+    this._editSignature = "";
+    this._update();
+  }
+
+  /** The values a profile could set, in the order the card shows them. */
+  _editKeys(model) {
+    const climate = ["hvac_mode", "temperature", "fan_mode", "swing_mode"].filter(
+      (key) => climateKeys(model.attrs, this._hass).includes(key)
+    );
+    return [
+      ...climate.map((key) => ({ key, label: this._t(CLIMATE_LABELS[key]) })),
+      ...model.additional
+        .filter((value) => value.kind)
+        .map((value) => ({ key: value.id, label: value.name, definition: value })),
+    ];
+  }
+
+  /** What a value can be: its kind, and its options or its range. */
+  _editSpec(model, key, definition) {
+    const caps = model.caps;
+    if (key === "temperature") {
+      return {
+        kind: "number",
+        min: isNum(caps.min_temp) ? caps.min_temp : 5,
+        max: isNum(caps.max_temp) ? caps.max_temp : 35,
+        step: isNum(caps.target_temp_step) ? caps.target_temp_step : 0.5,
+        unit: model.unit,
+      };
+    }
+    if (key === "hvac_mode") return { kind: "option", options: caps.hvac_modes || [] };
+    if (key === "fan_mode") return { kind: "option", options: caps.fan_modes || [] };
+    if (key === "swing_mode") return { kind: "option", options: caps.swing_modes || [] };
+    return {
+      kind: definition.kind,
+      min: isNum(definition.min) ? definition.min : 0,
+      max: isNum(definition.max) ? definition.max : 100,
+      step: isNum(definition.step) && definition.step > 0 ? definition.step : 1,
+      options: definition.options || [],
+      unit: "",
+    };
+  }
+
+  _buildEditor(model) {
+    const wrap = this._el.editor;
+    wrap.innerHTML = "";
+    wrap.setAttribute("aria-label", this._t("Edit profiles"));
+    const keys = this._editKeys(model);
+
+    for (const profile of model.profiles) {
+      const open = profile.id === this._editOpen;
+      const block = document.createElement("div");
+      block.className = open ? "edit-profile open" : "edit-profile";
+      block.style.setProperty("--profile-color", profile.color);
+
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "edit-head";
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      head.innerHTML = `
+        <span class="edit-mark">${profileMark(profile)}</span>
+        <span class="edit-name"></span>
+        ${profile.hidden ? '<ha-icon class="edit-flag" icon="mdi:eye-off-outline"></ha-icon>' : ""}
+        ${profile.protected ? '<ha-icon class="edit-flag" icon="mdi:lock"></ha-icon>' : ""}
+        <ha-icon class="edit-chevron" icon="mdi:chevron-down"></ha-icon>`;
+      head.querySelector(".edit-name").textContent = profile.name;
+      if (profile.hidden) {
+        head.querySelector(".edit-flag").setAttribute("title", this._t("Hidden on the card"));
+      }
+      head.addEventListener("click", () => {
+        this._editOpen = open ? null : profile.id;
+        this._update();
+      });
+      block.appendChild(head);
+
+      if (open) {
+        const body = document.createElement("div");
+        body.className = "edit-body";
+        if (profile.protection_entity) body.appendChild(this._editProtection(profile));
+        for (const item of keys) body.appendChild(this._editRow(model, profile, item));
+        block.appendChild(body);
+      }
+      wrap.appendChild(block);
+    }
+  }
+
+  /**
+   * Write protection, as one more thing to set: it keeps changes made on the
+   * device out of the profile, not the changes made here.
+   */
+  _editProtection(profile) {
+    const row = document.createElement("div");
+    row.className = "edit-row";
+    const on = Boolean(profile.protected);
+    row.innerHTML = `
+      <span class="edit-label"></span>
+      <span class="edit-control"></span>`;
+    row.querySelector(".edit-label").textContent = this._t("Write protection");
+    const toggle = this._editSwitch(on, (next) =>
+      this._callService("switch", next ? "turn_on" : "turn_off", {
+        entity_id: profile.protection_entity,
+      })
+    );
+    row.querySelector(".edit-control").appendChild(toggle);
+    return row;
+  }
+
+  _editRow(model, profile, { key, label, definition }) {
+    const spec = this._editSpec(model, key, definition);
+    const pending = this._editPending.get(`${profile.id}/${key}`);
+    const stored = pending ? pending.value : profile.values[key];
+    const set = stored !== undefined && stored !== null;
+
+    const row = document.createElement("div");
+    row.className = set ? "edit-row" : "edit-row unset";
+    row.dataset.key = key;
+    row.innerHTML = `
+      <span class="edit-label"></span>
+      <span class="edit-control"></span>
+      <span class="edit-action"></span>`;
+    row.querySelector(".edit-label").textContent = label;
+    const control = row.querySelector(".edit-control");
+    const action = row.querySelector(".edit-action");
+
+    if (!set) {
+      const none = document.createElement("span");
+      none.className = "edit-none";
+      none.textContent = this._t("Not set");
+      control.appendChild(none);
+      action.appendChild(
+        this._editIcon("mdi:plus", `${label}: ${this._t("Set")}`, () =>
+          this._saveEdit(profile.id, key, this._editStart(model, key, spec))
+        )
+      );
+      return row;
+    }
+
+    if (spec.kind === "number") {
+      control.appendChild(this._editStepper(profile, key, Number(stored), spec, label));
+    } else if (spec.kind === "boolean") {
+      const on = stored === true || stored === "on";
+      control.appendChild(
+        this._editSwitch(on, (next) => this._saveEdit(profile.id, key, next), label)
+      );
+    } else {
+      control.appendChild(this._editSelect(profile, key, String(stored), spec, label));
+    }
+    // The mode stays: a profile that does not say what the device should do
+    // is not one.
+    if (key !== "hvac_mode") {
+      action.appendChild(
+        this._editIcon("mdi:close", `${label}: ${this._t("Remove")}`, () =>
+          this._saveEdit(profile.id, key, null)
+        )
+      );
+    }
+    return row;
+  }
+
+  /** What a value starts at when it is put into a profile: what the device has. */
+  _editStart(model, key, spec) {
+    const climate = {
+      hvac_mode: model.hvacMode,
+      temperature: model.target,
+      fan_mode: model.fanMode,
+      swing_mode: model.swingMode,
+    };
+    const current =
+      key in climate
+        ? climate[key]
+        : (model.additional.find((value) => value.id === key) || {}).value;
+    if (spec.kind === "number") {
+      return isNum(current) ? clamp(current, spec.min, spec.max) : spec.min;
+    }
+    if (spec.kind === "boolean") return typeof current === "boolean" ? current : false;
+    const match = spec.options.find(
+      (option) => String(option).toLowerCase() === String(current ?? "").toLowerCase()
+    );
+    return match ?? spec.options[0] ?? current ?? "";
+  }
+
+  _editStepper(profile, key, value, spec, label) {
+    const box = document.createElement("span");
+    box.className = "edit-stepper";
+    const shown = document.createElement("span");
+    shown.className = "edit-number";
+    const write = (number) => {
+      shown.textContent = `${formatNumber(number, spec.step)}${spec.unit ? ` ${spec.unit}` : ""}`;
+    };
+    write(value);
+    const step = (by) => {
+      const pending = this._editPending.get(`${profile.id}/${key}`);
+      const from = pending ? Number(pending.value) : value;
+      const next = clamp(Math.round((from + by * spec.step) / spec.step) * spec.step, spec.min, spec.max);
+      write(next);
+      // Saved once the taps stop, so five taps are one write.
+      this._saveEdit(profile.id, key, Number(next.toFixed(2)), 700);
+    };
+    box.appendChild(this._editIcon("mdi:minus", `${label} -`, () => step(-1)));
+    box.appendChild(shown);
+    box.appendChild(this._editIcon("mdi:plus", `${label} +`, () => step(1)));
+    return box;
+  }
+
+  _editSelect(profile, key, value, spec, label) {
+    const select = document.createElement("select");
+    select.className = "edit-select";
+    select.setAttribute("aria-label", label);
+    const options = spec.options.map(String);
+    const known = options.some((option) => option.toLowerCase() === value.toLowerCase());
+    if (!known) {
+      // Stored, but the device does not offer it: not something to pick.
+      const stale = document.createElement("option");
+      stale.value = value;
+      stale.textContent = `${this._valueText(key, value)} (?)`;
+      stale.disabled = true;
+      select.appendChild(stale);
+    }
+    for (const option of options) {
+      const item = document.createElement("option");
+      item.value = option;
+      item.textContent = this._valueText(key, option);
+      select.appendChild(item);
+    }
+    select.value =
+      options.find((option) => option.toLowerCase() === value.toLowerCase()) ?? value;
+    select.addEventListener("change", () => this._saveEdit(profile.id, key, select.value));
+    return select;
+  }
+
+  _editSwitch(on, onToggle, label) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = on ? "edit-switch on" : "edit-switch";
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-checked", on ? "true" : "false");
+    if (label) button.setAttribute("aria-label", label);
+    button.innerHTML = '<span class="knob"></span>';
+    button.addEventListener("click", () => onToggle(!on));
+    return button;
+  }
+
+  _editIcon(icon, label, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "edit-icon";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = `<ha-icon icon="${icon}"></ha-icon>`;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  /**
+   * Save one value of one profile; ``null`` takes it out. Shown at once, and
+   * written after ``delay`` - the stepper waits for the taps to stop.
+   */
+  _saveEdit(profileId, key, value, delay = 0) {
+    const id = `${profileId}/${key}`;
+    const previous = this._editPending.get(id);
+    if (previous) clearTimeout(previous.timer);
+    const send = async () => {
+      try {
+        await this._call("edit_profile", { profile: profileId, values: { [key]: value } });
+      } finally {
+        if (this._editPending.get(id)?.value === value) this._editPending.delete(id);
+        this._editSignature = "";
+        this._update();
+      }
+    };
+    const timer = delay ? setTimeout(send, delay) : null;
+    this._editPending.set(id, { value, timer });
+    if (!delay) {
+      this._editSignature = "";
+      this._update();
+      send();
+    }
   }
 
   /**
@@ -1751,6 +2091,12 @@ const CARD_DE = {
   "The command failed.": "Der Befehl ist fehlgeschlagen.",
   "not reached": "nicht erreicht",
   Unknown: "Unbekannt",
+  "Edit profiles": "Profile bearbeiten",
+  "Done editing": "Bearbeiten beenden",
+  "Not set": "Nicht gesetzt",
+  Set: "Setzen",
+  Remove: "Entfernen",
+  "Hidden on the card": "In der Karte ausgeblendet",
   "The device differs": "Das Gerät weicht ab",
   "instead of": "statt",
   "Write protection": "Schreibschutz",
@@ -1909,6 +2255,110 @@ ha-card.unavailable { opacity: 0.6; }
   background: var(--warning-color, #ffa600);
 }
 .deviation[hidden] { display: none; }
+
+/* edit mode: the profiles and their values instead of the device */
+ha-card.editing .target,
+ha-card.editing .temp,
+ha-card.editing .profiles,
+ha-card.editing .unreached,
+ha-card.editing .controls { display: none !important; }
+.editor[hidden] { display: none; }
+.editor { display: grid; gap: 8px; }
+.edit-profile {
+  border: 1px solid var(--cp-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.edit-profile.open { border-color: color-mix(in srgb, var(--profile-color) 45%, transparent); }
+.edit-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.edit-mark { display: grid; place-items: center; width: 22px; color: var(--profile-color); }
+.edit-mark ha-icon { --mdc-icon-size: 20px; }
+.edit-mark .dot-mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--profile-color);
+}
+.edit-name { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-flag { --mdc-icon-size: 16px; color: var(--cp-muted); }
+.edit-chevron { --mdc-icon-size: 20px; color: var(--cp-muted); transition: transform 200ms ease; }
+.edit-profile.open .edit-chevron { transform: rotate(180deg); }
+.edit-body { display: grid; padding: 0 12px 8px; }
+.edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 32px;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-top: 1px solid var(--cp-line);
+}
+.edit-label { font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-row.unset .edit-label { color: var(--cp-muted); }
+.edit-control { display: flex; justify-content: flex-end; }
+.edit-none { font-size: 0.82rem; color: var(--cp-muted); }
+.edit-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cp-muted);
+  cursor: pointer;
+}
+.edit-icon:hover { background: var(--cp-fill); color: var(--cp-text); }
+.edit-icon ha-icon { --mdc-icon-size: 18px; }
+.edit-stepper { display: inline-flex; align-items: center; gap: 2px; }
+.edit-stepper .edit-icon { background: var(--cp-fill); }
+.edit-number { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+.edit-select {
+  width: 136px;
+  padding: 6px 8px;
+  border: 1px solid var(--cp-line);
+  border-radius: 8px;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+.edit-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--cp-fill);
+  cursor: pointer;
+  transition: background 200ms ease;
+}
+.edit-switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--cp-muted);
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1), background 200ms ease;
+}
+.edit-switch.on { background: rgba(var(--accent-rgb), 0.35); }
+.edit-switch.on .knob { transform: translateX(16px); background: var(--accent-color); }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1950,9 +2400,11 @@ ha-card.unavailable { opacity: 0.6; }
   flex: none;
 }
 .lock[hidden],
-.auto[hidden] { display: none; }
+.auto[hidden],
+.edit[hidden] { display: none; }
 .lock,
-.auto {
+.auto,
+.edit {
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -1968,9 +2420,11 @@ ha-card.unavailable { opacity: 0.6; }
   transition: color 200ms ease, background 200ms ease, border-color 200ms ease;
 }
 .lock ha-icon,
-.auto ha-icon { --mdc-icon-size: 16px; }
+.auto ha-icon,
+.edit ha-icon { --mdc-icon-size: 16px; }
 .lock.on,
-.auto.on {
+.auto.on,
+.edit.on {
   color: var(--accent-color);
   border-color: rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.12);
@@ -2784,6 +3238,7 @@ const SCHEMA = [
   },
   { name: "show_protection", selector: { boolean: {} } },
   { name: "show_automatic", selector: { boolean: {} } },
+  { name: "show_edit", selector: { boolean: {} } },
   { name: "show_target", selector: { boolean: {} } },
 ];
 
@@ -2794,6 +3249,7 @@ const EDITOR_LABELS = {
   temperature_style: "Temperature control",
   show_protection: "Show the write protection of the active profile",
   show_automatic: "Show the automatic mode switch",
+  show_edit: "Show a button to edit the profiles",
   show_target: "Show the profile automatic mode is aiming for",
 };
 

@@ -15,6 +15,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -41,12 +42,7 @@ from .models import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [
-    Platform.NUMBER,
-    Platform.SELECT,
-    Platform.SENSOR,
-    Platform.SWITCH,
-]
+PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 #: This integration is set up from the UI only. Saying so explicitly is what
 #: hassfest asks for, and it makes a stray `climate_profiles:` block in
@@ -123,6 +119,7 @@ async def async_setup_entry(
 ) -> bool:
     """Set up one configured device."""
     _store_unique_names(hass, entry)
+    _remove_value_entities(hass, entry)
     try:
         coordinator = ClimateProfilesCoordinator(hass, entry)
     except ProfileError as err:
@@ -144,6 +141,21 @@ async def async_setup_entry(
     # when an entry is added after the last one was removed.
     await async_register_card(hass)
     return True
+
+
+def _remove_value_entities(
+    hass: HomeAssistant, entry: ClimateProfilesConfigEntry
+) -> None:
+    """Take out the entities 3.0.0-beta.1 made for every profile value.
+
+    They were replaced by the card's edit mode before 3.0 was released. Left
+    in the registry they would stay forever as entities nothing provides.
+    """
+    registry = er.async_get(hass)
+    prefix = f"{entry.entry_id}_value_"
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.unique_id.startswith(prefix):
+            registry.async_remove(item.entity_id)
 
 
 def _store_unique_names(hass: HomeAssistant, entry: ClimateProfilesConfigEntry) -> None:

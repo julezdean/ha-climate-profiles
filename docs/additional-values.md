@@ -31,7 +31,7 @@ Every additional value carries an id of its own. Profiles store their values
 under it.
 
 (Since 3.0 that id is readable - formed once from the name, then left alone.
-The reasoning below still holds; [value entities](value-entities.md) says what
+The reasoning below still holds; [readable keys](keys-and-editing.md#readable-keys) says what
 changed and why.)
 
 ```yaml

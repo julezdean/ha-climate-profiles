@@ -1,16 +1,16 @@
-# Readable keys, value entities, no custom in automatic mode
+# Readable keys, editing in the card, no custom in automatic mode
 
 The design for 3.0.0, written down before it is built. This is the reasoning,
 not a changelog: what was decided, and why the obvious alternative was not.
 
 ## What changes
 
-Three things, released together because the first two share the key space and
-the third changes what the state means:
+Three things, released together: the first changes what is stored, the second
+writes into it, and the third changes what the state means.
 
 - An additional value is addressed by a **readable key** instead of a uuid.
-- Every value a profile sets is an **entity** of its own, so a profile can be
-  read and changed without opening it in the options.
+- Profiles are **edited in the card**, so a profile can be read and changed
+  without opening it in the options.
 - In **automatic mode** the state is the profile automatic mode holds. Custom
   does not appear there any more.
 
@@ -72,53 +72,76 @@ There is no way back. A 2.x installation reading migrated options finds keys
 it takes for ids of values that do not exist, and every profile loses its
 additional values. Hence a major version, and betas first.
 
-## Value entities
+## Editing profiles in the card
 
-### What they are for
+### What it is for
 
 Seeing what a profile sets means opening it in the options, and so does
 changing one number. With six profiles that is six forms to compare two
 temperatures.
 
-### One entity per value a profile sets
+### Not entities
 
-Not per value the entry knows. A profile that does not set the fan has no fan
-entity: what is visible on the device page is exactly what each profile does.
-A value that is taken out of a profile takes its entity with it; one put in
-brings it. Putting values in and taking them out stays in the options -
-"not set" has no state an entity could show.
+3.0.0-beta.1 made every value a profile sets an entity of its own - a
+`number` for its temperature, a `select` for its mode, and so on - and that
+was replaced before 3.0 was released:
 
-| Value | Entity | Range |
-| --- | --- | --- |
-| `temperature` | `number` | the climate entity's min, max and step |
-| `hvac_mode`, `fan_mode`, `swing_mode` | `select` | what the device offers |
-| additional, number domains | `number` | the entity's min, max and step |
-| additional, boolean domains | `switch` | - |
-| additional, select domains | `select` | the entity's options |
+- **"Not set" has no state.** A profile is partial on purpose, and an entity
+  can only show a value. So only the values a profile set got one, and
+  putting a value into a profile or taking it out still meant the options.
+- **A device page of settings.** Six profiles with six values each are
+  thirty-six entities, next to the ones that matter.
+- **Profiles are edited where they are.** The card already shows the
+  profiles; editing them next to it is one place instead of two.
 
-They are named after the profile and the value - "Komfort Temperatur" - and
-registered as `{entry}_value_{profile id}_{key}`, so renaming a profile renames
-the entity but keeps its entity id. They are enabled and in the configuration
-category: on the device page they sit together under Configuration, and they
-stay off generated dashboards.
+The entities beta.1 registered are taken out of the registry when the entry
+is set up, by their unique id (`{entry}_value_…`). Left there, they would stay
+forever as entities nothing provides.
 
-Hidden profiles get them too. Hiding is about what the card offers, not about
-what can be edited.
+### What edit mode shows
+
+`show_edit: true` puts a pencil into the card's header, left of automatic
+mode. Tapped, the card shows the profiles instead of the device: every one of
+them, the hidden ones included - hiding is about what the card offers, not
+about what can be edited. One is open at a time, the active one first; six
+open profiles would be a page, not a card.
+
+An open profile lists every value the device could set, set or not, in the
+order the card shows them:
+
+- a value it sets has its control - steps for a number, a dropdown for an
+  option, a switch for on and off - and a cross that takes it out,
+- a value it does not set says so, with a plus that puts it in at what the
+  device has right now.
+
+The mode has no cross. A profile that does not say what the device should do
+is not one, which is why the options require it too.
+
+A stored option the device no longer offers stays visible, marked, but cannot
+be picked again.
 
 ### Writing
 
-A change is stored in the profile. When the profile is the active one, it is
-applied as well: a profile whose temperature was just raised is still the
-profile, and leaving the device behind would make it custom the moment the
-change is stored.
+A change is saved at once, like everywhere else in Home Assistant. The steps
+wait until the taps stop, so five taps are one write. Saving goes through
+`climate_profiles.edit_profile`, which an automation can call as well;
+`null` takes a value out.
 
-Write protection does not apply. It keeps changes made by hand on the device
-out of a profile; an entity that is the profile's value is a deliberate
-change, like the options.
+When the profile is the active one, the change is applied too: a profile
+whose temperature was just raised is still the profile, and leaving the
+device behind would make it custom the moment the change is stored.
 
-A stored value the device no longer offers - an option it dropped, a number
-out of its range - is not something to pick. The entity reports `unknown`
-rather than a value that cannot be chosen.
+Write protection is one more thing to set in the open profile, through the
+profile's own switch. It does not keep these changes out: it keeps changes
+made on the device out of a profile, and a change made here is made to the
+profile on purpose.
+
+### Who may edit
+
+Whoever can use the card. The options are for administrators only, but a
+service can be called by every user, and `capture_profile` already writes into
+profiles. The pencil is there only when the card asks for it, so a dashboard
+on a wall does not offer it unless it was set up to.
 
 ## Automatic mode holds, it does not detect
 
